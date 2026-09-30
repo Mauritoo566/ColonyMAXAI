@@ -66,7 +66,7 @@ export function createPlanet() {
     object: planet,
     terrain,
     update(delta, camera, sunDirection, viewportHeight) {
-      terrain.update(camera.position);
+      terrain.update(camera.position, camera);
       clouds.update(delta, camera, viewportHeight);
 
       // Desde dentro de la atmósfera el halo ya no tiene sentido: se desvanece.

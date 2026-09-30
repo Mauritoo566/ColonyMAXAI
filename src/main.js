@@ -20,6 +20,11 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// Las sombras son de las nubes, que se mueven muy despacio: basta recalcularlas cada
+// pocos fotogramas (la sombra ya calculada sigue bien ubicada mientras tanto).
+renderer.shadowMap.autoUpdate = false;
+const SHADOW_EVERY_FRAMES = 3;
+let shadowFrame = 0;
 
 const SPACE_COLOR = new THREE.Color('#02030a');
 const SKY_DAY = new THREE.Color('#8cc4f0');
@@ -231,5 +236,6 @@ renderer.setAnimationLoop(() => {
     if (timeLabel) timeLabel.textContent = formatHour(dayNight.localHour(controls.lon));
   }
 
+  if (shadowFrame++ % SHADOW_EVERY_FRAMES === 0) renderer.shadowMap.needsUpdate = true;
   renderer.render(scene, camera);
 });

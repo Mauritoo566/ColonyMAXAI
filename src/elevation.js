@@ -1,5 +1,13 @@
-import * as THREE from 'three';
 import { createNoise3D, fbm } from './noise.js';
+
+// Este módulo no usa Three.js: también se ejecuta dentro del Web Worker del terreno.
+
+function smoothstep(x, min, max) {
+  if (x <= min) return 0;
+  if (x >= max) return 1;
+  const t = (x - min) / (max - min);
+  return t * t * (3 - 2 * t);
+}
 
 // Todo el mundo está en metros, a escala real.
 export const RADIUS = 6_371_000;
@@ -27,13 +35,13 @@ export function elevation(x, y, z, octaves = 22) {
   if (e > 0) {
     // Cordilleras: ruido "ridged" que sólo actúa tierra adentro.
     const r = 1 - Math.abs(fbm(ridgeNoise, x * 3, y * 3, z * 3, Math.min(6, octaves)));
-    e += r * r * r * 0.35 * THREE.MathUtils.smoothstep(e, 0, 0.15);
+    e += r * r * r * 0.35 * smoothstep(e, 0, 0.15);
 
     // Colinas de pocos kilómetros: sólo se notan de cerca, así que sólo se calculan
     // en los trozos de terreno más detallados.
     if (octaves > 14) {
       const hills = fbm(hillNoise, x * 1500, y * 1500, z * 1500, Math.min(8, octaves - 14), 2, 0.45, 8);
-      e += hills * (250 / MAX_LAND_HEIGHT) * THREE.MathUtils.smoothstep(e, 0, 0.05);
+      e += hills * (250 / MAX_LAND_HEIGHT) * smoothstep(e, 0, 0.05);
     }
   }
   return e;
@@ -83,6 +91,12 @@ export function terrainZones() {
   return zones;
 }
 
+// Reemplaza todas las zonas (lo usa el Web Worker para copiar las del juego).
+export function setTerrainZones(list) {
+  zones.length = 0;
+  for (const z of list) zones.push({ ...z, dir: { x: z.dir.x, y: z.dir.y, z: z.dir.z } });
+}
+
 // Distancia en metros sobre la superficie (la cuerda: a estas distancias es igual al arco).
 export function zoneDistance(zone, x, y, z) {
   const dx = x - zone.dir.x;
@@ -96,7 +110,7 @@ export function applyTerrainZones(x, y, z, height) {
     const d = zoneDistance(zone, x, y, z);
     const outer = zone.flatRadius + zone.blendRadius;
     if (d >= outer) continue;
-    const t = 1 - THREE.MathUtils.smoothstep(d, zone.flatRadius, outer);
+    const t = 1 - smoothstep(d, zone.flatRadius, outer);
     height += (zone.height - height) * t;
   }
   return height;
@@ -111,8 +125,8 @@ export function zoneGround(x, y, z) {
     if (d > zone.flatRadius + zone.blendRadius) continue;
     // Borde irregular: el radio varía unos metros con un ruido de ~15 m.
     const wobble = edgeNoise(x * 420_000, y * 420_000, z * 420_000) * 5;
-    dirt = Math.max(dirt, 1 - THREE.MathUtils.smoothstep(d + wobble, zone.clearRadius * 0.7, zone.clearRadius));
-    trampled = Math.max(trampled, 1 - THREE.MathUtils.smoothstep(d + wobble, zone.clearRadius, zone.flatRadius + 6));
+    dirt = Math.max(dirt, 1 - smoothstep(d + wobble, zone.clearRadius * 0.7, zone.clearRadius));
+    trampled = Math.max(trampled, 1 - smoothstep(d + wobble, zone.clearRadius, zone.flatRadius + 6));
   }
   return { dirt, trampled };
 }

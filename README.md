@@ -43,7 +43,7 @@ Rendimiento: los grandes sistemas nubosos están divididos en zonas y sólo se d
 
 El planeta tiene el radio real de la Tierra (6.371 km) y todo se mide en metros. El relieve está exagerado ×2,5 para que las montañas se vean desde el espacio.
 
-El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: cada trozo tiene 24×24 celdas y, cuando la cámara se acerca, se divide en 4 trozos hijos con el doble de detalle, hasta celdas de unos 25 m. Los trozos se generan poco a poco (unos milisegundos por fotograma) para no congelar el juego.
+El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: cada trozo tiene 32×32 celdas y, cuando la cámara se acerca, se divide en 4 trozos hijos con el doble de detalle, hasta celdas de unos 10 m (unos 3 m cerca del campamento). Sólo se detalla lo que está en pantalla, y la geometría se calcula en Web Workers (`src/terrainWorker.js` + `src/chunkBuilder.js`) para que generar terreno no frene el juego; si el navegador no permite workers, se genera en el hilo principal con un tope de 5 ms por fotograma. Las sombras de las nubes se recalculan cada 3 fotogramas.
 
 ## Estructura
 
@@ -55,6 +55,8 @@ El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: ca
 - `src/daynight.js` – ciclo de día y noche
 - `src/water.js` – efecto del agua
 - `src/camp.js` – campamento inicial: modelo, colocación y guardado
-- `src/terrain.js` – terreno con nivel de detalle (LOD)
+- `src/terrain.js` – terreno con nivel de detalle (LOD) y reparto del trabajo a los workers
+- `src/chunkBuilder.js` – cálculo de la geometría de cada trozo (sin Three.js)
+- `src/terrainWorker.js` – worker que genera trozos en segundo plano
 - `src/elevation.js` – escala del mundo y función de relieve
 - `src/noise.js` – ruido simplex 3D usado para el relieve y las nubes

@@ -1,135 +1,114 @@
 import * as THREE from 'three';
-import {
-  RADIUS,
-  MAX_LAND_HEIGHT,
-  SEED,
-  elevation,
-  heightFromElevation,
-  moisture,
-  applyTerrainZones,
-  terrainZones,
-  zoneGround,
-  zoneDistance,
-} from './elevation.js';
-import { createNoise3D } from './noise.js';
+import { RADIUS, MAX_LAND_HEIGHT, elevation, heightFromElevation, terrainZones, zoneDistance } from './elevation.js';
+import { FACES, faceDirection, buildChunkData } from './chunkBuilder.js';
 import { createTerrainMaterial, setChunkWaveOffset, WAVE_TILE } from './water.js';
 
 // Terreno con nivel de detalle (LOD): la esfera se forma con las 6 caras de un cubo
 // y cada cara es un quadtree. Los trozos cercanos a la cámara se dividen en 4 hijos
-// más detallados; los lejanos se quedan con pocos polígonos.
+// más detallados; los lejanos se quedan con pocos polígonos. La geometría de cada
+// trozo se calcula en Web Workers (chunkBuilder.js) para no frenar el juego.
 
-const RESOLUTION = 24; // celdas por lado en cada trozo
 const MAX_LEVEL = 15; // en el nivel 15 cada celda mide ~13 m
 const DETAIL_MAX_LEVEL = 17; // cerca de un campamento: celdas de ~3 m
-const SPLIT_THRESHOLD = 0.3; // tamaño del trozo / distancia a la cámara
+const SPLIT_THRESHOLD = 0.6; // tamaño del trozo / distancia a la cámara (celdas de ~20 px)
 const MERGE_THRESHOLD = SPLIT_THRESHOLD * 0.8; // histéresis para evitar parpadeos
-const BUILD_BUDGET_MS = 8;
-
-const FACES = [
-  { n: [1, 0, 0], u: [0, 0, -1], v: [0, 1, 0] },
-  { n: [-1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] },
-  { n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, -1] },
-  { n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
-  { n: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] },
-  { n: [0, 0, -1], u: [-1, 0, 0], v: [0, 1, 0] },
-];
-
-const COLORS = {
-  sand: new THREE.Color('#d8c68f'),
-  grass: new THREE.Color('#4f8f3a'),
-  forest: new THREE.Color('#2f6b2c'),
-  desert: new THREE.Color('#c9a15e'),
-  rock: new THREE.Color('#7a6a58'),
-  snow: new THREE.Color('#f2f5f7'),
-  oceanDeep: new THREE.Color('#123f75'),
-  oceanShallow: new THREE.Color('#2f7fbf'),
-  ice: new THREE.Color('#e8f2f8'),
-  grassDry: new THREE.Color('#8fa64a'),
-  grassDark: new THREE.Color('#2e5f2a'),
-  dirt: new THREE.Color('#8a6a45'),
-  trampled: new THREE.Color('#6f8c40'),
-};
-
-// Ruido para las manchas de color del pasto (de cerca el verde uniforme se ve plano).
-const patchNoise = createNoise3D(SEED + 6);
-
-// Punto del cubo [-1,1]^3 -> dirección unitaria. Esta fórmula reparte las celdas
-// de forma más uniforme que normalizar directamente.
-function cubeToSphere(x, y, z, out) {
-  const x2 = x * x;
-  const y2 = y * y;
-  const z2 = z * z;
-  out[0] = x * Math.sqrt(1 - y2 / 2 - z2 / 2 + (y2 * z2) / 3);
-  out[1] = y * Math.sqrt(1 - z2 / 2 - x2 / 2 + (z2 * x2) / 3);
-  out[2] = z * Math.sqrt(1 - x2 / 2 - y2 / 2 + (x2 * y2) / 3);
-  return out;
-}
-
-function faceDirection(face, a, b, out) {
-  const { n, u, v } = face;
-  return cubeToSphere(
-    n[0] + u[0] * a + v[0] * b,
-    n[1] + u[1] * a + v[1] * b,
-    n[2] + u[2] * a + v[2] * b,
-    out,
-  );
-}
-
-// Número pseudoaleatorio estable a partir de una posición: la misma cara
-// siempre tiene el mismo tono aunque se regenere.
-function hash3(x, y, z) {
-  const s = Math.sin(x * 12989.8 + y * 78233.1 + z * 37719.7) * 43758.5453;
-  return s - Math.floor(s);
-}
-
-function faceColor(e, dir, slope, out) {
-  const lat = Math.abs(dir[1]);
-  if (e <= 0) {
-    if (lat > 0.93) return out.copy(COLORS.ice);
-    const depth = THREE.MathUtils.clamp(-e * 3, 0, 1);
-    return out.copy(COLORS.oceanShallow).lerp(COLORS.oceanDeep, depth);
-  }
-  if (lat > 0.9 || e > 0.62) return out.copy(COLORS.snow);
-  if (slope > 0.3 || e > 0.45) out.copy(COLORS.rock);
-  else if (e < 0.02) out.copy(COLORS.sand);
-  else {
-    const m = moisture(dir[0], dir[1], dir[2]);
-    if (m < -0.12 && lat < 0.55) out.copy(COLORS.desert);
-    else {
-      out.copy(m > 0.08 ? COLORS.forest : COLORS.grass);
-      // Manchas de pasto más seco o más oscuro, de ~300 m y de ~40 m.
-      const [x, y, z] = dir;
-      const p = patchNoise(x * 21_000, y * 21_000, z * 21_000) * 0.65 + patchNoise(x * 160_000, y * 160_000, z * 160_000) * 0.35;
-      out.lerp(p > 0 ? COLORS.grassDry : COLORS.grassDark, Math.min(1, Math.abs(p) * 0.9) * 0.45);
-    }
-  }
-  // Claro del campamento: tierra pisada en el centro y pasto pisado alrededor.
-  if (terrainZones().length) {
-    const g = zoneGround(dir[0], dir[1], dir[2]);
-    if (g.trampled > 0) out.lerp(COLORS.trampled, g.trampled * 0.35);
-    if (g.dirt > 0) out.lerp(COLORS.dirt, g.dirt);
-  }
-  return out;
-}
+const BUILD_BUDGET_MS = 5; // sin workers: tiempo máximo por fotograma generando trozos
+const JOBS_PER_WORKER = 2; // trozos encargados a la vez a cada worker
+const SORT_EVERY_FRAMES = 4; // reordenar la cola no hace falta en cada fotograma
 
 const tmpDir = [0, 0, 0];
 // Origen de las olas del agua: la cámara redondeada a múltiplos de WAVE_TILE.
 const waveOrigin = new THREE.Vector3();
-const tmpColor = new THREE.Color();
+
+// ---------------------------------------------------------------------------
+// Workers: generan la geometría en segundo plano
+// ---------------------------------------------------------------------------
+
+class WorkerPool {
+  constructor(onResult, onFailure) {
+    this.workers = [];
+    this.busy = [];
+    this.onResult = onResult;
+    this.onFailure = onFailure;
+    this.nextId = 1;
+    this.jobs = new Map(); // id -> { worker, node }
+    const count = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 4) - 1));
+    try {
+      for (let i = 0; i < count; i++) {
+        const worker = new Worker(new URL('./terrainWorker.js', import.meta.url), { type: 'module' });
+        worker.onmessage = (e) => this.finish(e.data);
+        worker.onerror = () => this.fail();
+        this.workers.push(worker);
+        this.busy.push(0);
+      }
+    } catch {
+      this.fail();
+    }
+  }
+
+  get available() {
+    return this.workers.length > 0;
+  }
+
+  get capacity() {
+    return this.workers.length * JOBS_PER_WORKER - this.jobs.size;
+  }
+
+  // Copia las zonas de terreno (campamento) a todos los workers. Los mensajes llegan
+  // en orden, así que los trozos encargados después ya usan las zonas nuevas.
+  syncZones(zones) {
+    const plain = zones.map((z) => ({ ...z, dir: { x: z.dir.x, y: z.dir.y, z: z.dir.z } }));
+    for (const w of this.workers) w.postMessage({ type: 'zones', zones: plain });
+  }
+
+  submit(node, params, zonesVersion) {
+    // El worker con menos trabajo.
+    let best = 0;
+    for (let i = 1; i < this.workers.length; i++) if (this.busy[i] < this.busy[best]) best = i;
+    const id = this.nextId++;
+    this.busy[best]++;
+    this.jobs.set(id, { worker: best, node });
+    this.workers[best].postMessage({ type: 'build', id, params, zonesVersion });
+  }
+
+  finish(data) {
+    const job = this.jobs.get(data.id);
+    if (!job) return;
+    this.jobs.delete(data.id);
+    this.busy[job.worker]--;
+    this.onResult(job.node, data);
+  }
+
+  // Si los workers no funcionan (navegador antiguo, restricciones), se vuelve a generar
+  // en el hilo principal y se devuelven los trabajos pendientes a la cola.
+  fail() {
+    for (const w of this.workers) w.terminate();
+    this.workers = [];
+    this.busy = [];
+    const pending = [...this.jobs.values()].map((j) => j.node);
+    this.jobs.clear();
+    this.onFailure(pending);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Nodos del quadtree
+// ---------------------------------------------------------------------------
 
 class Node {
-  constructor(face, level, a, b, size) {
-    this.face = face;
+  constructor(faceIndex, level, a, b, size) {
+    this.faceIndex = faceIndex;
     this.level = level;
     this.a = a;
     this.b = b;
     this.size = size;
     this.children = null;
     this.mesh = null;
-    this.queued = false;
+    this.queued = false; // en la cola o encargado a un worker
+    this.building = false; // encargado a un worker
     this.disposed = false;
 
-    faceDirection(face, a + size / 2, b + size / 2, tmpDir);
+    faceDirection(FACES[faceIndex], a + size / 2, b + size / 2, tmpDir);
     const h = heightFromElevation(elevation(tmpDir[0], tmpDir[1], tmpDir[2], 8));
     this.dir = new THREE.Vector3(tmpDir[0], tmpDir[1], tmpDir[2]).normalize();
     this.center = this.dir.clone().multiplyScalar(RADIUS + h);
@@ -137,14 +116,27 @@ class Node {
     this.worldSize = (size * RADIUS * Math.PI) / 4;
   }
 
+  params() {
+    return {
+      face: this.faceIndex,
+      level: this.level,
+      a: this.a,
+      b: this.b,
+      size: this.size,
+      center: [this.center.x, this.center.y, this.center.z],
+      worldSize: this.worldSize,
+    };
+  }
+
   split() {
     const half = this.size / 2;
     const l = this.level + 1;
+    const f = this.faceIndex;
     this.children = [
-      new Node(this.face, l, this.a, this.b, half),
-      new Node(this.face, l, this.a + half, this.b, half),
-      new Node(this.face, l, this.a, this.b + half, half),
-      new Node(this.face, l, this.a + half, this.b + half, half),
+      new Node(f, l, this.a, this.b, half),
+      new Node(f, l, this.a + half, this.b, half),
+      new Node(f, l, this.a, this.b + half, half),
+      new Node(f, l, this.a + half, this.b + half, half),
     ];
   }
 
@@ -164,179 +156,12 @@ class Node {
     this.children = null;
   }
 
-  build(material) {
-    const res = RESOLUTION;
-    const n = res + 1;
-    const octaves = Math.min(22, this.level + 8);
-    const pos = new Float64Array(n * n * 3);
-    const dirs = new Float64Array(n * n * 3);
-    const elev = new Float64Array(n * n);
-
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
-        const k = j * n + i;
-        faceDirection(this.face, this.a + (this.size * i) / res, this.b + (this.size * j) / res, tmpDir);
-        const e = elevation(tmpDir[0], tmpDir[1], tmpDir[2], octaves);
-        const r = RADIUS + applyTerrainZones(tmpDir[0], tmpDir[1], tmpDir[2], heightFromElevation(e));
-        dirs[k * 3] = tmpDir[0];
-        dirs[k * 3 + 1] = tmpDir[1];
-        dirs[k * 3 + 2] = tmpDir[2];
-        pos[k * 3] = tmpDir[0] * r;
-        pos[k * 3 + 1] = tmpDir[1] * r;
-        pos[k * 3 + 2] = tmpDir[2] * r;
-        elev[k] = e;
-      }
-    }
-
-    const triCount = res * res * 2 + res * 4 * 4;
-    const positions = new Float32Array(triCount * 9);
-    const colors = new Float32Array(triCount * 9);
-    const water = new Float32Array(triCount * 3);
-    const cx = this.center.x;
-    const cy = this.center.y;
-    const cz = this.center.z;
-    let t = 0;
-
-    const writeVertex = (x, y, z, w = -1) => {
-      // Posiciones relativas al centro del trozo: así caben en float32 sin perder precisión.
-      positions[t * 3] = x - cx;
-      positions[t * 3 + 1] = y - cy;
-      positions[t * 3 + 2] = z - cz;
-      tmpColor.toArray(colors, t * 3);
-      water[t] = w;
-      t++;
-    };
-
-    const emitTriangle = (i0, i1, i2) => {
-      let j1 = i1;
-      let j2 = i2;
-      const ax = pos[i0 * 3], ay = pos[i0 * 3 + 1], az = pos[i0 * 3 + 2];
-      let bx = pos[i1 * 3], by = pos[i1 * 3 + 1], bz = pos[i1 * 3 + 2];
-      let qx = pos[i2 * 3], qy = pos[i2 * 3 + 1], qz = pos[i2 * 3 + 2];
-
-      const ux = bx - ax, uy = by - ay, uz = bz - az;
-      const vx = qx - ax, vy = qy - ay, vz = qz - az;
-      let nx = uy * vz - uz * vy;
-      let ny = uz * vx - ux * vz;
-      let nz = ux * vy - uy * vx;
-      const len = Math.hypot(nx, ny, nz) || 1;
-      nx /= len; ny /= len; nz /= len;
-
-      tmpDir[0] = (dirs[i0 * 3] + dirs[i1 * 3] + dirs[i2 * 3]) / 3;
-      tmpDir[1] = (dirs[i0 * 3 + 1] + dirs[i1 * 3 + 1] + dirs[i2 * 3 + 1]) / 3;
-      tmpDir[2] = (dirs[i0 * 3 + 2] + dirs[i1 * 3 + 2] + dirs[i2 * 3 + 2]) / 3;
-      let up = nx * tmpDir[0] + ny * tmpDir[1] + nz * tmpDir[2];
-      if (up < 0) {
-        // Asegura que la cara mire hacia fuera del planeta.
-        [bx, qx] = [qx, bx];
-        [by, qy] = [qy, by];
-        [bz, qz] = [qz, bz];
-        [j1, j2] = [j2, j1];
-        up = -up;
-      }
-
-      const e = (elev[i0] + elev[i1] + elev[i2]) / 3;
-      let colorE = e;
-      if (e <= 0) {
-        // El tono del agua depende de la profundidad. Se calcula siempre con el mismo
-        // detalle (6 octavas) para que trozos vecinos de distinto nivel coincidan.
-        const l = Math.hypot(tmpDir[0], tmpDir[1], tmpDir[2]);
-        colorE = Math.min(-1e-9, elevation(tmpDir[0] / l, tmpDir[1] / l, tmpDir[2] / l, 6));
-      }
-      faceColor(colorE, tmpDir, 1 - up, tmpColor);
-      const k = 1 + (hash3(tmpDir[0], tmpDir[1], tmpDir[2]) - 0.5) * 0.12;
-      tmpColor.r *= k;
-      tmpColor.g *= k;
-      tmpColor.b *= k;
-
-      // Agua: 0 en los vértices que tocan tierra (espuma), 1 en agua abierta.
-      const isWater = e <= 0 && Math.abs(tmpDir[1]) <= 0.93;
-      const w = (k) => (isWater ? (elev[k] > 0 ? 0 : 1) : -1);
-      writeVertex(ax, ay, az, w(i0));
-      writeVertex(bx, by, bz, w(j1));
-      writeVertex(qx, qy, qz, w(j2));
-    };
-
-    for (let j = 0; j < res; j++) {
-      for (let i = 0; i < res; i++) {
-        const k00 = j * n + i;
-        const k10 = k00 + 1;
-        const k01 = k00 + n;
-        const k11 = k01 + 1;
-        // Alternar la diagonal da un patrón de triángulos más orgánico.
-        if ((i + j) % 2 === 0) {
-          emitTriangle(k00, k10, k11);
-          emitTriangle(k00, k11, k01);
-        } else {
-          emitTriangle(k00, k10, k01);
-          emitTriangle(k10, k11, k01);
-        }
-      }
-    }
-
-    // "Faldones": una tira de caras que baja desde el borde del trozo y tapa las
-    // grietas que aparecen entre trozos vecinos con distinto nivel de detalle.
-    const skirtDepth = Math.max(40, this.worldSize * 0.03);
-    const skirtVertexDirs = [];
-    const edges = [
-      (s) => s, // abajo
-      (s) => res * n + s, // arriba
-      (s) => s * n, // izquierda
-      (s) => s * n + res, // derecha
-    ];
-    for (const edge of edges) {
-      for (let s = 0; s < res; s++) {
-        const i0 = edge(s);
-        const i1 = edge(s + 1);
-        const e = (elev[i0] + elev[i1]) / 2;
-        tmpDir[0] = dirs[i0 * 3];
-        tmpDir[1] = dirs[i0 * 3 + 1];
-        tmpDir[2] = dirs[i0 * 3 + 2];
-        faceColor(e, tmpDir, 0, tmpColor);
-        // Si el borde es de agua, el faldón también: así brilla igual y no se nota.
-        const sw = e <= 0 && Math.abs(tmpDir[1]) <= 0.93 ? 1 : -1;
-
-        const ax = pos[i0 * 3], ay = pos[i0 * 3 + 1], az = pos[i0 * 3 + 2];
-        const bx = pos[i1 * 3], by = pos[i1 * 3 + 1], bz = pos[i1 * 3 + 2];
-        const dax = ax - dirs[i0 * 3] * skirtDepth;
-        const day = ay - dirs[i0 * 3 + 1] * skirtDepth;
-        const daz = az - dirs[i0 * 3 + 2] * skirtDepth;
-        const dbx = bx - dirs[i1 * 3] * skirtDepth;
-        const dby = by - dirs[i1 * 3 + 1] * skirtDepth;
-        const dbz = bz - dirs[i1 * 3 + 2] * skirtDepth;
-
-        writeVertex(ax, ay, az, sw);
-        writeVertex(bx, by, bz, sw);
-        writeVertex(dax, day, daz, sw);
-        writeVertex(bx, by, bz, sw);
-        writeVertex(dbx, dby, dbz, sw);
-        writeVertex(dax, day, daz, sw);
-        // Los mismos dos triángulos con la orientación contraria, para que el faldón
-        // se vea desde ambos lados sin usar DoubleSide (que invierte la normal).
-        writeVertex(ax, ay, az, sw);
-        writeVertex(dax, day, daz, sw);
-        writeVertex(bx, by, bz, sw);
-        writeVertex(bx, by, bz, sw);
-        writeVertex(dax, day, daz, sw);
-        writeVertex(dbx, dby, dbz, sw);
-        skirtVertexDirs.push(i0, i1, i0, i1, i1, i0, i0, i0, i1, i1, i0, i1);
-      }
-    }
-
+  createMesh({ positions, colors, normals, water }, material) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setAttribute('aWater', new THREE.BufferAttribute(water, 1));
-    // Normales por cara (geometría no indexada = aspecto facetado). Los faldones usan la
-    // normal "hacia arriba" para no verse como líneas oscuras entre trozos.
-    geometry.computeVertexNormals();
-    const normals = geometry.attributes.normal.array;
-    for (let v = res * res * 6; v < triCount * 3; v++) {
-      const k = skirtVertexDirs[v - res * res * 6];
-      normals[v * 3] = dirs[k * 3];
-      normals[v * 3 + 1] = dirs[k * 3 + 1];
-      normals[v * 3 + 2] = dirs[k * 3 + 2];
-    }
     geometry.computeBoundingSphere();
 
     const mesh = new THREE.Mesh(geometry, material);
@@ -346,25 +171,55 @@ class Node {
       setChunkWaveOffset(mat, this.center, waveOrigin);
     };
     mesh.visible = false;
-    this.mesh = mesh;
     return mesh;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Terreno
+// ---------------------------------------------------------------------------
 
 export class Terrain {
   constructor() {
     this.object = new THREE.Group();
     this.object.name = 'terrain';
     this.material = createTerrainMaterial();
-    this.roots = FACES.map((face) => new Node(face, 0, -1, -1, 2));
-    for (const root of this.roots) this.object.add(root.build(this.material));
     this.queue = [];
     this.camera = new THREE.Vector3();
+    this.frustum = new THREE.Frustum();
+    this.viewProjection = new THREE.Matrix4();
+    this.testSphere = new THREE.Sphere();
+    this.useFrustum = false;
     this.horizon = Infinity;
+    this.frame = 0;
+    this.zonesVersion = 0;
+
+    this.pool = new WorkerPool(
+      (node, data) => this.receive(node, data),
+      (nodes) => {
+        for (const n of nodes) {
+          n.building = false;
+          n.queued = false;
+        }
+      },
+    );
+    this.pool.syncZones(terrainZones());
+
+    // Las 6 caras del cubo se generan al empezar, así siempre hay algo que mostrar.
+    this.roots = FACES.map((_, i) => new Node(i, 0, -1, -1, 2));
+    for (const root of this.roots) this.install(root, buildChunkData(root.params()));
   }
 
-  update(cameraPosition) {
+  // "camera" (opcional) permite no detallar lo que queda fuera de la pantalla.
+  update(cameraPosition, camera = null) {
     this.camera.copy(cameraPosition);
+    this.useFrustum = !!camera;
+    if (camera) {
+      camera.updateMatrixWorld();
+      camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+      this.viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      this.frustum.setFromProjectionMatrix(this.viewProjection);
+    }
     waveOrigin.set(
       Math.round(cameraPosition.x / WAVE_TILE) * WAVE_TILE,
       Math.round(cameraPosition.y / WAVE_TILE) * WAVE_TILE,
@@ -373,10 +228,9 @@ export class Terrain {
     const altitude = Math.max(0, cameraPosition.length() - RADIUS);
     // Distancia al horizonte, más la distancia a la que se ve una montaña muy alta.
     this.horizon =
-      Math.sqrt(altitude * (2 * RADIUS + altitude)) +
-      Math.sqrt(MAX_LAND_HEIGHT * (2 * RADIUS + MAX_LAND_HEIGHT));
+      Math.sqrt(altitude * (2 * RADIUS + altitude)) + Math.sqrt(MAX_LAND_HEIGHT * (2 * RADIUS + MAX_LAND_HEIGHT));
 
-    this.frame = (this.frame || 0) + 1;
+    this.frame++;
     for (const root of this.roots) this.updateNode(root);
     this.processQueue();
   }
@@ -394,11 +248,13 @@ export class Terrain {
   // Marca para regenerar los trozos que tocan una zona (al fundar o mover el
   // campamento). Se siguen viendo los viejos hasta que los nuevos estén listos.
   invalidateZone(zone) {
+    this.zonesVersion++;
+    this.pool.syncZones(terrainZones());
     const reach = zone.flatRadius + zone.blendRadius + 20;
     const visit = (node) => {
       const d = zoneDistance(zone, node.dir.x, node.dir.y, node.dir.z) - node.worldSize * 0.75;
       if (d > reach) return;
-      if (node.mesh) node.stale = true;
+      node.stale = true;
       if (node.children) for (const c of node.children) visit(c);
     };
     for (const root of this.roots) visit(root);
@@ -406,6 +262,13 @@ export class Terrain {
 
   wantsSplit(node) {
     if (node.level >= this.maxLevelFor(node)) return false;
+    // Fuera de la pantalla no se crea más detalle (si ya existía, se conserva para no
+    // tener que regenerarlo al girar la cámara).
+    if (!node.children && this.useFrustum) {
+      this.testSphere.center.copy(node.center);
+      this.testSphere.radius = node.worldSize * 1.2 + 50;
+      if (!this.frustum.intersectsSphere(this.testSphere)) return false;
+    }
     const centerDistance = this.camera.distanceTo(node.center);
     if (centerDistance - node.worldSize > this.horizon) return false;
     const distance = Math.max(1, centerDistance - node.worldSize * 0.7);
@@ -441,17 +304,16 @@ export class Terrain {
     node.wantedFrame = this.frame;
     if (node.mesh) {
       node.mesh.visible = true;
-      if (node.stale && !node.queued) {
-        node.queued = true;
-        this.queue.push(node);
-      }
+      if (node.stale && !node.queued) this.enqueue(node);
       return true;
     }
-    if (!node.queued) {
-      node.queued = true;
-      this.queue.push(node);
-    }
+    if (!node.queued) this.enqueue(node);
     return false;
+  }
+
+  enqueue(node) {
+    node.queued = true;
+    this.queue.push(node);
   }
 
   processQueue() {
@@ -464,31 +326,66 @@ export class Terrain {
       return keep;
     });
     // Primero lo que más se ve: trozos grandes y cercanos (tamaño / distancia al borde).
-    const cam = this.camera;
-    for (const n of this.queue) {
-      n.priority = n.worldSize / Math.max(1, cam.distanceTo(n.center) - n.worldSize * 0.7);
+    if (this.frame % SORT_EVERY_FRAMES === 0 || this.queue.length < 64) {
+      const cam = this.camera;
+      for (const n of this.queue) {
+        n.priority = n.worldSize / Math.max(1, cam.distanceTo(n.center) - n.worldSize * 0.7);
+      }
+      this.queue.sort((p, q) => q.priority - p.priority);
     }
-    this.queue.sort((p, q) => q.priority - p.priority);
 
+    if (this.pool.available) {
+      // Encargar trabajos a los workers mientras tengan lugar.
+      let taken = 0;
+      while (taken < this.queue.length && this.pool.capacity > 0) {
+        const node = this.queue[taken++];
+        if (node.disposed || (node.mesh && !node.stale)) {
+          node.queued = false;
+          continue;
+        }
+        node.building = true;
+        node.stale = false;
+        this.pool.submit(node, node.params(), this.zonesVersion);
+      }
+      this.queue.splice(0, taken);
+      return;
+    }
+
+    // Sin workers: generar en el hilo principal con un tope de tiempo por fotograma.
     const start = performance.now();
     while (this.queue.length > 0 && performance.now() - start < BUILD_BUDGET_MS) {
       const node = this.queue.shift();
       node.queued = false;
       if (node.disposed || (node.mesh && !node.stale)) continue;
-      const old = node.mesh;
-      const mesh = node.build(this.material);
       node.stale = false;
-      if (old) {
-        // Reemplazo de un trozo desactualizado sin que parpadee.
-        mesh.visible = old.visible;
-        old.removeFromParent();
-        old.geometry.dispose();
-      }
-      this.object.add(mesh);
+      this.install(node, buildChunkData(node.params()));
     }
   }
 
+  // Llega la geometría de un worker.
+  receive(node, data) {
+    node.building = false;
+    node.queued = false;
+    if (node.disposed) return;
+    this.install(node, data);
+    // Si mientras tanto cambió una zona (campamento), regenerarlo con los datos nuevos.
+    if (data.zonesVersion !== this.zonesVersion) node.stale = true;
+  }
+
+  install(node, data) {
+    const old = node.mesh;
+    const mesh = node.createMesh(data, this.material);
+    if (old) {
+      // Reemplazo de un trozo desactualizado sin que parpadee.
+      mesh.visible = old.visible;
+      old.removeFromParent();
+      old.geometry.dispose();
+    }
+    node.mesh = mesh;
+    this.object.add(mesh);
+  }
+
   get pending() {
-    return this.queue.length;
+    return this.queue.length + this.pool.jobs.size;
   }
 }
