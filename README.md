@@ -21,6 +21,10 @@ Luego abre <http://localhost:8000>. (Abrir `index.html` directamente con doble c
 - Botón derecho, Shift + arrastrar o girar con dos dedos: rotar la vista
 - Botones Pausa / ×1 / ×10 / ×60: velocidad del paso del tiempo (a ×1 un día dura 6 minutos)
 
+## Campamento inicial
+
+Con el botón **Fundar campamento** entras en modo colocación: al mover el ratón aparece una vista previa del campamento con un anillo verde (se puede) o rojo con el motivo (agua, hielo o nieve, pendiente de más de ~27°, o cámara a más de 60 km). Un clic lo funda y la cámara vuela hasta él. Después aparecen **Ir al campamento** y **Reubicar**, y una etiqueta marca dónde está cuando lo miras desde lejos. El campamento se guarda en el navegador (`localStorage`), así que sigue ahí al volver a abrir el juego. El código está en `src/camp.js`.
+
 ## Día, noche y nubes
 
 El Sol gira alrededor del planeta; la hora que se muestra es la hora solar del lugar que estás mirando. De noche una luz de luna azulada y más luz ambiente mantienen el paisaje visible, y el cielo pasa por tonos de atardecer.
@@ -49,6 +53,8 @@ El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: ca
 - `src/planet.js` – planeta: terreno, nubes y atmósfera
 - `src/clouds.js` – nubes (sistemas grandes y cúmulos cercanos)
 - `src/daynight.js` – ciclo de día y noche
+- `src/water.js` – efecto del agua
+- `src/camp.js` – campamento inicial: modelo, colocación y guardado
 - `src/terrain.js` – terreno con nivel de detalle (LOD)
 - `src/elevation.js` – escala del mundo y función de relieve
 - `src/noise.js` – ruido simplex 3D usado para el relieve y las nubes

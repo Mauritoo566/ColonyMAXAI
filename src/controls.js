@@ -5,6 +5,16 @@ const MIN_CLEARANCE = 25; // metros mínimos sobre el suelo
 const MAX_ALTITUDE = RADIUS * 4;
 const MAX_LAT = THREE.MathUtils.degToRad(89);
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const MAX_TILT = THREE.MathUtils.degToRad(62); // vista de estrategia cerca del suelo
+
+// 0 = mirando desde el espacio, 1 = a ras de suelo.
+function lowness(clearance) {
+  return 1 - THREE.MathUtils.smoothstep(Math.log10(clearance), Math.log10(1_500), Math.log10(600_000));
+}
+
+function tiltFor(clearance) {
+  return MAX_TILT * lowness(clearance);
+}
 
 // Cámara de "globo terráqueo": arrastrar mueve el punto de interés sobre la superficie,
 // la rueda (o pellizcar) cambia la altitud de forma exponencial para poder pasar de
@@ -65,6 +75,23 @@ export class PlanetControls {
     this.target.altitude = THREE.MathUtils.clamp(ground + above, ground, MAX_ALTITUDE);
   }
 
+  // Lleva la cámara (con su suavizado) a mirar un punto de la superficie desde
+  // "clearance" metros de altura. Como cerca del suelo la cámara va inclinada, se
+  // coloca un poco por detrás del punto para que quede en el centro de la pantalla.
+  flyTo(targetDir, clearance) {
+    const lat = Math.asin(THREE.MathUtils.clamp(targetDir.y, -1, 1));
+    const lon = Math.atan2(targetDir.x, targetDir.z);
+    const back = clearance * Math.tan(tiltFor(clearance));
+    const h = this.target.heading;
+    const tLat = THREE.MathUtils.clamp(lat - (back * Math.cos(h)) / RADIUS, -MAX_LAT, MAX_LAT);
+    const tLon = lon - (back * Math.sin(h)) / RADIUS / Math.max(0.05, Math.cos(lat));
+    this.target.lat = tLat;
+    // Longitud equivalente más cercana a la actual, para no dar la vuelta larga.
+    this.target.lon = this.lon + THREE.MathUtils.euclideanModulo(tLon - this.lon + Math.PI, Math.PI * 2) - Math.PI;
+    const under = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - tLat, tLon);
+    this.target.altitude = Math.max(0, surfaceHeight(under)) + clearance;
+  }
+
   onPointerDown(e) {
     this.element.setPointerCapture(e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button, shift: e.shiftKey });
@@ -116,7 +143,9 @@ export class PlanetControls {
     this.dir.setFromSphericalCoords(1, Math.PI / 2 - this.lat, this.lon);
     this.groundHeight = surfaceHeight(this.dir);
     const minAltitude = this.groundHeight + MIN_CLEARANCE;
-    if (t.altitude < minAltitude) t.altitude = minAltitude;
+    // Si el terreno bajo la cámara es más alto que la altura deseada, se sube sólo
+    // mientras dure (no se cambia el objetivo): al pasar una montaña vuelve a bajar.
+    const targetAltitude = Math.max(t.altitude, minAltitude);
 
     this.lat += (t.lat - this.lat) * k;
     this.lon += (t.lon - this.lon) * k;
@@ -124,7 +153,7 @@ export class PlanetControls {
     // La altitud se suaviza en escala logarítmica para que el zoom sea igual de fluido
     // a 10.000 km que a 100 m.
     const cur = Math.log(Math.max(1, this.altitude - minAltitude + 1));
-    const tar = Math.log(Math.max(1, t.altitude - minAltitude + 1));
+    const tar = Math.log(Math.max(1, targetAltitude - minAltitude + 1));
     this.altitude = minAltitude - 1 + Math.exp(cur + (tar - cur) * k);
 
     this.placeCamera();
@@ -139,9 +168,8 @@ export class PlanetControls {
 
     // Inclinación: mirando hacia abajo desde el espacio, casi al horizonte cerca del suelo.
     const clearance = Math.max(1, this.altitude - this.groundHeight);
-    const lowness = 1 - THREE.MathUtils.smoothstep(Math.log10(clearance), Math.log10(1_500), Math.log10(600_000));
-    const tilt = THREE.MathUtils.degToRad(78) * lowness;
-    this.lowness = lowness;
+    this.lowness = lowness(clearance);
+    const tilt = tiltFor(clearance);
 
     camera.position.copy(dir).multiplyScalar(RADIUS + this.altitude);
     look.copy(dir).multiplyScalar(-Math.cos(tilt)).addScaledVector(forward, Math.sin(tilt));

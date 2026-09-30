@@ -86,16 +86,18 @@ export function createNoise3D(seed = 1) {
 }
 
 // Suma de varias octavas de ruido (fractal Brownian motion), resultado aprox. en [-1, 1].
-export function fbm(noise, x, y, z, octaves = 5, lacunarity = 2, gain = 0.5) {
+// "normOctaves" fija la normalización como si se sumaran esas octavas: así, calcular
+// menos octavas (en los trozos lejanos) sólo quita el detalle más fino y no cambia la
+// altura del resto del relieve.
+export function fbm(noise, x, y, z, octaves = 5, lacunarity = 2, gain = 0.5, normOctaves = octaves) {
   let sum = 0;
   let amp = 1;
   let freq = 1;
-  let norm = 0;
   for (let o = 0; o < octaves; o++) {
     sum += amp * noise(x * freq, y * freq, z * freq);
-    norm += amp;
     amp *= gain;
     freq *= lacunarity;
   }
+  const norm = (1 - Math.pow(gain, normOctaves)) / (1 - gain);
   return sum / norm;
 }

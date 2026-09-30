@@ -29,6 +29,20 @@
     </div>
     <div class="hud-help">Arrastrar: mover · Rueda o pellizcar: zoom · Botón derecho o Shift: girar</div>
   </div>
+  <div class="camp-panel">
+    <button type="button" id="found-camp" class="is-primary">Fundar campamento</button>
+    <button type="button" id="go-camp" hidden>Ir al campamento</button>
+    <button type="button" id="relocate-camp" hidden>Reubicar</button>
+    <button type="button" id="cancel-camp" hidden>Cancelar</button>
+  </div>
+  <div id="place-banner" class="place-banner" hidden>
+    Elige un lugar en tierra firme y haz clic para fundar el campamento · Esc para cancelar
+  </div>
+  <div id="place-tooltip" class="place-tooltip" hidden></div>
+  <div id="camp-marker" class="camp-marker" hidden>
+    <span class="camp-marker-label">Campamento</span>
+    <span class="camp-marker-pin"></span>
+  </div>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

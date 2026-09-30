@@ -8,7 +8,7 @@ import { createTerrainMaterial, setChunkWaveOffset, WAVE_TILE } from './water.js
 
 const RESOLUTION = 24; // celdas por lado en cada trozo
 const MAX_LEVEL = 15; // en el nivel 15 cada celda mide ~25 m
-const SPLIT_THRESHOLD = 0.22; // tamaño del trozo / distancia a la cámara
+const SPLIT_THRESHOLD = 0.3; // tamaño del trozo / distancia a la cámara
 const MERGE_THRESHOLD = SPLIT_THRESHOLD * 0.8; // histéresis para evitar parpadeos
 const BUILD_BUDGET_MS = 8;
 
@@ -306,6 +306,7 @@ class Node {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.copy(this.center);
     mesh.receiveShadow = true; // recibe la sombra de las nubes
+    mesh.userData.level = this.level;
     mesh.onBeforeRender = (renderer, scene, camera, geometry, mat) => {
       setChunkWaveOffset(mat, this.center, waveOrigin);
     };
@@ -340,6 +341,7 @@ export class Terrain {
       Math.sqrt(altitude * (2 * RADIUS + altitude)) +
       Math.sqrt(MAX_LAND_HEIGHT * (2 * RADIUS + MAX_LAND_HEIGHT));
 
+    this.frame = (this.frame || 0) + 1;
     for (const root of this.roots) this.updateNode(root);
     this.processQueue();
   }
@@ -378,6 +380,7 @@ export class Terrain {
   }
 
   show(node) {
+    node.wantedFrame = this.frame;
     if (node.mesh) {
       node.mesh.visible = true;
       return true;
@@ -391,9 +394,19 @@ export class Terrain {
 
   processQueue() {
     if (this.queue.length === 0) return;
-    this.queue = this.queue.filter((n) => !n.disposed);
+    // Fuera los trozos que ya no hacen falta (p. ej. zonas por las que la cámara sólo
+    // pasó de camino). Si vuelven a hacer falta se vuelven a pedir.
+    this.queue = this.queue.filter((n) => {
+      const keep = !n.disposed && n.wantedFrame === this.frame;
+      if (!keep) n.queued = false;
+      return keep;
+    });
+    // Primero lo que más se ve: trozos grandes y cercanos (tamaño / distancia al borde).
     const cam = this.camera;
-    this.queue.sort((p, q) => p.level - q.level || cam.distanceToSquared(p.center) - cam.distanceToSquared(q.center));
+    for (const n of this.queue) {
+      n.priority = n.worldSize / Math.max(1, cam.distanceTo(n.center) - n.worldSize * 0.7);
+    }
+    this.queue.sort((p, q) => q.priority - p.priority);
 
     const start = performance.now();
     while (this.queue.length > 0 && performance.now() - start < BUILD_BUDGET_MS) {

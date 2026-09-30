@@ -5,6 +5,7 @@ import { PlanetControls } from './controls.js';
 import { DayNight, formatHour } from './daynight.js';
 import { cloudFade } from './clouds.js';
 import { waterUniforms } from './water.js';
+import { CampSystem } from './camp.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
@@ -57,6 +58,22 @@ scene.add(stars);
 
 const planet = createPlanet();
 scene.add(planet.object);
+
+const camps = new CampSystem({
+  scene,
+  camera,
+  canvas,
+  controls,
+  ui: {
+    foundButton: document.getElementById('found-camp'),
+    goButton: document.getElementById('go-camp'),
+    relocateButton: document.getElementById('relocate-camp'),
+    cancelButton: document.getElementById('cancel-camp'),
+    banner: document.getElementById('place-banner'),
+    tooltip: document.getElementById('place-tooltip'),
+    marker: document.getElementById('camp-marker'),
+  },
+});
 
 // Estrellas pegadas a la cámara: siempre están "en el infinito".
 function createStars(count) {
@@ -203,6 +220,7 @@ renderer.setAnimationLoop(() => {
   updateSun(clearance);
   planet.update(delta, camera, dayNight.sunDirection, window.innerHeight);
   updateCloudFade(clearance);
+  camps.update(delta);
   updateSky(altitude);
 
   labelTimer -= delta;

@@ -21,7 +21,7 @@ export function elevation(x, y, z, octaves = 22) {
   const continents = fbm(elevationNoise, x * 1.1, y * 1.1, z * 1.1, 4);
   let e = continents * 1.5 - 0.12;
 
-  const detail = fbm(elevationNoise, x * 4 + 10, y * 4 + 10, z * 4 + 10, Math.max(1, octaves - 4), 2, 0.55);
+  const detail = fbm(elevationNoise, x * 4 + 10, y * 4 + 10, z * 4 + 10, Math.max(1, octaves - 4), 2, 0.55, 18);
   e += detail * 0.25;
 
   if (e > 0) {
@@ -32,7 +32,7 @@ export function elevation(x, y, z, octaves = 22) {
     // Colinas de pocos kilómetros: sólo se notan de cerca, así que sólo se calculan
     // en los trozos de terreno más detallados.
     if (octaves > 14) {
-      const hills = fbm(hillNoise, x * 1500, y * 1500, z * 1500, Math.min(8, octaves - 14), 2, 0.45);
+      const hills = fbm(hillNoise, x * 1500, y * 1500, z * 1500, Math.min(8, octaves - 14), 2, 0.45, 8);
       e += hills * (250 / MAX_LAND_HEIGHT) * THREE.MathUtils.smoothstep(e, 0, 0.05);
     }
   }
