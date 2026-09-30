@@ -11,6 +11,7 @@ export class DayNight {
     this.declination = THREE.MathUtils.degToRad(12); // el Sol no está en el ecuador: da estaciones
     // Colocamos el Sol de forma que en "startLon" sean las "startHour".
     this.subsolarLon = startLon - ((startHour - 12) / 24) * Math.PI * 2;
+    this.baseLon = this.subsolarLon; // dónde estaba el mediodía en el segundo 0
     this.speed = 1;
     this.elapsed = 0; // segundos de juego desde el comienzo
     this.startHour = startHour;
@@ -18,6 +19,7 @@ export class DayNight {
     // La Luna va algo por detrás del Sol en el cielo: el ángulo entre ambos marca la
     // fase (0 = luna nueva, π = luna llena). Empieza en cuarto creciente avanzado.
     this.moonPhase = 2.3;
+    this.baseMoonPhase = this.moonPhase;
     this.moonDeclination = THREE.MathUtils.degToRad(-6);
     this.moonDirection = new THREE.Vector3();
     this.update(0);
@@ -31,6 +33,20 @@ export class DayNight {
   advance(seconds) {
     this.elapsed += seconds;
     this.subsolarLon -= (seconds / DAY_LENGTH_SECONDS) * Math.PI * 2;
+    this.moonPhase += (seconds / (DAY_LENGTH_SECONDS * MOON_CYCLE_DAYS)) * Math.PI * 2;
+    this.updateDirections();
+  }
+
+  // Pone el reloj en un instante exacto (el reloj del mundo, igual para todos los
+  // jugadores: lo manda el servidor).
+  setElapsed(elapsed) {
+    this.elapsed = elapsed;
+    this.subsolarLon = this.baseLon - (elapsed / DAY_LENGTH_SECONDS) * Math.PI * 2;
+    this.moonPhase = this.baseMoonPhase + (elapsed / (DAY_LENGTH_SECONDS * MOON_CYCLE_DAYS)) * Math.PI * 2;
+    this.updateDirections();
+  }
+
+  updateDirections() {
     this.subsolarLon = THREE.MathUtils.euclideanModulo(this.subsolarLon, Math.PI * 2);
     const c = Math.cos(this.declination);
     this.sunDirection.set(
@@ -39,7 +55,6 @@ export class DayNight {
       c * Math.cos(this.subsolarLon),
     );
 
-    this.moonPhase += (seconds / (DAY_LENGTH_SECONDS * MOON_CYCLE_DAYS)) * Math.PI * 2;
     this.moonPhase = THREE.MathUtils.euclideanModulo(this.moonPhase, Math.PI * 2);
     const moonLon = this.subsolarLon - this.moonPhase;
     const cm = Math.cos(this.moonDeclination);
