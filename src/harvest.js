@@ -1,20 +1,20 @@
 import * as THREE from 'three';
 import { pickSurface } from './camp.js';
 import { Parts, mat, stick, v } from './modelKit.js';
-import { ZONE_RADIUS, zoneCapacity } from './colonists.js';
+import { fromRect, rectFromCorners } from './rect.js';
 
-// También dibuja las zonas de acopio al aire libre (modo "zone"): lo que no cabe en el
-// almacén se amontona ahí.
-//
-// Herramienta de recolección: el jugador arrastra sobre el terreno para marcar (o
-// desmarcar) un área; todo lo recolectable dentro queda marcado con un rombo y los
-// colonos disponibles van a recogerlo (ai.js, tarea "harvest").
+// Herramienta de áreas. Se arrastra sobre el terreno para dibujar un rectángulo pegado
+// al suelo:
+//  - modo "mark"/"unmark": marca (o desmarca) lo recolectable dentro; sobre cada recurso
+//    marcado aparece un pin (hacha, pico o cesta) y los colonos disponibles van a por él;
+//  - modo "zone": dibuja la zona de acopio al aire libre (sólo hay una; dibujar otra la
+//    reemplaza), donde se amontona lo que no cabe en el almacén.
 
 const MAX_MARKERS = 1500;
 const CLICK_RADIUS = 4; // un clic sin arrastrar marca lo que haya a 4 m
-const MAX_RADIUS = 60;
-const MARKER_HEIGHT = { wood: 7.5, food: 1.9, stone: 1.7 };
-const COLORS = { food: new THREE.Color('#f0a04b'), wood: new THREE.Color('#e3b25a'), stone: new THREE.Color('#c9c4ba') };
+const TOOL_COLORS = { mark: '#f2b24c', unmark: '#ef6457', zone: '#8fd0ff', bad: '#ef6457' };
+const MARKER_HEIGHT = { wood: 7.2, food: 1.5, stone: 1.4 };
+const MARKER_KINDS = ['wood', 'stone', 'food'];
 
 export class HarvestTool {
   constructor({ scene, camera, canvas, colony, controls }) {
@@ -24,40 +24,48 @@ export class HarvestTool {
     this.active = false;
     this.mode = 'mark'; // 'mark' | 'unmark' | 'zone'
     this.message = null; // aviso si la zona no se puede poner
-    this.drag = null; // { x, z, r } en coordenadas del campamento
+    this.drag = null; // esquinas { ax, az, bx, bz } y giro, en coordenadas del campamento
     this.onChange = null;
     this.raycaster = new THREE.Raycaster();
     this.ndc = new THREE.Vector2();
     this.tmp = new THREE.Vector3();
 
-    // Rombos sobre los recursos marcados (una sola malla instanciada).
-    const geometry = new THREE.OctahedronGeometry(0.45, 0);
-    geometry.scale(1, 1.5, 1);
-    const material = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.95, depthWrite: false });
-    this.markers = new THREE.InstancedMesh(geometry, material, MAX_MARKERS);
-    this.markers.count = 0;
-    this.markers.frustumCulled = false;
-    this.markers.renderOrder = 5;
+    // Íconos tipo "pin" sobre los recursos marcados: hacha roja en los árboles, pico en
+    // las piedras y cesta en la comida. Una malla instanciada por tipo, siempre de cara
+    // a la cámara y visibles aunque los tape una copa.
+    const geometry = new THREE.PlaneGeometry(1.2, 1.5);
+    geometry.translate(0, 0.75, 0); // la punta del pin abajo, sobre el recurso
+    this.markers = new THREE.Group();
+    this.icons = {};
+    for (const kind of MARKER_KINDS) {
+      const material = new THREE.MeshBasicMaterial({ map: iconTexture(kind), transparent: true, depthWrite: false, depthTest: false });
+      const mesh = new THREE.InstancedMesh(geometry, material, MAX_MARKERS);
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 7;
+      this.icons[kind] = mesh;
+      this.markers.add(mesh);
+    }
     this.markersDirty = true;
+    this.billboard = new THREE.Quaternion();
 
-    // Área que se está dibujando: disco translúcido con borde.
+    // Rectángulo que se está dibujando (relleno translúcido y borde, pegados al suelo).
     this.area = new THREE.Group();
     this.areaFill = new THREE.Mesh(
-      new THREE.CircleGeometry(1, 48),
-      new THREE.MeshBasicMaterial({ color: '#f2b24c', transparent: true, opacity: 0.18, depthWrite: false, depthTest: false, side: THREE.DoubleSide }),
+      new THREE.BufferGeometry(),
+      new THREE.MeshBasicMaterial({ color: '#f2b24c', transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }),
     );
-    this.areaRing = new THREE.Mesh(
-      new THREE.RingGeometry(0.97, 1, 64),
-      new THREE.MeshBasicMaterial({ color: '#f2b24c', transparent: true, opacity: 0.9, depthWrite: false, depthTest: false, side: THREE.DoubleSide }),
+    this.areaEdge = new THREE.Mesh(
+      new THREE.BufferGeometry(),
+      new THREE.MeshBasicMaterial({ color: '#f2b24c', transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide }),
     );
-    for (const m of [this.areaFill, this.areaRing]) {
-      m.rotation.x = -Math.PI / 2;
-      m.renderOrder = 6;
-      this.area.add(m);
-    }
+    this.areaFill.renderOrder = 6;
+    this.areaEdge.renderOrder = 6;
+    this.area.add(this.areaFill, this.areaEdge);
     this.area.visible = false;
 
-    // Zonas de acopio: círculo en el suelo y montones que crecen con lo guardado.
+    // Zona de acopio: suelo de tierra apisonada, borde de cuerda con estacas, un cartel y
+    // montones que crecen con lo guardado.
     this.zoneGroup = new THREE.Group();
     this.zonesDirty = true;
     this.pileTimer = 0;
@@ -84,13 +92,19 @@ export class HarvestTool {
       if (!this.active || e.button !== 0 || e.shiftKey) return;
       const p = this.groundAt(e.clientX, e.clientY);
       if (!p) return;
-      this.drag = { x: p.x, z: p.z, r: 0, sx: e.clientX, sy: e.clientY };
+      // Los lados del rectángulo siguen la vista: "a lo largo" es hacia donde mira la cámara.
+      const f = this.tmp.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+      f.applyQuaternion(this.colony.camp.object.quaternion.clone().invert());
+      const angle = Math.atan2(-f.x, f.z);
+      this.drag = { ax: p.x, az: p.z, bx: p.x, bz: p.z, angle, sx: e.clientX, sy: e.clientY };
       this.updateArea();
     });
     canvas.addEventListener('pointermove', (e) => {
       if (!this.drag) return;
       const p = this.groundAt(e.clientX, e.clientY);
-      if (p) this.drag.r = Math.min(MAX_RADIUS, Math.hypot(p.x - this.drag.x, p.z - this.drag.z));
+      if (!p) return;
+      this.drag.bx = p.x;
+      this.drag.bz = p.z;
       this.updateArea();
     });
     const finish = (e) => {
@@ -99,14 +113,17 @@ export class HarvestTool {
       this.drag = null;
       this.area.visible = false;
       const moved = Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 6;
+      const rect = rectFromCorners(d.ax, d.az, d.bx, d.bz, d.angle);
       if (this.mode === 'zone') {
-        const problem = colony.addZone(d.x, d.z, moved ? d.r : ZONE_RADIUS[0] + 2);
+        if (!moved) return;
+        const problem = colony.setZone(rect);
         this.message = problem;
         if (!problem) this.setActive(false);
         else this.onChange?.();
         return;
       }
-      colony.markArea(d.x, d.z, moved ? Math.max(d.r, CLICK_RADIUS) : CLICK_RADIUS, this.mode === 'mark');
+      if (moved) colony.markRect(rect, this.mode === 'mark');
+      else colony.markArea(d.ax, d.az, CLICK_RADIUS, this.mode === 'mark');
     };
     canvas.addEventListener('pointerup', finish);
     canvas.addEventListener('pointercancel', finish);
@@ -143,20 +160,23 @@ export class HarvestTool {
     const camp = this.colony.camp;
     if (!d || !camp) return;
     if (this.area.parent !== camp.object) camp.object.add(this.area);
-    let r = Math.max(d.r, CLICK_RADIUS);
-    let color = this.mode === 'mark' ? '#f2b24c' : '#ef6457';
-    if (this.mode === 'zone') {
-      r = Math.min(ZONE_RADIUS[1], Math.max(ZONE_RADIUS[0], d.r));
-      color = this.colony.zoneProblem(d.x, d.z, r) ? '#ef6457' : '#8fd0ff';
+    const rect = rectFromCorners(d.ax, d.az, d.bx, d.bz, d.angle);
+    if (rect.hw < 0.25 && rect.hd < 0.25) {
+      this.area.visible = false;
+      return;
     }
-    this.area.position.set(d.x, this.colony.heightAt(d.x, d.z) - camp.height + 0.4, d.z);
-    this.area.scale.setScalar(r);
+    let color = TOOL_COLORS[this.mode];
+    if (this.mode === 'zone' && this.colony.zoneProblem(rect)) color = TOOL_COLORS.bad;
+    this.areaFill.geometry.dispose();
+    this.areaFill.geometry = groundRect(this.colony, rect, 0.25);
+    this.areaEdge.geometry.dispose();
+    this.areaEdge.geometry = groundFrame(this.colony, rect, 0.3, 0.35);
     this.areaFill.material.color.set(color);
-    this.areaRing.material.color.set(color);
+    this.areaEdge.material.color.set(color);
     this.area.visible = true;
   }
 
-  // Círculos de las zonas y montones según lo guardado al aire libre.
+  // La zona de acopio y sus montones (se rehace cuando cambia la zona o lo guardado).
   updateZones(delta) {
     const colony = this.colony;
     const camp = colony.camp;
@@ -175,44 +195,72 @@ export class HarvestTool {
       this.zoneGroup.remove(child);
       if (child.userData.own) child.geometry.dispose();
     }
-    const kinds = ['wood', 'stone', 'food', 'fiber', 'water'];
-    const total = colony.outdoorCapacity() || 1;
-    colony.zones.forEach((zone, zi) => {
-      const y = colony.heightAt(zone.x, zone.z) - camp.height + 0.08;
-      // Borde de estacas y cuerda.
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(zone.r - 0.18, zone.r, 48),
-        new THREE.MeshBasicMaterial({ color: '#d9c08a', transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }),
-      );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(zone.x, y + 0.05, zone.z);
-      ring.userData.own = true;
-      this.zoneGroup.add(ring);
-      const posts = Math.max(8, Math.round(zone.r * 1.6));
-      for (let k = 0; k < posts; k++) {
-        const a = (k / posts) * Math.PI * 2;
-        const px = zone.x + Math.cos(a) * zone.r;
-        const pz = zone.z + Math.sin(a) * zone.r;
-        const post = new THREE.Mesh(this.postGeometry ??= postGeometry(), this.pileMaterial);
-        post.position.set(px, colony.heightAt(px, pz) - camp.height, pz);
-        this.zoneGroup.add(post);
+    const zone = colony.zones[0];
+    if (!zone) return;
+    const ground = (x, z) => colony.heightAt(x, z) - camp.height;
+    const own = (mesh) => {
+      mesh.userData.own = true;
+      this.zoneGroup.add(mesh);
+      return mesh;
+    };
+    // Suelo de tierra apisonada y borde de cuerda clara.
+    this.zoneFloorMaterial ??= new THREE.MeshBasicMaterial({ color: '#7a5a34', transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
+    this.zoneEdgeMaterial ??= new THREE.MeshBasicMaterial({ color: '#e8d6a8', side: THREE.DoubleSide });
+    own(new THREE.Mesh(groundRect(colony, zone, 0.06), this.zoneFloorMaterial)).renderOrder = 1;
+    own(new THREE.Mesh(groundFrame(colony, zone, 0.12, 0.22), this.zoneEdgeMaterial));
+    // Estacas cada ~4 m por el borde (y siempre en las esquinas).
+    this.postGeometry ??= postGeometry();
+    const { hw, hd } = zone;
+    const posts = [];
+    for (const [au, av, bu, bv, len] of [
+      [-hw, -hd, hw, -hd, 2 * hw],
+      [hw, -hd, hw, hd, 2 * hd],
+      [hw, hd, -hw, hd, 2 * hw],
+      [-hw, hd, -hw, -hd, 2 * hd],
+    ]) {
+      const n = Math.max(1, Math.round(len / 4));
+      for (let k = 0; k < n; k++) posts.push(fromRect(zone, au + ((bu - au) * k) / n, av + ((bv - av) * k) / n));
+    }
+    for (const { x, z } of posts.slice(0, 400)) {
+      const post = new THREE.Mesh(this.postGeometry, this.pileMaterial);
+      post.position.set(x, ground(x, z), z);
+      this.zoneGroup.add(post);
+    }
+    // Cartel "ACOPIO" en una esquina, para no confundirla con otra cosa.
+    this.signGeometry ??= signGeometry();
+    this.signMaterial ??= new THREE.MeshStandardMaterial({ map: signTexture(), roughness: 0.9 });
+    const sign = new THREE.Mesh(this.signGeometry, [this.pileMaterial, this.signMaterial]);
+    const corner = fromRect(zone, -hw + 0.6, -hd + 0.6);
+    sign.position.set(corner.x, ground(corner.x, corner.z), corner.z);
+    sign.rotation.y = -zone.angle + Math.PI; // mirando hacia la cámara que la dibujó
+    this.zoneGroup.add(sign);
+
+    // Montones: la zona se divide en celdas de 3 m; cada montón guarda hasta 25 unidades.
+    const CELL = 3;
+    const cols = Math.max(1, Math.floor((2 * hw) / CELL));
+    const rows = Math.max(1, Math.floor((2 * hd) / CELL));
+    const cells = cols * rows;
+    const piles = [];
+    for (const kind of ['wood', 'stone', 'food', 'fiber', 'water']) {
+      let amount = colony.outdoor[kind] ?? 0;
+      while (amount >= 0.5) {
+        const n = Math.min(25, amount);
+        piles.push([kind, n]);
+        amount -= n;
       }
-      // Cada recurso ocupa su sector de la zona; el montón crece con la cantidad.
-      const share = zoneCapacity(zone) / total;
-      kinds.forEach((kind, ki) => {
-        const amount = (colony.outdoor[kind] ?? 0) * share;
-        if (amount < 0.5) return;
-        const a = (ki / kinds.length) * Math.PI * 2 + zi;
-        const d = zone.r * 0.5;
-        const px = zone.x + Math.cos(a) * d;
-        const pz = zone.z + Math.sin(a) * d;
-        const pile = new THREE.Mesh(this.pileGeometry[kind], this.pileMaterial);
-        const scale = Math.min(zone.r * 0.32, 0.5 + Math.sqrt(amount) * 0.22);
-        pile.scale.setScalar(scale);
-        pile.rotation.y = a;
-        pile.position.set(px, colony.heightAt(px, pz) - camp.height, pz);
-        this.zoneGroup.add(pile);
-      });
+    }
+    const perCell = Math.max(1, Math.ceil(piles.length / cells));
+    const cellSize = Math.min((2 * hw) / cols, (2 * hd) / rows);
+    piles.forEach(([kind, n], i) => {
+      const cell = Math.floor(i / perCell);
+      const u = -hw + ((2 * hw) / cols) * ((cell % cols) + 0.5);
+      const v = -hd + ((2 * hd) / rows) * ((Math.floor(cell / cols) % rows) + 0.5);
+      const { x, z } = fromRect(zone, u, v);
+      const pile = new THREE.Mesh(this.pileGeometry[kind], this.pileMaterial);
+      pile.scale.setScalar((0.55 + Math.sqrt(n / 25) * 0.6) * Math.min(1, (cellSize / CELL) * 1.1) * Math.sqrt(perCell));
+      pile.rotation.y = -zone.angle + ((i % 2) * Math.PI) / 2;
+      pile.position.set(x, ground(x, z), z);
+      this.zoneGroup.add(pile);
     });
   }
 
@@ -231,24 +279,30 @@ export class HarvestTool {
     }
     if (this.markersDirty) {
       this.markersDirty = false;
-      this.list = this.colony.spots.filter((s) => s.marked && !s.gone).slice(0, MAX_MARKERS);
-      this.baseY = this.list.map((s) => this.colony.heightAt(s.x, s.z) - camp.height + (MARKER_HEIGHT[s.kind] ?? 2));
-      this.list.forEach((s, i) => this.markers.setColorAt(i, COLORS[s.kind] ?? COLORS.food));
-      this.markers.count = this.list.length;
-      if (this.markers.instanceColor) this.markers.instanceColor.needsUpdate = true;
+      this.lists = {};
+      for (const kind of MARKER_KINDS) {
+        this.lists[kind] = this.colony.spots
+          .filter((s) => s.marked && !s.gone && s.kind === kind)
+          .slice(0, MAX_MARKERS)
+          .map((s) => ({ s, y: this.colony.heightAt(s.x, s.z) - camp.height + MARKER_HEIGHT[kind] }));
+        this.icons[kind].count = this.lists[kind].length;
+      }
     }
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), time * 1.5);
+    // De cara a la cámara (en el sistema del campamento).
+    this.billboard.copy(camp.object.quaternion).invert().multiply(this.camera.quaternion);
     // Más grandes de lejos, para que se sigan viendo.
-    const far = THREE.MathUtils.clamp(this.camera.position.distanceTo(camp.object.position) / 45, 1, 8);
-    const one = new THREE.Vector3(far, far, far);
+    const far = THREE.MathUtils.clamp(this.camera.position.distanceTo(camp.object.position) / 40, 1, 9);
+    const size = new THREE.Vector3(far, far, far);
+    const m = new THREE.Matrix4();
     const pos = new THREE.Vector3();
-    for (let i = 0; i < this.list.length; i++) {
-      const s = this.list[i];
-      pos.set(s.x, this.baseY[i] + (far - 1) * 0.7 + Math.sin(time * 2.2 + i) * 0.15, s.z);
-      this.markers.setMatrixAt(i, m.compose(pos, q, one));
+    for (const kind of MARKER_KINDS) {
+      const mesh = this.icons[kind];
+      this.lists[kind].forEach(({ s, y }, i) => {
+        pos.set(s.x, y + Math.sin(time * 2.4 + i * 1.7) * 0.12 * far, s.z);
+        mesh.setMatrixAt(i, m.compose(pos, this.billboard, size));
+      });
+      mesh.instanceMatrix.needsUpdate = true;
     }
-    this.markers.instanceMatrix.needsUpdate = true;
   }
 }
 
@@ -300,4 +354,191 @@ function waterPile(p) {
     p.add(new THREE.CylinderGeometry(0.26, 0.2, 0.5, 8), '#a8583a', mat(x, 0.25, z));
     p.add(new THREE.CircleGeometry(0.2, 8), '#2a4a66', mat(x, 0.51, z, -Math.PI / 2));
   }
+}
+
+// ---- Íconos de recolección --------------------------------------------------
+
+// Pin redondo con un dibujo blanco: hacha (árboles), pico (piedras), cesta (comida).
+function iconTexture(kind) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 160;
+  const g = canvas.getContext('2d');
+  const color = { wood: '#d8352a', stone: '#4f6f8a', food: '#3f8f45' }[kind];
+  // Sombra, punta y círculo.
+  g.fillStyle = 'rgba(0,0,0,0.35)';
+  g.beginPath();
+  g.ellipse(64, 154, 14, 4, 0, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = color;
+  g.strokeStyle = '#ffffff';
+  g.lineWidth = 7;
+  g.beginPath();
+  g.moveTo(64, 150);
+  g.lineTo(36, 100);
+  g.arc(64, 62, 52, Math.PI * 0.72, Math.PI * 0.28);
+  g.closePath();
+  g.fill();
+  g.stroke();
+  g.fillStyle = '#ffffff';
+  g.strokeStyle = '#ffffff';
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  if (kind === 'wood') {
+    // Hacha: mango inclinado y hoja curva.
+    g.lineWidth = 10;
+    g.beginPath();
+    g.moveTo(44, 100);
+    g.lineTo(80, 30);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(70, 30);
+    g.quadraticCurveTo(84, 18, 102, 30);
+    g.quadraticCurveTo(108, 50, 96, 70);
+    g.quadraticCurveTo(86, 56, 68, 52);
+    g.closePath();
+    g.fill();
+  } else if (kind === 'stone') {
+    // Pico: mango y cabeza arqueada.
+    g.lineWidth = 10;
+    g.beginPath();
+    g.moveTo(42, 100);
+    g.lineTo(78, 36);
+    g.stroke();
+    g.lineWidth = 11;
+    g.beginPath();
+    g.moveTo(40, 40);
+    g.quadraticCurveTo(78, 12, 108, 58);
+    g.stroke();
+  } else {
+    // Cesta con bayas.
+    g.beginPath();
+    g.arc(64, 60, 30, 0, Math.PI);
+    g.closePath();
+    g.fill();
+    g.lineWidth = 6;
+    g.beginPath();
+    g.arc(64, 60, 24, Math.PI, 0);
+    g.stroke();
+    g.fillStyle = '#ffd1d6';
+    for (const [x, y] of [[52, 54], [66, 50], [78, 55], [59, 44]]) {
+      g.beginPath();
+      g.arc(x, y, 7, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.strokeStyle = color;
+    g.lineWidth = 3;
+    for (const x of [48, 64, 80]) {
+      g.beginPath();
+      g.moveTo(x, 66);
+      g.lineTo(x, 84);
+      g.stroke();
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+// ---- Rectángulos pegados al terreno ---------------------------------------------
+
+// Malla del rectángulo siguiendo el relieve (a "lift" metros sobre el suelo). "box"
+// elige una parte del rectángulo en sus coordenadas (u, v); por defecto, todo.
+function groundRect(colony, rect, lift, box = { u0: -rect.hw, u1: rect.hw, v0: -rect.hd, v1: rect.hd }) {
+  const w = box.u1 - box.u0;
+  const d = box.v1 - box.v0;
+  const nx = Math.min(60, Math.max(1, Math.ceil(w / 1.5)));
+  const nz = Math.min(60, Math.max(1, Math.ceil(d / 1.5)));
+  const base = colony.camp.height;
+  const pos = [];
+  for (let j = 0; j <= nz; j++) {
+    for (let i = 0; i <= nx; i++) {
+      const { x, z } = fromRect(rect, box.u0 + (w * i) / nx, box.v0 + (d * j) / nz);
+      pos.push(x, colony.heightAt(x, z) - base + lift, z);
+    }
+  }
+  const index = [];
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const a = j * (nx + 1) + i;
+      index.push(a, a + nx + 1, a + 1, a + 1, a + nx + 1, a + nx + 2);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(index);
+  return g;
+}
+
+// Marco del rectángulo: cuatro tiras de "width" metros que siguen el relieve.
+function groundFrame(colony, rect, lift, width) {
+  const { hw, hd } = rect;
+  const wu = Math.min(width, hw);
+  const wv = Math.min(width, hd);
+  const strips = [
+    { u0: -hw, u1: hw, v0: -hd, v1: -hd + wv },
+    { u0: -hw, u1: hw, v0: hd - wv, v1: hd },
+    { u0: -hw, u1: -hw + wu, v0: -hd, v1: hd },
+    { u0: hw - wu, u1: hw, v0: -hd, v1: hd },
+  ];
+  const pos = [];
+  const index = [];
+  for (const box of strips) {
+    const g = groundRect(colony, rect, lift, box);
+    const offset = pos.length / 3;
+    pos.push(...g.attributes.position.array);
+    for (const k of g.index.array) index.push(k + offset);
+    g.dispose();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(index);
+  return g;
+}
+
+// Cartel de la zona: poste y tabla (la tabla lleva la textura con el texto).
+function signGeometry() {
+  const post = new THREE.CylinderGeometry(0.06, 0.07, 1.6, 5);
+  post.translate(0, 0.8, 0);
+  const board = new THREE.BoxGeometry(1.3, 0.5, 0.06);
+  board.translate(0, 1.45, 0.07);
+  const g = new THREE.BufferGeometry();
+  const geoms = [post.toNonIndexed(), board.toNonIndexed()];
+  const pos = [];
+  const normal = [];
+  const uv = [];
+  const color = [];
+  geoms.forEach((geo, gi) => {
+    pos.push(...geo.attributes.position.array);
+    normal.push(...geo.attributes.normal.array);
+    uv.push(...geo.attributes.uv.array);
+    for (let k = 0; k < geo.attributes.position.count; k++) color.push(...(gi ? [1, 1, 1] : [0.48, 0.32, 0.19]));
+  });
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(color, 3));
+  g.addGroup(0, geoms[0].attributes.position.count, 0);
+  g.addGroup(geoms[0].attributes.position.count, geoms[1].attributes.position.count, 1);
+  return g;
+}
+
+function signTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 100;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#9a7446';
+  g.fillRect(0, 0, 256, 100);
+  g.fillStyle = 'rgba(0,0,0,0.12)';
+  for (let y = 12; y < 100; y += 22) g.fillRect(0, y, 256, 3);
+  g.fillStyle = '#2a1a0c';
+  g.font = 'bold 44px Georgia, serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('ACOPIO', 128, 52);
+  const t = new THREE.CanvasTexture(canvas);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }

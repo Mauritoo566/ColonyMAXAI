@@ -1,6 +1,6 @@
 import { BUILDING_TYPES, BUILD_CATEGORIES, STOCK_NAMES, levelOf } from './buildings.js';
 import { AGES, ageInfo } from './ages.js';
-import { FOOD_SPOIL_SECONDS, ZONE_RADIUS, zoneCapacity } from './colonists.js';
+import { FOOD_SPOIL_SECONDS, zoneCapacity } from './colonists.js';
 
 const DAY_SECONDS = 360;
 import { SKILLS } from './needs.js';
@@ -77,7 +77,7 @@ export class BuildUI {
       <button type="button" class="build-item build-item--zone" data-zone data-cat="storage" aria-pressed="false"
         title="Dibuja un área al aire libre donde se amontona lo que no cabe en el almacén. La comida ahí se pudre.">
         <span class="build-icon">${icon('stone')}</span>
-        <span class="build-name">Zona al aire libre</span>
+        <span class="build-name">Zona de acopio</span>
         <span class="build-cost"><span>Gratis</span></span>
       </button>` + BUILD_CATEGORIES.filter((cat) => !BUILDING_TYPES.some((d) => d.category === cat.id)).map(
       (cat) => `
@@ -119,9 +119,11 @@ export class BuildUI {
     this.harvestCount = $('harvest-count');
     this.harvestTools = $('harvest-tools');
     this.harvestHint = $('harvest-hint');
+    this.orders = $('orders');
     this.harvestButton.addEventListener('click', () => {
       if (buildings.placing) buildings.stopPlacing();
-      harvest.setActive(!harvest.active);
+      const on = !(harvest.active && harvest.mode !== 'zone');
+      harvest.setActive(on, 'mark');
     });
     for (const button of this.harvestTools.querySelectorAll('[data-harvest-mode]')) {
       button.addEventListener('click', () => harvest.setActive(true, button.dataset.harvestMode));
@@ -129,6 +131,7 @@ export class BuildUI {
     $('harvest-clear').addEventListener('click', () => colony.clearMarks());
     harvest.onChange = () => this.refreshHarvest();
     buildings.onPlacingStart = () => harvest.setActive(false);
+    this.refreshHarvest();
 
     // Clic en la fila del almacén (tarjeta de la colonia): abrir la ficha del almacén.
     this.stock.addEventListener('click', () => {
@@ -151,21 +154,13 @@ export class BuildUI {
     this.harvestCount.hidden = n === 0;
     this.harvestCount.textContent = String(n);
     this.harvestTools.hidden = !h.active || zoning;
-    this.harvestTools.querySelector('.harvest-modes').hidden = zoning;
     if (zoning) {
-      // Dibujando una zona: se sigue viendo la pestaña Almacenes, con el aviso abajo.
+      // Dibujando la zona de acopio: se ve la pestaña Almacenes, con el aviso abajo.
       this.setTab('storage', false);
       this.showZoneHint(h.message);
       return;
     }
     this.showZoneHint(null, true);
-    if (h.active) {
-      this.list.hidden = true;
-      this.bar.classList.remove('is-collapsed');
-      for (const tab of this.tabs.children) tab.setAttribute('aria-selected', 'false');
-    } else {
-      this.setTab(this.collapsed ? null : this.tab, false);
-    }
     for (const b of this.harvestTools.querySelectorAll('[data-harvest-mode]')) b.setAttribute('aria-pressed', String(b.dataset.harvestMode === h.mode));
     this.harvestHint.innerHTML =
       h.mode === 'mark'
@@ -185,12 +180,12 @@ export class BuildUI {
     const hours = Math.round((FOOD_SPOIL_SECONDS / DAY_SECONDS) * 24);
     el.innerHTML = problem
       ? `<strong style="color:var(--bad)">${problem}.</strong> Prueba en otro lugar.`
-      : `<strong>Arrastra sobre el terreno</strong> para dibujar la zona (de ${ZONE_RADIUS[0]} a ${ZONE_RADIUS[1]} m de radio). Lo que no quepa en el almacén se amontonará ahí; la comida al aire libre se pudre en ${hours} h. Esc para cancelar.`;
+      : `<strong>Arrastra sobre el terreno</strong> para dibujar la zona de acopio, del tamaño que quieras. Hay una sola: ${this.colony.zones.length ? 'la nueva reemplaza a la actual' : 'lo que no quepa en el almacén se amontonará ahí'}. La comida al aire libre se pudre en ${hours} h. Esc para cancelar.`;
   }
 
   // Elige la categoría visible (null = barra plegada).
   setTab(id, closeTool = true) {
-    if (closeTool && this.harvest?.active) this.harvest.setActive(false);
+    if (closeTool && this.harvest?.active && this.harvest.mode === 'zone') this.harvest.setActive(false);
     this.collapsed = !id;
     if (id) this.tab = id;
     for (const tab of this.tabs.children) tab.setAttribute('aria-selected', String(!this.collapsed && tab.dataset.cat === this.tab));
@@ -210,6 +205,7 @@ export class BuildUI {
     this.timer = REFRESH_SECONDS;
     const hasCamp = !!this.colony.camp;
     this.bar.hidden = !hasCamp;
+    this.orders.hidden = !hasCamp;
     if (!hasCamp) {
       this.panel.hidden = true;
       return;
@@ -279,13 +275,13 @@ export class BuildUI {
                ${next ? `<p class="reason" style="color:var(--warn)">${Math.ceil(next.amount)} de comida se pudre en ${hoursLeft < 1 ? 'menos de 1 h' : `${Math.round(hoursLeft)} h`}. Se come primero lo que está afuera.</p>` : ''}
                <ul class="zone-list">
                  ${colony.zones
-                   .map((z, i) => `<li><span>Zona ${i + 1} · ${Math.round(z.r)} m · cabe ${zoneCapacity(z)}</span><button type="button" class="btn" data-remove-zone="${i}">Quitar</button></li>`)
+                   .map((z) => `<li><span>Zona de acopio · ${Math.round(z.hw * 2)} × ${Math.round(z.hd * 2)} m · cabe ${zoneCapacity(z)}</span><button type="button" class="btn" data-remove-zone>Quitar</button></li>`)
                    .join('')}
                </ul>`
-            : '<p class="reason">No hay zonas. Dibuja una para que lo que no cabe en el almacén se amontone al aire libre en vez de que los colonos dejen de trabajar.</p>'
+            : '<p class="reason">No hay zona de acopio. Dibuja una para que lo que no cabe en el almacén se amontone al aire libre en vez de que los colonos dejen de trabajar.</p>'
         }
         ${colony.spoiled >= 1 ? `<p class="reason">Comida perdida por pudrirse: ${Math.floor(colony.spoiled)}</p>` : ''}
-        <button type="button" class="btn" data-new-zone>${icon('stone')}Dibujar zona al aire libre</button>
+        <button type="button" class="btn" data-new-zone>${icon('stone')}${colony.zones.length ? 'Cambiar la zona de acopio' : 'Dibujar zona de acopio'}</button>
       </section>`;
   }
 
@@ -334,7 +330,7 @@ export class BuildUI {
       </div>`;
     this.panel.querySelector('[data-close]').addEventListener('click', () => this.buildings.select(null));
     for (const button of this.panel.querySelectorAll('[data-remove-zone]')) {
-      button.addEventListener('click', () => this.colony.removeZone(Number(button.dataset.removeZone)));
+      button.addEventListener('click', () => this.colony.removeZone());
     }
     this.panel.querySelector('[data-new-zone]')?.addEventListener('click', () => {
       this.buildings.select(null);

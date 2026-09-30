@@ -5,6 +5,7 @@ import { pickSurface } from './camp.js';
 import { Parts, mat, stick, v } from './modelKit.js';
 import { hasTrait, addLog, SKILLS } from './needs.js';
 import { ageInfo } from './ages.js';
+import { rectDistance } from './rect.js';
 
 // Edificios de la colonia. El jugador elige qué construir en la barra de construcción y
 // dónde; los colonos lo construyen (los más hábiles, más rápido) y, al terminarlo, la
@@ -544,7 +545,7 @@ export class BuildingSystem {
       if (Math.hypot(x - o.x, z - o.z) < o.r + r + 0.8) return 'Choca con otra construcción';
     }
     for (const zone of colony.zones) {
-      if (Math.hypot(x - zone.x, z - zone.z) < zone.r + r + 0.5) return 'Choca con una zona de acopio';
+      if (rectDistance(zone, x, z) < r + 0.5) return 'Choca con la zona de acopio';
     }
     const h = colony.heightAt(x, z);
     if (h <= 0.8) return 'No se puede construir en el agua';

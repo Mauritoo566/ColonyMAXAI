@@ -100,22 +100,25 @@
     <section id="build-bar" class="panel build-bar" hidden aria-label="Construir">
       <div class="build-head">
         <p class="eyebrow build-title">Construir</p>
-        <div class="build-head-row">
-          <div class="build-tabs" id="build-tabs" role="tablist" aria-label="Categorías"></div>
-          <button type="button" class="build-tool" id="harvest-button" aria-pressed="false" title="Marcar un área para que los colonos recolecten lo que haya">
-            <svg class="icon"><use href="#i-axe" /></svg><span>Recolectar</span><span class="build-tool-count" id="harvest-count" hidden>0</span>
-          </button>
-        </div>
+        <div class="build-tabs" id="build-tabs" role="tablist" aria-label="Categorías"></div>
       </div>
       <div class="build-list" id="build-list"></div>
-      <div class="harvest-tools" id="harvest-tools" hidden>
+    </section>
+
+    <!-- Órdenes para los colonos (aparte de la construcción) -->
+    <section class="orders" id="orders" hidden aria-label="Órdenes">
+      <div class="panel harvest-tools" id="harvest-tools" hidden>
+        <p class="eyebrow">Recolectar</p>
         <div class="harvest-modes" role="group" aria-label="Modo">
           <button type="button" data-harvest-mode="mark" aria-pressed="true">Marcar</button>
           <button type="button" data-harvest-mode="unmark" aria-pressed="false">Desmarcar</button>
         </div>
-        <p class="harvest-hint" id="harvest-hint">Arrastra sobre el terreno para marcar un área. Los colonos disponibles irán a recolectar árboles, bayas, setas y piedras marcados.</p>
-        <button type="button" class="btn" id="harvest-clear">Quitar marcas</button>
+        <p class="harvest-hint" id="harvest-hint"></p>
+        <button type="button" class="btn" id="harvest-clear">Quitar todas las marcas</button>
       </div>
+      <button type="button" class="panel orders-button" id="harvest-button" aria-pressed="false" title="Marcar un área para que los colonos recolecten lo que haya">
+        <svg class="icon"><use href="#i-axe" /></svg><span class="orders-label">Recolectar</span><span class="orders-count" id="harvest-count" hidden>0</span>
+      </button>
     </section>
 
     <div class="camp-panel">

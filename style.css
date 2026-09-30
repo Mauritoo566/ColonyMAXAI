@@ -1438,118 +1438,75 @@ summary:focus-visible {
   min-width: 0;
 }
 
-.build-head-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.build-head-row .build-tabs {
-  flex: 1;
-  min-width: 0;
-}
-
-.build-tool {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgba(242, 178, 76, 0.45);
-  border-radius: 9px;
-  background: rgba(242, 178, 76, 0.1);
-  color: var(--accent);
-  font: 700 13px/1 var(--font-display);
-  cursor: pointer;
-}
-
-.build-tool:hover {
-  background: rgba(242, 178, 76, 0.18);
-}
-
-.build-tool[aria-pressed='true'] {
-  background: var(--accent);
-  border-color: transparent;
-  color: var(--accent-ink);
-}
-
-.build-tool-count {
-  padding: 2px 5px;
-  border-radius: 5px;
-  background: rgba(0, 0, 0, 0.2);
-  font-size: 11px;
-}
-
-.zone-hint {
-  margin: 0;
-  padding: 8px 10px;
-  border: 1px dashed rgba(143, 208, 255, 0.5);
-  border-radius: 9px;
-  color: var(--ui-muted);
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-.zone-hint strong {
-  color: var(--ui-text);
-}
-
-.zone-list {
+.orders {
+  position: fixed;
+  right: calc(var(--gap) + 52px);
+  bottom: calc(var(--gap) + var(--safe-bottom));
   display: grid;
-  gap: 6px;
-  margin: 8px 0;
-  padding: 0;
-  list-style: none;
-}
-
-.zone-list li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  justify-items: end;
   gap: 8px;
-  padding: 6px 6px 6px 10px;
-  border-radius: 8px;
-  background: var(--ui-bg-raised);
-  font-size: 13px;
+  z-index: 3;
 }
 
-.zone-list .btn {
-  padding: 5px 10px;
-}
-
-.build-item--zone .build-icon {
-  background: rgba(143, 208, 255, 0.14);
-  color: #8fd0ff;
-}
-
-.harvest-tools {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 84px;
-  padding: 10px 12px;
-  border: 1px dashed rgba(242, 178, 76, 0.5);
-  border-radius: 10px;
-  box-sizing: border-box;
-}
-
+.orders[hidden],
 .harvest-tools[hidden] {
   display: none;
 }
 
-.harvest-modes {
+.orders-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 16px;
+  border-color: rgba(216, 53, 42, 0.55);
+  color: #ff8a7f;
+  font: 700 15px/1 var(--font-display);
+  cursor: pointer;
+}
+
+.orders-button .icon {
+  font-size: 18px;
+}
+
+.orders-button:hover {
+  border-color: #d8352a;
+  color: #ffb1a9;
+}
+
+.orders-button[aria-pressed='true'] {
+  background: #d8352a;
+  border-color: transparent;
+  color: #fff;
+}
+
+.orders-count {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+  font-size: 12px;
+}
+
+.harvest-tools {
   display: grid;
+  gap: 10px;
+  width: 290px;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.harvest-modes {
+  display: flex;
   gap: 4px;
-  flex: none;
   padding: 3px;
   border-radius: 9px;
   background: var(--ui-bg-raised);
 }
 
 .harvest-modes button {
-  height: 28px;
+  flex: 1;
+  height: 30px;
   padding: 0 12px;
   border: 0;
   border-radius: 7px;
@@ -1560,25 +1517,28 @@ summary:focus-visible {
 }
 
 .harvest-modes button[aria-pressed='true'] {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: #d8352a;
+  color: #fff;
 }
 
 .harvest-modes button[data-harvest-mode='unmark'][aria-pressed='true'] {
-  background: var(--bad);
-  color: #2a0c08;
+  background: var(--ui-line-strong);
+  color: var(--ui-text);
 }
 
 .harvest-hint {
-  flex: 1;
   margin: 0;
   color: var(--ui-muted);
   font-size: 13px;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .harvest-hint strong {
   color: var(--ui-text);
+}
+
+.harvest-tools .btn {
+  justify-content: center;
 }
 
 canvas.is-harvesting {
@@ -1919,6 +1879,33 @@ canvas.is-harvesting {
 /* ---- Pantallas chicas ---------------------------------------------------- */
 
 @media (max-width: 720px) {
+  .orders {
+    top: calc(var(--gap) + var(--safe-top) + 52px);
+    right: var(--gap);
+    bottom: auto;
+  }
+
+  .orders .harvest-tools {
+    order: 2;
+    width: calc(100vw - 2 * var(--gap));
+  }
+
+  .orders-button {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .orders-label {
+    display: none;
+  }
+
+  .orders-count {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+  }
+
   /* En el móvil sólo la medalla, arriba a la izquierda. */
   .age-wrap {
     left: var(--gap);
@@ -2001,6 +1988,18 @@ canvas.is-harvesting {
 }
 
 @media (min-width: 721px) and (max-width: 1100px) {
+  /* La barra de construcción ocupa la derecha: las órdenes pasan arriba a la derecha. */
+  .orders {
+    top: calc(var(--gap) + var(--safe-top) + 52px);
+    right: var(--gap);
+    bottom: auto;
+    grid-auto-flow: row;
+  }
+
+  .orders .harvest-tools {
+    order: 2;
+  }
+
   .age-flourish {
     display: none;
   }

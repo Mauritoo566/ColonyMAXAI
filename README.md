@@ -77,11 +77,11 @@ Si se acaban los árboles o las piedras grandes cerca, el leñador junta ramas c
 
 Lo que recoge la colonia se guarda en el **almacén del campamento** (las vasijas, cestas y sacos junto a la fogata). Tiene etiqueta en el mundo y, al hacerle clic (o en la fila de recursos de la tarjeta de la colonia), se abre su ficha con lo guardado y la capacidad. Cada recurso tiene un límite: cuando algo se llena, quien lo trae espera sin trabajar. Para guardar más se construyen almacenes (pestaña Almacenes): la **pila de troncos y cestas** de la Edad Primitiva, que se mejora a **granero** en la Tribal.
 
-### Recolectar y zonas al aire libre
+### Recolectar y zona de acopio
 
-El botón **Recolectar** de la barra de construcción activa una herramienta: se arrastra sobre el terreno para marcar un área (o se hace clic en un recurso) y todo lo recolectable queda marcado con un rombo. Los colonos disponibles, sobre todo los que no tienen trabajo fijo, van a talar, picar o recoger lo marcado y lo llevan al almacén. También se puede desmarcar o quitar todas las marcas.
+El botón **Recolectar** (abajo a la derecha, aparte de la construcción) activa una herramienta: se arrastra sobre el terreno para dibujar un rectángulo (alineado con la vista y pegado al relieve, sin límite de tamaño) o se hace clic en un recurso. Sobre cada recurso marcado aparece un pin: **hacha roja** en los árboles, pico en las piedras y cesta en la comida. Los colonos disponibles, sobre todo los que no tienen trabajo fijo, van a recogerlo y lo llevan al almacén. También se puede desmarcar o quitar todas las marcas.
 
-En la pestaña Almacenes se puede dibujar una **zona al aire libre** (de 4 a 14 m de radio). Lo que no cabe en el almacén se amontona ahí (se ven los montones de troncos, piedras y cestas) en vez de que los colonos dejen de trabajar. La **comida al aire libre se pudre** en día y medio y desaparece; por eso se come primero la de afuera. La ficha del almacén muestra lo que hay afuera, cuándo se pudre la comida y permite quitar zonas.
+En la pestaña Almacenes se dibuja la **zona de acopio** al aire libre: un rectángulo del tamaño que se quiera, con suelo de tierra, cuerda con estacas y un cartel. Hay una sola (dibujar otra la reemplaza). Lo que no cabe en el almacén se amontona ahí (1,5 unidades por m², con montones de troncos, piedras y cestas) en vez de que los colonos dejen de trabajar. La **comida al aire libre se pudre** en día y medio y desaparece; por eso se come primero la de afuera. La ficha del almacén muestra lo de afuera, cuándo se pudre la comida y permite quitar la zona.
 
 ### Guardado
 

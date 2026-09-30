@@ -3,6 +3,7 @@ import { RADIUS, surfaceHeight, elevation } from './elevation.js';
 import { campObstacles } from './camp.js';
 import { seededRandom, Parts, mat, stick, v } from './modelKit.js';
 import { AGES, ageInfo, nextAgeStatus } from './ages.js';
+import { insideRect, rectDistance, upgradeRect } from './rect.js';
 import { temperature } from './biomes.js';
 import { createProfile, updateNeeds, hasTrait, wellbeing, addLog } from './needs.js';
 import { appearanceFromGenes, gene } from './genes.js';
@@ -27,12 +28,12 @@ export const START_STOCK = { food: 12, water: 12, wood: 45, stone: 20, fiber: 10
 // Lo que cabe en el almacén del campamento (las vasijas y cestas junto a la fogata).
 // Cada almacén construido suma su capacidad.
 export const CAMP_CAPACITY = { food: 40, water: 30, wood: 60, stone: 40, fiber: 30 };
-// Zonas de acopio al aire libre: guardan lo que no cabe bajo techo. Cabe más cuanto más
-// grande es la zona (unidades por m²), pero la comida al aire libre se pudre.
+// Zona de acopio al aire libre (una sola, rectangular y del tamaño que se quiera): guarda
+// lo que no cabe bajo techo. Cabe más cuanto más grande es (unidades por m²), pero la
+// comida al aire libre se pudre.
 export const ZONE_PER_M2 = 1.5;
-export const ZONE_RADIUS = [4, 14];
+export const MIN_ZONE_SIDE = 2; // metros: más chico no tiene sentido
 export const FOOD_SPOIL_SECONDS = 1.5 * 360; // día y medio de juego
-const ZONE_MAX_DISTANCE = 75;
 
 const WALK_SPEED = 1.4; // m/s
 const COLONIST_RADIUS = 0.45;
@@ -755,30 +756,33 @@ export class ColonySystem {
 
   // ---- Zonas de acopio al aire libre ------------------------------------------
 
-  zoneProblem(x, z, r) {
-    if (Math.hypot(x, z) > ZONE_MAX_DISTANCE) return 'Demasiado lejos del campamento';
+  zoneProblem(rect) {
+    if (rect.hw * 2 < MIN_ZONE_SIDE || rect.hd * 2 < MIN_ZONE_SIDE) return 'La zona es demasiado chica';
     for (const o of this.obstacles) {
-      if (Math.hypot(x - o.x, z - o.z) < o.r + r) return 'Choca con el campamento o un edificio';
+      if (rectDistance(rect, o.x, o.z) < o.r) return 'Choca con el campamento o un edificio';
     }
-    for (const zone of this.zones) {
-      if (Math.hypot(x - zone.x, z - zone.z) < zone.r + r) return 'Choca con otra zona de acopio';
-    }
-    if (this.heightAt(x, z) <= 0.8) return 'No se puede en el agua';
     return null;
   }
 
-  addZone(x, z, r) {
-    r = Math.min(ZONE_RADIUS[1], Math.max(ZONE_RADIUS[0], r));
-    const problem = this.zoneProblem(x, z, r);
+  // Sólo hay una zona de acopio: dibujar otra la reemplaza (lo guardado se mantiene si
+  // cabe en la nueva).
+  setZone(rect) {
+    const problem = this.zoneProblem(rect);
     if (problem) return problem;
-    this.zones.push({ x, z, r });
+    this.zones = [{ cx: rect.cx, cz: rect.cz, hw: rect.hw, hd: rect.hd, angle: rect.angle }];
+    this.trimOutdoor();
     this.onZonesChange?.();
     return null;
   }
 
-  // Al quitar una zona, lo que ya no cabe al aire libre se pierde.
-  removeZone(index) {
-    this.zones.splice(index, 1);
+  // Al quitar la zona, lo guardado al aire libre se pierde.
+  removeZone() {
+    this.zones = [];
+    this.trimOutdoor();
+    this.onZonesChange?.();
+  }
+
+  trimOutdoor() {
     let excess = this.outdoorUsed() - this.outdoorCapacity();
     const kinds = Object.keys(this.outdoor).sort((a, b) => this.outdoor[b] - this.outdoor[a]);
     for (const k of kinds) {
@@ -788,15 +792,12 @@ export class ColonySystem {
       this.removeOutdoor(k, n);
       excess -= n;
     }
-    this.onZonesChange?.();
   }
 
   // Punto donde dejar un recurso: la zona al aire libre si ya no cabe bajo techo.
   dropPoint(kind) {
-    if (this.goesOutdoor(kind) && this.zones.length) {
-      const zone = this.zones.find((z) => zoneCapacity(z) > 0);
-      return { x: zone.x, z: zone.z, r: zone.r };
-    }
+    const zone = this.zones[0];
+    if (zone && this.goesOutdoor(kind)) return { x: zone.cx, z: zone.cz, r: Math.max(1, Math.min(zone.hw, zone.hd)) };
     return this.layout.storage;
   }
 
@@ -934,6 +935,20 @@ export class ColonySystem {
     return n;
   }
 
+  // Marcar o desmarcar los recursos dentro de un rectángulo (coordenadas del campamento).
+  markRect(rect, marked) {
+    let changed = 0;
+    for (const s of this.spots) {
+      if (s.gone || !insideRect(rect, s.x, s.z)) continue;
+      if (!!s.marked !== marked) {
+        s.marked = marked;
+        changed++;
+      }
+    }
+    if (changed) this.onMarksChange?.();
+    return changed;
+  }
+
   // Marcar o desmarcar los recursos dentro de un círculo (coordenadas del campamento).
   markArea(x, z, radius, marked) {
     let changed = 0;
@@ -1001,7 +1016,8 @@ export class ColonySystem {
   restore(data) {
     if (!data) return;
     this.gameTime = data.gameTime || 0;
-    this.zones = Array.isArray(data.zones) ? data.zones.filter((z) => Number.isFinite(z.x) && Number.isFinite(z.r)) : [];
+    // Zonas antiguas (redondas) se convierten en un cuadrado; sólo se queda la primera.
+    this.zones = (Array.isArray(data.zones) ? data.zones : []).map(upgradeRect).filter(Boolean).slice(0, 1);
     this.outdoor = data.outdoor && typeof data.outdoor === 'object' ? { ...data.outdoor } : {};
     this.foodBatches = Array.isArray(data.foodBatches) ? data.foodBatches.filter((b) => b.amount > 0) : [];
     this.spoiled = data.spoiled || 0;
@@ -1149,5 +1165,5 @@ function totemMesh() {
 }
 
 export function zoneCapacity(zone) {
-  return Math.round(Math.PI * zone.r * zone.r * ZONE_PER_M2);
+  return Math.round(4 * zone.hw * zone.hd * ZONE_PER_M2);
 }
