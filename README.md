@@ -25,6 +25,26 @@ Luego abre <http://localhost:8000>. (Abrir `index.html` directamente con doble c
 
 Con el botón **Fundar campamento** entras en modo colocación: al mover el ratón aparece una vista previa del campamento con un anillo verde (se puede) o rojo con el motivo (agua, hielo o nieve, pendiente de más de ~27°, o cámara a más de 60 km). Un clic lo funda y la cámara vuela hasta él. Después aparecen **Ir al campamento** y **Reubicar**, y una etiqueta marca dónde está cuando lo miras desde lejos. El campamento se guarda en el navegador (`localStorage`), así que sigue ahí al volver a abrir el juego. Al fundarlo, el terreno se nivela en un círculo de 30 m (con una pendiente suave de otros 32 m hasta el terreno natural), se pinta un claro de tierra pisada con borde irregular. Cerca del campamento el terreno usa triángulos más finos (hasta ~3 m). El claro y los adornos del campamento se adaptan al bioma (`src/biomes.js`): tierra en la pradera, grava en la montaña, arena en el desierto y la playa; matas de pasto sólo donde hay pasto. El código está en `src/camp.js`.
 
+## Biomas
+
+Cada punto de tierra tiene una **temperatura** (baja con la latitud y con la altura) y una **humedad**, y con esas dos cosas se elige el bioma (`src/biomes.js`). El HUD muestra el bioma del centro de la pantalla.
+
+| Bioma | Dónde aparece |
+|---|---|
+| Hielo polar | mar cerca de los polos |
+| Picos nevados | polos, cumbres muy altas o frío extremo |
+| Montaña rocosa | laderas empinadas o mucha altura |
+| Playa | tierra justo sobre el nivel del mar |
+| Pantano | tierras bajas, muy húmedas y templadas o cálidas |
+| Tundra | frío y seco (o muy frío) |
+| Taiga | frío y con algo de humedad |
+| Desierto | seco, templado o cálido |
+| Estepa | semiseco y templado |
+| Pradera | templado con humedad media (o cálido y algo húmedo) |
+| Bosque templado | templado y húmedo |
+| Sabana | cálido y semiseco |
+| Selva tropical | cálido y muy húmedo |
+
 ## Día, noche y nubes
 
 El Sol gira alrededor del planeta; la hora que se muestra es la hora solar del lugar que estás mirando. De noche una luz de luna azulada y más luz ambiente mantienen el paisaje visible, y el cielo pasa por tonos de atardecer.

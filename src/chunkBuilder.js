@@ -13,7 +13,7 @@ import {
   zoneGround,
 } from './elevation.js';
 import { createNoise3D } from './noise.js';
-import { BIOMES, classifyBiome } from './biomes.js';
+import { BIOMES, classifyBiome, needsMoisture, temperature } from './biomes.js';
 
 export const RESOLUTION = 32; // celdas por lado en cada trozo
 
@@ -45,8 +45,6 @@ function toLinear(hex) {
 const COLORS = {
   oceanDeep: linear('#123f75'),
   oceanShallow: linear('#2f7fbf'),
-  grassDry: linear('#8fa64a'),
-  grassDark: linear('#2e5f2a'),
 };
 
 // Ruido para las manchas de color del pasto (de cerca el verde uniforme se ve plano).
@@ -97,16 +95,26 @@ function faceColor(e, dir, slope, out) {
     const depth = Math.min(1, Math.max(0, -e * 3));
     return lerp(copy(out, COLORS.oceanShallow), COLORS.oceanDeep, depth);
   }
-  // La humedad sólo hace falta para distinguir pradera, bosque y desierto.
-  const needsMoisture = lat <= 0.9 && e <= 0.45 && slope <= 0.3 && e >= 0.02;
-  const biome = classifyBiome(e, lat, slope, needsMoisture ? moisture(dir[0], dir[1], dir[2]) : 0);
+  const [dx, dy, dz] = dir;
+  const m = needsMoisture(e, lat, slope) ? moisture(dx, dy, dz) : 0;
+  const biome = classifyBiome(e, lat, slope, m, temperature(dx, dy, dz, e));
   copy(out, linear(biome.ground));
-  if (biome === BIOMES.grassland || biome === BIOMES.forest) {
+  if (biome.vegetated) {
     // Manchas de pasto más seco o más oscuro, de ~300 m y de ~40 m.
     const [x, y, z] = dir;
     const p =
       patchNoise(x * 21_000, y * 21_000, z * 21_000) * 0.65 + patchNoise(x * 160_000, y * 160_000, z * 160_000) * 0.35;
-    lerp(out, p > 0 ? COLORS.grassDry : COLORS.grassDark, Math.min(1, Math.abs(p) * 0.9) * 0.45);
+    // Más claro y algo más seco, o más oscuro, sin cambiar el tono propio del bioma.
+    const k = Math.min(1, Math.abs(p) * 0.9) * 0.45;
+    if (p > 0) {
+      out[0] *= 1 + 0.45 * k;
+      out[1] *= 1 + 0.3 * k;
+      out[2] *= 1 + 0.1 * k;
+    } else {
+      out[0] *= 1 - 0.45 * k;
+      out[1] *= 1 - 0.35 * k;
+      out[2] *= 1 - 0.35 * k;
+    }
   }
   // Claro de un campamento: suelo pisado del color de su bioma en el centro, y
   // alrededor el suelo que haya, un poco más oscuro y apagado.

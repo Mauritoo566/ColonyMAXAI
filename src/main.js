@@ -6,10 +6,12 @@ import { DayNight, formatHour } from './daynight.js';
 import { cloudFade } from './clouds.js';
 import { waterUniforms } from './water.js';
 import { CampSystem } from './camp.js';
+import { biomeAt } from './biomes.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
 const timeLabel = document.getElementById('time');
+const biomeLabel = document.getElementById('biome');
 const speedButtons = document.querySelectorAll('[data-speed]');
 
 // logarithmicDepthBuffer permite dibujar a la vez cosas a 1 m y a 20.000 km sin
@@ -186,6 +188,8 @@ for (const button of speedButtons) {
 const centerRay = new THREE.Ray();
 const groundSphere = new THREE.Sphere(new THREE.Vector3(), RADIUS);
 const hit = new THREE.Vector3();
+let centerHit = null; // punto del suelo en el centro de la pantalla (o null si es cielo)
+const centerDir = new THREE.Vector3();
 
 // Actualiza el "hueco" de las nubes: distancia al punto del suelo que se ve en el
 // centro de la pantalla y cuánto se aplica según la altura.
@@ -194,7 +198,8 @@ function updateCloudFade(clearance) {
   centerRay.origin.copy(camera.position);
   groundSphere.radius = RADIUS + Math.max(0, controls.groundHeight);
   const altitude = camera.position.length() - RADIUS;
-  if (centerRay.intersectSphere(groundSphere, hit)) {
+  centerHit = centerRay.intersectSphere(groundSphere, hit);
+  if (centerHit) {
     cloudFade.focusDistance.value = hit.distanceTo(camera.position);
   } else {
     cloudFade.focusDistance.value = Math.sqrt(altitude * (2 * RADIUS + altitude)); // horizonte
@@ -252,6 +257,10 @@ renderer.setAnimationLoop(() => {
     labelTimer = 0.1;
     if (altitudeLabel) altitudeLabel.textContent = formatAltitude(clearance);
     if (timeLabel) timeLabel.textContent = formatHour(dayNight.localHour(controls.lon));
+    if (biomeLabel) {
+      centerDir.copy(hit).normalize();
+      biomeLabel.textContent = centerHit ? biomeAt(centerDir.x, centerDir.y, centerDir.z).name : '–';
+    }
   }
 
   if (shadowFrame++ % SHADOW_EVERY_FRAMES === 0) renderer.shadowMap.needsUpdate = true;

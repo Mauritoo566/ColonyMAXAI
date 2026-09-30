@@ -28,7 +28,8 @@ body {
 
 .hud-row {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 4px 20px;
 }
 
 .hud-stat {
