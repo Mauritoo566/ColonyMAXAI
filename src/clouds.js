@@ -13,7 +13,7 @@ import { RADIUS, MAX_LAND_HEIGHT, SEED, surfaceHeight } from './elevation.js';
 export const HIGH_CLOUD_ALTITUDE = MAX_LAND_HEIGHT * 1.15;
 const CELL = THREE.MathUtils.degToRad(1); // ~111 km
 const MAX_CUMULUS_SIZE = 12_000;
-const MIN_PIXELS = 1.5; // por debajo de esto el cúmulo no se ve y no se dibuja
+const MIN_PIXELS = 2; // por debajo de esto el cúmulo casi no se ve y no se dibuja
 const DETAIL_PIXELS = 30; // a partir de este tamaño en pantalla se dibuja con todas sus bolitas
 const MAX_CUMULUS_INSTANCES = 60_000;
 
@@ -37,8 +37,8 @@ export function cloudCover(dir) {
   return THREE.MathUtils.clamp((n - desertBand + 0.12) * 2.2, 0, 1);
 }
 
-function createPuffGeometry() {
-  const geometry = new THREE.IcosahedronGeometry(1, 1);
+function createPuffGeometry(detail) {
+  const geometry = new THREE.IcosahedronGeometry(1, detail);
   const pos = geometry.attributes.position;
   const colors = new Float32Array(pos.count * 3);
   const top = new THREE.Color('#ffffff');
@@ -58,14 +58,129 @@ function createPuffGeometry() {
   return geometry;
 }
 
-const puffGeometry = createPuffGeometry();
+const puffGeometry = createPuffGeometry(1); // 80 triángulos: nubes cercanas
+const blobGeometry = createPuffGeometry(0); // 20 triángulos: cúmulos lejanos (pocos píxeles)
+// Parámetros del "hueco" en las nubes alrededor del centro de la pantalla, para que no
+// tapen lo que estás mirando. main.js los actualiza en cada fotograma.
+export const cloudFade = {
+  focusDistance: { value: 1e9 }, // distancia de la cámara al punto del suelo en el centro
+  strength: { value: 1 }, // 0 = desactivado (desde muy lejos), 1 = activo
+  resolution: { value: new THREE.Vector2(1, 1) }, // tamaño del lienzo en píxeles
+  innerRadius: { value: 0.22 }, // radio totalmente transparente (fracción del alto de pantalla)
+  outerRadius: { value: 0.42 }, // a partir de aquí la nube es opaca
+  nearDistance: { value: 1500 }, // nubes más cerca que esto se aclaran en toda la pantalla
+  minOpacity: { value: 0.12 },
+  // Para quitar también la sombra de las nubes del hueco (el mapa de sombras se dibuja
+  // desde el Sol, así que necesita saber dónde está la cámara principal).
+  viewProjection: { value: new THREE.Matrix4() },
+  cameraPosition: { value: new THREE.Vector3() },
+  aspect: { value: 1 },
+};
+
+// Cálculo del hueco compartido por el material de las nubes y el de su sombra.
+const FADE_GLSL = /* glsl */ `
+  uniform float uFocusDistance;
+  uniform float uFadeStrength;
+  uniform float uInnerRadius;
+  uniform float uOuterRadius;
+  uniform float uNearDistance;
+  float cloudFadeAmount(vec2 fromCenter, float depth) {
+    float radial = 1.0 - smoothstep(uInnerRadius, uOuterRadius, length(fromCenter));
+    // Sólo las nubes que están delante de lo que miras (las nubes flotan al menos
+    // 1,2 km sobre el suelo, así que basta un margen fijo en metros).
+    float inFront = 1.0 - smoothstep(uFocusDistance - 1000.0, uFocusDistance - 200.0, depth);
+    float nearCamera = 1.0 - smoothstep(uNearDistance * 0.5, uNearDistance, depth);
+    return max(radial * inFront, nearCamera) * uFadeStrength;
+  }
+`;
+
+function fadeUniforms() {
+  return {
+    uFocusDistance: cloudFade.focusDistance,
+    uFadeStrength: cloudFade.strength,
+    uInnerRadius: cloudFade.innerRadius,
+    uOuterRadius: cloudFade.outerRadius,
+    uNearDistance: cloudFade.nearDistance,
+    uMinOpacity: cloudFade.minOpacity,
+  };
+}
+
 const cloudMaterial = new THREE.MeshStandardMaterial({
   vertexColors: true,
   flatShading: true,
   roughness: 1,
   metalness: 0,
   emissive: new THREE.Color('#2a3346'),
+  transparent: true,
 });
+
+cloudMaterial.onBeforeCompile = (shader) => {
+  Object.assign(shader.uniforms, fadeUniforms(), { uResolution: cloudFade.resolution });
+  shader.fragmentShader = shader.fragmentShader
+    .replace(
+      'void main() {',
+      `${FADE_GLSL}
+      uniform vec2 uResolution;
+      uniform float uMinOpacity;
+      void main() {`,
+    )
+    .replace(
+      '#include <opaque_fragment>',
+      `{
+        // Distancia al centro de la pantalla, en fracciones del alto.
+        vec2 fromCenter = (gl_FragCoord.xy - 0.5 * uResolution) / uResolution.y;
+        float fade = cloudFadeAmount(fromCenter, length(vViewPosition));
+        diffuseColor.a *= mix(1.0, uMinOpacity, fade);
+      }
+      #include <opaque_fragment>`,
+    );
+};
+
+// Material de sombra: las nubes del hueco no proyectan sombra. Como el mapa de
+// sombras no admite transparencia, se descartan píxeles con un patrón de puntos y el
+// suavizado de la sombra lo convierte en una sombra más tenue.
+const cloudDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+cloudDepthMaterial.onBeforeCompile = (shader) => {
+  Object.assign(shader.uniforms, fadeUniforms(), {
+    uMainViewProjection: cloudFade.viewProjection,
+    uMainCameraPosition: cloudFade.cameraPosition,
+    uAspect: cloudFade.aspect,
+  });
+  shader.vertexShader = shader.vertexShader
+    .replace(
+      'void main() {',
+      `varying vec3 vCloudWorld;
+      void main() {`,
+    )
+    .replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+      vec4 cloudWorld = vec4(transformed, 1.0);
+      #ifdef USE_INSTANCING
+        cloudWorld = instanceMatrix * cloudWorld;
+      #endif
+      vCloudWorld = (modelMatrix * cloudWorld).xyz;`,
+    );
+  shader.fragmentShader = shader.fragmentShader
+    .replace(
+      'void main() {',
+      `${FADE_GLSL}
+      uniform mat4 uMainViewProjection;
+      uniform vec3 uMainCameraPosition;
+      uniform float uAspect;
+      uniform float uMinOpacity;
+      varying vec3 vCloudWorld;
+      void main() {
+        vec4 clip = uMainViewProjection * vec4(vCloudWorld, 1.0);
+        float fade = 0.0;
+        if (clip.w > 0.0) {
+          vec2 ndc = clip.xy / clip.w;
+          fade = cloudFadeAmount(vec2(ndc.x * uAspect, ndc.y) * 0.5, distance(vCloudWorld, uMainCameraPosition));
+        }
+        float dither = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+        if (dither < fade * (1.0 - uMinOpacity)) discard;`,
+    );
+};
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const tmp = {
@@ -119,11 +234,12 @@ function addCumulus(write, rand, up, baseRadius, size, flatness, origin) {
   }
 }
 
-function createInstanced(max) {
-  const mesh = new THREE.InstancedMesh(puffGeometry, cloudMaterial, max);
+function createInstanced(max, geometry = puffGeometry) {
+  const mesh = new THREE.InstancedMesh(geometry, cloudMaterial, max);
   mesh.count = 0;
   mesh.frustumCulled = false;
   mesh.castShadow = true;
+  mesh.customDepthMaterial = cloudDepthMaterial;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   return mesh;
 }
@@ -138,17 +254,49 @@ function writer(mesh) {
   };
   fn.done = () => {
     mesh.count = i;
+    // Sólo se envía a la tarjeta gráfica la parte usada del búfer.
+    mesh.instanceMatrix.clearUpdateRanges();
+    mesh.instanceMatrix.addUpdateRange(0, Math.max(1, i) * 16);
     mesh.instanceMatrix.needsUpdate = true;
   };
   return fn;
 }
 
+// Los grandes sistemas se reparten en zonas (4×4 por cada cara de un cubo) para poder
+// saltarse las que quedan detrás del planeta o fuera de la pantalla.
+const HIGH_ZONES_PER_SIDE = 4;
+
+function highZoneKey(dir) {
+  const ax = Math.abs(dir.x);
+  const ay = Math.abs(dir.y);
+  const az = Math.abs(dir.z);
+  let face, u, v;
+  if (ax >= ay && ax >= az) [face, u, v] = [dir.x > 0 ? 0 : 1, dir.y / ax, dir.z / ax];
+  else if (ay >= az) [face, u, v] = [dir.y > 0 ? 2 : 3, dir.x / ay, dir.z / ay];
+  else [face, u, v] = [dir.z > 0 ? 4 : 5, dir.x / az, dir.y / az];
+  const n = HIGH_ZONES_PER_SIDE;
+  const iu = Math.min(n - 1, Math.floor(((u + 1) / 2) * n));
+  const iv = Math.min(n - 1, Math.floor(((v + 1) / 2) * n));
+  return face * n * n + iu * n + iv;
+}
+
 function createHighClouds() {
-  const mesh = createInstanced(12000);
-  const write = writer(mesh);
+  const group = new THREE.Group();
   const rand = seededRandom(SEED + 11);
   const dir = new THREE.Vector3();
   const origin = new THREE.Vector3();
+  const zones = new Map();
+  const position = new THREE.Vector3();
+
+  const collect = (m) => {
+    position.setFromMatrixPosition(m);
+    const key = highZoneKey(position.clone().normalize());
+    let zone = zones.get(key);
+    if (!zone) zones.set(key, (zone = { matrices: [], center: new THREE.Vector3() }));
+    zone.matrices.push(m.clone());
+    zone.center.add(position);
+    return true;
+  };
 
   for (let attempt = 0; attempt < 40000; attempt++) {
     dir.set(rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1);
@@ -158,10 +306,47 @@ function createHighClouds() {
     if (rand() > cloudCover(dir) * 0.3) continue;
     const size = 50_000 + rand() * 130_000;
     const base = RADIUS + HIGH_CLOUD_ALTITUDE + rand() * 2_000;
-    addCumulus(write, rand, dir, base, size, 0.22, origin);
+    addCumulus(collect, rand, dir, base, size, 0.22, origin);
   }
-  write.done();
-  return mesh;
+
+  const meshes = [];
+  for (const zone of zones.values()) {
+    const mesh = createInstanced(zone.matrices.length);
+    zone.matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
+    mesh.count = zone.matrices.length;
+    mesh.computeBoundingSphere();
+    mesh.frustumCulled = true;
+    mesh.userData.direction = zone.center.normalize();
+    // Radio angular de la zona (hasta la nube más lejana de su centro).
+    let maxAngle = 0;
+    for (const m of zone.matrices) {
+      position.setFromMatrixPosition(m).normalize();
+      maxAngle = Math.max(maxAngle, position.angleTo(mesh.userData.direction));
+    }
+    mesh.userData.angularRadius = maxAngle + 0.03;
+    group.add(mesh);
+    meshes.push(mesh);
+  }
+
+  const cameraDir = new THREE.Vector3();
+  const zoneDir = new THREE.Vector3();
+  group.userData.cull = (camera) => {
+    const camR = camera.position.length();
+    cameraDir.copy(camera.position).divideScalar(camR);
+    // Ángulo hasta el horizonte visto desde la cámara, más lo que se ve de una nube alta.
+    const horizon =
+      Math.acos(Math.min(1, RADIUS / camR)) + Math.acos(RADIUS / (RADIUS + HIGH_CLOUD_ALTITUDE));
+    for (const mesh of meshes) {
+      zoneDir.copy(mesh.userData.direction).applyQuaternion(group.quaternion);
+      mesh.visible = zoneDir.angleTo(cameraDir) < horizon + mesh.userData.angularRadius;
+      if (!mesh.visible) continue;
+      // Zonas lejanas (a más de 2.500 km) con la forma de 20 triángulos: desde ahí cada
+      // bolita ocupa pocos píxeles y no se nota la diferencia.
+      zoneDir.multiplyScalar(RADIUS + HIGH_CLOUD_ALTITUDE);
+      mesh.geometry = zoneDir.distanceTo(camera.position) > 2_500_000 ? blobGeometry : puffGeometry;
+    }
+  };
+  return group;
 }
 
 // Cúmulos de una celda: se calculan una sola vez y se guardan.
@@ -190,7 +375,8 @@ function cellClusters(i, j, lonCells) {
 
 class CumulusField {
   constructor() {
-    this.mesh = createInstanced(MAX_CUMULUS_INSTANCES);
+    this.mesh = createInstanced(MAX_CUMULUS_INSTANCES); // cúmulos cercanos, con todas sus bolitas
+    this.blobs = createInstanced(MAX_CUMULUS_INSTANCES, blobGeometry); // cúmulos lejanos
     this.cache = new Map();
     this.lastPosition = new THREE.Vector3(Infinity, 0, 0);
     this.lastBuild = 0;
@@ -225,9 +411,12 @@ class CumulusField {
     const maxDistance = (MAX_CUMULUS_SIZE * pixelsPerRadian) / MIN_PIXELS;
 
     const write = writer(this.mesh);
+    const writeBlob = writer(this.blobs);
     const altitude = camR - RADIUS;
     if (altitude > maxDistance) {
-      write.done(); // desde muy lejos ningún cúmulo llega a un píxel
+      // Desde muy lejos ningún cúmulo llega a verse.
+      write.done();
+      writeBlob.done();
       return;
     }
 
@@ -246,6 +435,7 @@ class CumulusField {
 
     const origin = cameraDir.clone().multiplyScalar(RADIUS);
     this.mesh.position.copy(origin);
+    this.blobs.position.copy(origin);
     const horizonDistance = Math.sqrt(Math.max(0, camR * camR - RADIUS * RADIUS));
 
     for (let i = iMin; i <= iMax; i++) {
@@ -268,12 +458,13 @@ class CumulusField {
           if (pixels >= DETAIL_PIXELS) {
             addCumulus(write, rand, cluster.dir, cluster.base, cluster.size, 0.6, origin);
           } else {
-            addBlob(write, cluster, grow, origin);
+            addBlob(writeBlob, cluster, grow, origin);
           }
         }
       }
     }
     write.done();
+    writeBlob.done();
   }
 }
 
@@ -293,7 +484,7 @@ export function createClouds() {
   group.name = 'clouds';
   const high = createHighClouds();
   const cumulus = new CumulusField();
-  group.add(high, cumulus.mesh);
+  group.add(high, cumulus.mesh, cumulus.blobs);
 
   let time = 0;
   return {
@@ -301,6 +492,7 @@ export function createClouds() {
     update(delta, camera, viewportHeight) {
       time += delta;
       high.rotation.y += delta * 0.0015; // los grandes sistemas derivan despacio
+      high.userData.cull(camera);
       cumulus.update(camera, viewportHeight, time);
     },
   };

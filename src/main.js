@@ -3,6 +3,7 @@ import { RADIUS } from './elevation.js';
 import { createPlanet } from './planet.js';
 import { PlanetControls } from './controls.js';
 import { DayNight, formatHour } from './daynight.js';
+import { cloudFade } from './clouds.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
@@ -154,6 +155,33 @@ for (const button of speedButtons) {
   });
 }
 
+const centerRay = new THREE.Ray();
+const groundSphere = new THREE.Sphere(new THREE.Vector3(), RADIUS);
+const hit = new THREE.Vector3();
+
+// Actualiza el "hueco" de las nubes: distancia al punto del suelo que se ve en el
+// centro de la pantalla y cuánto se aplica según la altura.
+function updateCloudFade(clearance) {
+  camera.getWorldDirection(centerRay.direction);
+  centerRay.origin.copy(camera.position);
+  groundSphere.radius = RADIUS + Math.max(0, controls.groundHeight);
+  const altitude = camera.position.length() - RADIUS;
+  if (centerRay.intersectSphere(groundSphere, hit)) {
+    cloudFade.focusDistance.value = hit.distanceTo(camera.position);
+  } else {
+    cloudFade.focusDistance.value = Math.sqrt(altitude * (2 * RADIUS + altitude)); // horizonte
+  }
+  // Desde el espacio no hace falta: el hueco desaparece entre 400 y 2.500 km.
+  cloudFade.strength.value = 1 - THREE.MathUtils.smoothstep(clearance, 400_000, 2_500_000);
+  cloudFade.nearDistance.value = Math.max(1_500, clearance * 0.3);
+  renderer.getDrawingBufferSize(cloudFade.resolution.value);
+  camera.updateMatrixWorld();
+  camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+  cloudFade.viewProjection.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  cloudFade.cameraPosition.value.copy(camera.position);
+  cloudFade.aspect.value = camera.aspect;
+}
+
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -171,6 +199,7 @@ renderer.setAnimationLoop(() => {
   const clearance = Math.max(1, altitude - controls.groundHeight);
   updateSun(clearance);
   planet.update(delta, camera, dayNight.sunDirection, window.innerHeight);
+  updateCloudFade(clearance);
   updateSky(altitude);
 
   labelTimer -= delta;
