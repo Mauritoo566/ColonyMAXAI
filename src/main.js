@@ -13,10 +13,14 @@ import { ColonySystem } from './colonists.js';
 import { ColonyUI } from './colonyUI.js';
 import { BuildingSystem } from './buildings.js';
 import { BuildUI } from './buildUI.js';
+import { WeatherSystem } from './weather.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
 const timeLabel = document.getElementById('time');
+const weatherChip = document.getElementById('weather');
+const weatherIcon = document.getElementById('weather-icon');
+const weatherName = document.getElementById('weather-name');
 const dayLabel = document.getElementById('day');
 const biomeLabel = document.getElementById('biome');
 const speedButtons = document.querySelectorAll('[data-speed]');
@@ -105,6 +109,32 @@ const buildings = new BuildingSystem({
   labelsRoot: document.getElementById('labels'),
 });
 buildings.blockSelection = () => !!camps.placing;
+
+// Clima: se decide en el campamento (o donde se mire si aún no hay uno).
+const weather = new WeatherSystem(scene);
+weather.setPlace(controls.dir);
+colony.weather = weather;
+// Lo que se guarda con la colonia además de edificios y colonos: el reloj y el clima.
+buildings.world = {
+  save: () => ({
+    elapsed: dayNight.elapsed,
+    subsolarLon: dayNight.subsolarLon,
+    moonPhase: dayNight.moonPhase,
+    weather: weather.save(),
+  }),
+  load: (d) => {
+    if (Number.isFinite(d.elapsed)) dayNight.elapsed = d.elapsed;
+    if (Number.isFinite(d.subsolarLon)) dayNight.subsolarLon = d.subsolarLon;
+    if (Number.isFinite(d.moonPhase)) dayNight.moonPhase = d.moonPhase;
+    dayNight.update(0);
+    weather.load(d.weather);
+  },
+};
+// Guardar también al cerrar o cambiar de pestaña.
+window.addEventListener('pagehide', () => buildings.save());
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') buildings.save();
+});
 const colonyUI = new ColonyUI({
   colony,
   controls,
@@ -149,6 +179,9 @@ function formatAltitude(meters) {
 
 const focus = new THREE.Vector3();
 const skyColor = new THREE.Color();
+const STORM_GREY = new THREE.Color('#7d8794');
+const greyTmp = new THREE.Color();
+let weatherNear = 0; // 0–1: cuánto se nota el clima del campamento en la vista actual
 
 // Coloca el Sol y ajusta su cámara de sombras a la zona que se está mirando:
 // cerca del suelo cubre unos kilómetros (sombras nítidas), desde el espacio todo el planeta.
@@ -187,6 +220,10 @@ function updateSky(altitude) {
   const daylight = THREE.MathUtils.smoothstep(sunElevation, -0.12, 0.22);
   const dusk = THREE.MathUtils.clamp(1 - Math.abs(sunElevation - 0.03) / 0.14, 0, 1);
   skyColor.copy(SKY_NIGHT).lerp(SKY_DAY, daylight).lerp(SKY_DUSK, dusk * 0.55);
+  // Cielo gris y menos sol cuando está nublado o llueve (sólo cerca del suelo).
+  const overcast = weather.clouds * weatherNear;
+  skyColor.lerp(greyTmp.copy(STORM_GREY).multiplyScalar(0.25 + 0.75 * daylight), overcast * 0.6);
+  sun.intensity = 3 * (1 - overcast * 0.55);
   waterUniforms.uSkyColor.value.copy(skyColor); // el agua refleja este cielo
 
   const inAtmosphere = 1 - THREE.MathUtils.smoothstep(altitude, 15_000, 120_000);
@@ -273,6 +310,7 @@ function updateQuality(rawDelta) {
 
 const clock = new THREE.Clock();
 let labelTimer = 0;
+let weatherPlaceTimer = 0;
 renderer.setAnimationLoop(() => {
   const rawDelta = clock.getDelta();
   const delta = Math.min(rawDelta, 0.1);
@@ -292,6 +330,15 @@ renderer.setAnimationLoop(() => {
   resources.update(camera, resourceFocus, clearance, delta);
   camps.update(delta);
   const campDir = camps.camp?.dir;
+  // El clima es el del campamento; sin campamento, el del lugar que se mira.
+  weatherPlaceTimer -= delta;
+  if (weatherPlaceTimer <= 0) {
+    weatherPlaceTimer = 2;
+    weather.setPlace(campDir ?? controls.dir);
+  }
+  const nearCamp = campDir ? 1 - THREE.MathUtils.smoothstep(controls.dir.angleTo(campDir) * RADIUS, 40_000, 150_000) : 1;
+  weatherNear = nearCamp * (1 - THREE.MathUtils.smoothstep(clearance, 8_000, 80_000));
+  weather.update(delta * dayNight.speed, delta, camera, nearCamp > 0.5 ? clearance : Infinity);
   const campTime = () => `Día ${dayNight.day} · ${formatHour(dayNight.localHour(Math.atan2(campDir.x, campDir.z)))}`;
   colony.update(delta, camps.camp, {
     timeScale: dayNight.speed,
@@ -310,6 +357,17 @@ renderer.setAnimationLoop(() => {
     if (altitudeLabel) altitudeLabel.textContent = formatAltitude(clearance);
     if (timeLabel) timeLabel.textContent = formatHour(dayNight.localHour(controls.lon));
     if (dayLabel) dayLabel.textContent = `Día ${dayNight.day}`;
+    if (weatherChip) {
+      const w = weather.state;
+      if (weatherChip.dataset.state !== w.id) {
+        weatherChip.dataset.state = w.id;
+        weatherIcon.setAttribute('href', `#i-w-${w.icon}`);
+        weatherName.textContent = w.name;
+        weatherChip.title = w.rain
+          ? `${w.name} en el campamento: el pozo rinde más y las bayas y setas crecen antes`
+          : `${w.name} en el campamento`;
+      }
+    }
     if (biomeLabel) {
       centerDir.copy(hit).normalize();
       biomeLabel.textContent = centerHit ? biomeAt(centerDir.x, centerDir.y, centerDir.z).name : '–';

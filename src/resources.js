@@ -22,7 +22,7 @@ const MAX_FAR = 60_000; // ejemplares con el modelo simple, por tipo
 const LOD_DISTANCE = 380; // metros: más lejos, modelo simple
 const FULL_DENSITY_DISTANCE = 900; // hasta aquí se ve todo; más lejos se aclara
 const MAX_VISIBLE_CLEARANCE = 6_000; // más alto no se dibujan
-const CAMP_CLEAR_RADIUS = 90; // alrededor del campamento no aparece nada
+const CAMP_CLEAR_RADIUS = 45; // alrededor del campamento no aparece nada
 const MAX_PENDING = 24; // baldosas encargadas a la vez
 const REBUILD_INTERVAL = 0.12; // segundos mínimos entre dos reconstrucciones
 
@@ -244,6 +244,7 @@ export class ResourceSystem {
     this.origin = new THREE.Vector3();
     this.zonesSignature = '';
     this.removed = new Map(); // baldosa -> índices de recursos que ya no están
+    this.extra = new Map(); // baldosas especiales (arboleda del campamento)
     this.workers = new ResourceWorkers((key, data) => {
       if (this.cache.get(key) === 'pending') {
         data.key = key;
@@ -275,6 +276,7 @@ export class ResourceSystem {
 
     const radius = this.radiusFor(clearance);
     const tiles = this.collectTiles(focusDir, radius);
+    for (const extra of this.extra.values()) tiles.push(extra);
 
     // Reconstruir si la cámara se movió lo suficiente o llegaron baldosas nuevas.
     const moved = this.lastCamera.distanceTo(camera.position);
@@ -343,6 +345,27 @@ export class ResourceSystem {
     for (const [key, data] of this.cache) {
       if (data !== 'pending' && !keepSet.has(data)) this.cache.delete(key);
     }
+  }
+
+  // Añade o quita una baldosa especial (por ejemplo, la arboleda del campamento).
+  setExtraTile(key, data) {
+    if (data) {
+      data.key = key;
+      this.extra.set(key, data);
+    } else {
+      this.extra.delete(key);
+    }
+    this.dirty = true;
+  }
+
+  // Estado para guardar: qué recursos ya no están.
+  serializeRemoved() {
+    return [...this.removed].map(([key, set]) => [key, [...set]]);
+  }
+
+  restoreRemoved(list) {
+    this.removed = new Map((list || []).map(([key, idx]) => [key, new Set(idx)]));
+    this.dirty = true;
   }
 
   // Quita un recurso del mundo (un árbol talado, una piedra picada).

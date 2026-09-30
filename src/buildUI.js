@@ -122,11 +122,11 @@ export class BuildUI {
     const state = !b.done ? `En construcción · ${Math.round(b.progress * 100)}%` : b.worker ? 'Funcionando' : 'Sin trabajador';
     const ranking = this.buildings.ranking(b);
     // Clave para no redibujar si nada cambió.
-    const key = [state, b.worker?.id, b.produced, b.status, b.reason, ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [state, b.worker?.id, Math.floor(b.produced), b.status, b.reason, ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
-    const produced = def.id === 'well' ? `${b.produced} jarras de agua` : `${b.produced} de ${STOCK_NAMES[def.stock]}`;
+    const produced = def.id === 'well' ? `${Math.floor(b.produced)} jarras de agua` : `${Math.floor(b.produced)} de ${STOCK_NAMES[def.stock]}`;
     this.panel.innerHTML = `
       <header class="cp-head">
         <span class="bp-icon">${icon(def.icon)}</span>

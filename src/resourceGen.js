@@ -85,6 +85,78 @@ export function generateTile(i, j, cols) {
   return finish(out, items);
 }
 
+// Arboleda del campamento: recursos extra en un anillo de 50 a 100 m alrededor de la
+// fogata, según el bioma, para que la colonia siempre tenga árboles, bayas y piedras
+// cerca. Se dibuja y se usa como una baldosa más (clave GROVE_KEY).
+export const GROVE_KEY = -1;
+const GROVE_TREES = {
+  taiga: ['pine'], tundra: ['pine'], mountain: ['pine'], snow: ['pine'],
+  jungle: ['jungleTree', 'palm'], savanna: ['acacia'], desert: ['palm', 'acacia'], beach: ['palm'],
+  swamp: ['broadleaf', 'jungleTree'],
+};
+
+export function generateCampGrove(dirX, dirY, dirZ, biome, seed) {
+  const rand = seededRandom((seed ^ 0x2f6b1a3) >>> 0);
+  const index = Object.fromEntries(RESOURCE_TYPES.map((t, k) => [t.id, k]));
+  const trees = GROVE_TREES[biome] || ['broadleaf', 'broadleaf', 'pine'];
+  const plan = [
+    ...Array(70).fill(null).map(() => trees[Math.floor(rand() * trees.length)]),
+    ...Array(22).fill('berryBush'),
+    ...Array(10).fill('mushrooms'),
+    ...Array(16).fill('stone'),
+    ...Array(5).fill('flint'),
+  ];
+  // Base tangente en el campamento (metros -> dirección).
+  let ex = dirZ, ez = -dirX;
+  const el = Math.hypot(ex, ez) || 1;
+  ex /= el; ez /= el;
+  const nx = dirY * ez, ny = dirZ * ex - dirX * ez, nz = -dirY * ex;
+  const items = [];
+  for (const id of plan) {
+    const type = RESOURCE_TYPES[index[id]];
+    const a = rand() * Math.PI * 2;
+    const r = 50 + Math.sqrt(rand()) * 50;
+    const e = (Math.cos(a) * r) / RADIUS;
+    const n = (Math.sin(a) * r) / RADIUS;
+    let x = dirX + ex * e + nx * n, y = dirY + ny * n, z = dirZ + ez * e + nz * n;
+    const l = Math.hypot(x, y, z);
+    x /= l; y /= l; z /= l;
+    const h = surfaceHeight({ x, y, z });
+    const yaw = rand() * Math.PI * 2;
+    const scale = type.scale[0] + rand() * (type.scale[1] - type.scale[0]);
+    const tint = 0.85 + rand() * 0.3;
+    if (h <= 0.5) continue; // agua
+    items.push({ typeIndex: index[id], d: [x, y, z], h, yaw, scale, tint, rank: 0 });
+  }
+  return finish({ count: 0 }, items);
+}
+
+// Vegetación que brota con la lluvia cerca del campamento (clave SPROUT_KEY). Cada
+// brote es { typeIndex, d: [x, y, z], h, yaw, scale, tint } y se guarda tal cual.
+export const SPROUT_KEY = -2;
+
+export function sproutItem(dirX, dirY, dirZ, typeId, angle, distance, rand) {
+  const typeIndex = RESOURCE_TYPES.findIndex((t) => t.id === typeId);
+  const type = RESOURCE_TYPES[typeIndex];
+  let ex = dirZ, ez = -dirX;
+  const el = Math.hypot(ex, ez) || 1;
+  ex /= el; ez /= el;
+  const nx = dirY * ez, ny = dirZ * ex - dirX * ez, nz = -dirY * ex;
+  const e = (Math.cos(angle) * distance) / RADIUS;
+  const n = (Math.sin(angle) * distance) / RADIUS;
+  let x = dirX + ex * e + nx * n, y = dirY + ny * n, z = dirZ + ez * e + nz * n;
+  const l = Math.hypot(x, y, z);
+  x /= l; y /= l; z /= l;
+  const h = surfaceHeight({ x, y, z });
+  if (h <= 0.5) return null;
+  const scale = type.scale[0] + rand() * (type.scale[1] - type.scale[0]);
+  return { typeIndex, d: [x, y, z], h, yaw: rand() * Math.PI * 2, scale, tint: 0.85 + rand() * 0.3, rank: 0 };
+}
+
+export function tileFromItems(items) {
+  return finish({ count: 0 }, items);
+}
+
 function finish(out, items) {
   const n = items.length;
   out.count = n;

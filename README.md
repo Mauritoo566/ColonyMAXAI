@@ -65,11 +65,15 @@ Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s 
 
 ### Construcción y trabajo
 
-La **barra de construcción** (abajo) permite encargar edificios (`src/buildings.js`): choza de recolección (comida), cabaña del leñador (madera), cantera (piedra) y pozo (agua). Se elige dónde (hasta 75 m de la fogata; no sobre agua, pendientes fuertes ni encima de otra cosa) y los materiales se pagan al encargarlo. Los colonos construyen de día; los más hábiles en construcción avanzan más rápido. Al terminar, la colonia asigna el trabajo al **colono libre más capacitado** según sus habilidades (que salen de sus genes, su oficio anterior y su actitud). La ficha del edificio explica por qué lo eligió, muestra el ranking de candidatos y permite cambiarlo. Los árboles talados y las piedras picadas desaparecen del mundo. Los edificios y el almacén se guardan en el navegador.
+La **barra de construcción** (abajo) permite encargar edificios (`src/buildings.js`): choza de recolección (comida), cabaña del leñador (madera), cantera (piedra) y pozo (agua). Se elige dónde (hasta 75 m de la fogata; no sobre agua, pendientes fuertes ni encima de otra cosa) y los materiales se pagan al encargarlo. Los colonos construyen de día; los más hábiles en construcción avanzan más rápido. Al terminar, la colonia asigna el trabajo al **colono libre más capacitado** según sus habilidades (que salen de sus genes, su oficio anterior y su actitud). La ficha del edificio explica por qué lo eligió, muestra el ranking de candidatos y permite cambiarlo. Los árboles talados y las piedras picadas desaparecen del mundo.
+
+### Guardado
+
+Todo se guarda en el navegador (`localStorage`) cada pocos segundos y al cerrar la pestaña: edificios, trabajadores, almacén, las necesidades, salud, posición y registro de cada colono, los recursos talados o que están volviendo a crecer, los brotes de la lluvia, la hora, la fase de la Luna y el clima. Al volver se restaura todo en lugar de empezar de cero.
 
 ## Recursos naturales
 
-Aparecen solos por todo el planeta (`src/resources.js`), al azar pero siempre en el mismo lugar: el mundo se divide en baldosas de 320 m y cada una genera sus recursos con su propia semilla según el bioma. Los árboles se agrupan en bosques y los minerales sólo aparecen en vetas. Se generan en Web Workers (`src/resourceWorker.js` + `src/resourceGen.js`) y se dibujan cerca de la cámara (por debajo de 6 km de altura) con dos InstancedMesh por tipo: el modelo completo hasta 380 m y una versión simple más lejos. Más allá de 900 m se dibuja sólo una parte (la bruma lo disimula). No aparecen a menos de 90 m del campamento. Las cantidades por bioma están en `src/resourceTypes.js`.
+Aparecen solos por todo el planeta (`src/resources.js`), al azar pero siempre en el mismo lugar: el mundo se divide en baldosas de 320 m y cada una genera sus recursos con su propia semilla según el bioma. Los árboles se agrupan en bosques y los minerales sólo aparecen en vetas. Se generan en Web Workers (`src/resourceWorker.js` + `src/resourceGen.js`) y se dibujan cerca de la cámara (por debajo de 6 km de altura) con dos InstancedMesh por tipo: el modelo completo hasta 380 m y una versión simple más lejos. Más allá de 900 m se dibuja sólo una parte (la bruma lo disimula). No aparecen a menos de 45 m del campamento, y entre 50 y 100 m de la fogata crece siempre una arboleda propia del bioma (unos 70 árboles, bayas, setas, piedras y pedernal) para que la colonia tenga recursos a mano. Las cantidades por bioma están en `src/resourceTypes.js`.
 
 | Recurso | Da | Biomas |
 |---|---|---|
@@ -99,6 +103,17 @@ El Sol gira alrededor del planeta; la hora que se muestra es la hora solar del l
 Las nubes son cúmulos low poly con la base plana, en dos capas que existen siempre en todo el planeta: grandes sistemas nubosos y cúmulos pequeños repartidos en celdas de 1°. Cada celda genera siempre los mismos cúmulos, así que al acercarte no aparecen nubes nuevas: de lejos cada cúmulo es una sola bola y de cerca se separa en sus bolitas. El Sol proyecta la sombra de las nubes sobre el terreno con un mapa de sombras que se ajusta a la zona que estás mirando.
 
 Para que las nubes no tapen lo que estás mirando, las que quedan entre la cámara y el centro de la pantalla se vuelven casi transparentes (con un borde suave) y dejan de proyectar sombra; lo mismo pasa con cualquier nube muy cerca de la cámara. Desde el espacio el efecto se desactiva.
+
+## Clima
+
+El campamento tiene su propio clima (`src/weather.js`): despejado, nublado, lluvia o tormenta, que cambia cada pocas horas de juego. En lugares húmedos (selva, pantano) llueve a menudo y en el desierto casi nunca. Con lluvia:
+
+- el **pozo rinde más** (hasta el doble con tormenta),
+- las bayas y setas recogidas **vuelven a crecer antes**,
+- de vez en cuando **brota un arbusto de bayas o unas setas** nuevas cerca del campamento (hasta 50),
+- hace algo más de frío y el cielo se pone gris; cerca del suelo se ven caer las gotas.
+
+El clima actual se ve en el panel de la hora (abajo a la izquierda).
 
 ## Agua
 

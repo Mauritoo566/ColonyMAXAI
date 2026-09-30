@@ -7,7 +7,8 @@ import { createProfile, updateNeeds, hasTrait, wellbeing, addLog } from './needs
 import { appearanceFromGenes, gene } from './genes.js';
 import { campLayout } from './camp.js';
 import { RESOURCE_TYPES } from './resourceTypes.js';
-import { TILE_ANGLE, generateTile } from './resourceGen.js';
+import { TILE_ANGLE, generateTile, generateCampGrove, GROVE_KEY, SPROUT_KEY, sproutItem, tileFromItems } from './resourceGen.js';
+import { biomeAt as groveBiome } from './biomes.js';
 import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, taskKey } from './ai.js';
 
 // Colonos: tienen necesidades, salud, genes, rasgos, habilidades e historia
@@ -34,8 +35,10 @@ const COMPANY_RADIUS = 5; // metros: a esta distancia se hacen compañía
 const PICK_RADIUS_PX = 26; // tolerancia al hacer clic sobre un colono
 const MAX_STEPS_PER_FRAME = 80; // tope de pasos de simulación por fotograma (a ×60)
 const SPOT_RADIUS = 230; // metros: recursos que los colonos conocen alrededor del campamento
-const CAMP_CLEAR = 90; // alrededor del campamento no hay recursos (resources.js)
+const CAMP_CLEAR = 45; // alrededor del campamento no hay recursos naturales (resources.js)
 const REGROW_SECONDS = 1.5 * 360; // las bayas y setas vuelven a crecer en día y medio
+const MAX_SPROUTS = 50; // vegetación nueva que puede brotar con la lluvia
+const SPROUT_EVERY = 25; // segundos de juego entre brotes con lluvia fuerte
 // Qué recursos naturales sirven para qué.
 const SPOT_KINDS = {
   food: ['berryBush', 'mushrooms'],
@@ -132,6 +135,9 @@ export class ColonySystem {
     this.resources = null; // ResourceSystem, para quitar lo que se tala
     this.stock = { food: 0, water: 0, wood: 0, stone: 0 }; // almacén de la colonia
     this.gameTime = 0;
+    this.weather = null; // WeatherSystem: la lluvia acelera lo que crece y enfría
+    this.sprouts = []; // brotes de la lluvia (se guardan)
+    this.sproutTimer = 0;
     this.layout = campLayout();
     this.campTemperature = 0.5;
     this.obstacles = campObstacles();
@@ -169,7 +175,9 @@ export class ColonySystem {
     const time = timeLabel();
     const env = { isNight, time, gameTime: this.gameTime };
     if (gameDt > 0) {
-      const ambient = Math.min(1, Math.max(0, (this.campTemperature - (isNight ? 0.3 : 0) - 0.12) * 1.6));
+      const rain = this.weather?.rain ?? 0;
+      const ambient = Math.min(1, Math.max(0, (this.campTemperature - (isNight ? 0.3 : 0) - 0.12 - rain * 0.12) * 1.6));
+      this.updateRain(gameDt, rain);
       let simTime = gameDt;
       let steps = 0;
       while (simTime > 1e-4 && steps++ < MAX_STEPS_PER_FRAME) {
@@ -210,7 +218,10 @@ export class ColonySystem {
     this.water = undefined;
     this.camp = camp;
     this.stock = { ...START_STOCK };
+    this.sprouts = [];
+    this.resources?.setExtraTile(SPROUT_KEY, null);
     if (!camp) {
+      this.resources?.setExtraTile(GROVE_KEY, null);
       this.onCampChange?.(null);
       return;
     }
@@ -594,7 +605,7 @@ export class ColonySystem {
   // Recursos naturales alrededor del campamento en coordenadas locales. Salen de la
   // misma generación que el mundo, así que coinciden con lo que se ve.
   loadResourceSpots() {
-    this.spots = [];
+    const spots = (this.spots = []);
     const dir = this.camp.dir;
     const lat0 = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
     const lon0 = Math.atan2(dir.x, dir.z);
@@ -616,16 +627,75 @@ export class ColonySystem {
       for (let j = j0; j <= j1 && j < j0 + cols; j++) {
         const jw = ((j % cols) + cols) % cols;
         const key = i * 1_000_000 + jw;
-        const tile = generateTile(i, jw, cols);
-        for (let k = 0; k < tile.count; k++) {
-          const kind = typeIndex[tile.type[k]];
-          if (!kind) continue;
-          p.set(tile.pos[k * 3], tile.pos[k * 3 + 1], tile.pos[k * 3 + 2]).sub(origin).applyQuaternion(inv);
-          const d = Math.hypot(p.x, p.z);
-          if (d > SPOT_RADIUS || d < CAMP_CLEAR + 2) continue;
-          this.spots.push({ key, index: k, kind, type: RESOURCE_TYPES[tile.type[k]].id, x: p.x, z: p.z, readyAt: 0, taken: null });
-        }
+        addTile(key, generateTile(i, jw, cols), CAMP_CLEAR + 2);
       }
+    }
+    // Arboleda del campamento: recursos garantizados entre 50 y 100 m de la fogata.
+    const biome = groveBiome(dir.x, dir.y, dir.z).id;
+    const grove = generateCampGrove(dir.x, dir.y, dir.z, biome, this.camp.seed ?? 1);
+    addTile(GROVE_KEY, grove, 0);
+    this.resources?.setExtraTile(GROVE_KEY, grove);
+
+    function addTile(key, tile, minDistance) {
+      for (let k = 0; k < tile.count; k++) {
+        const kind = typeIndex[tile.type[k]];
+        if (!kind) continue;
+        p.set(tile.pos[k * 3], tile.pos[k * 3 + 1], tile.pos[k * 3 + 2]).sub(origin).applyQuaternion(inv);
+        const d = Math.hypot(p.x, p.z);
+        if (d > SPOT_RADIUS || d < minDistance) continue;
+        spots.push({ key, index: k, kind, type: RESOURCE_TYPES[tile.type[k]].id, x: p.x, z: p.z, readyAt: 0, taken: null });
+      }
+    }
+  }
+
+  // ---- Lluvia -------------------------------------------------------------
+
+  // Con lluvia las bayas y setas recogidas vuelven a crecer mucho antes y, de vez en
+  // cuando, brota un arbusto de bayas o un grupo de setas nuevo cerca del campamento.
+  updateRain(gameDt, rain) {
+    if (rain < 0.05) return;
+    const boost = gameDt * rain * 2; // con lluvia fuerte crecen tres veces más rápido
+    for (const s of this.spots) {
+      if (s.kind === 'food' && s.readyAt > this.gameTime) s.readyAt -= boost;
+    }
+    if (rain < 0.3 || this.sprouts.length >= MAX_SPROUTS) return;
+    this.sproutTimer += gameDt * rain;
+    if (this.sproutTimer < SPROUT_EVERY) return;
+    this.sproutTimer = 0;
+    this.sprout();
+  }
+
+  sprout() {
+    const dir = this.camp.dir;
+    const rand = Math.random;
+    const p = new THREE.Vector3();
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const type = rand() < 0.65 ? 'berryBush' : 'mushrooms';
+      const item = sproutItem(dir.x, dir.y, dir.z, type, rand() * Math.PI * 2, 22 + rand() * 90, rand);
+      if (!item) continue;
+      const r = RADIUS + item.h;
+      this.toLocal(p.set(item.d[0] * r, item.d[1] * r, item.d[2] * r), p);
+      if (!this.walkable(p.x, p.z, 1.5) || this.blockedByBuilding(p.x, p.z)) continue;
+      if (Math.hypot(p.x, p.z) < 14) continue; // no en medio del campamento
+      this.sprouts.push(item);
+      this.refreshSprouts();
+      const name = type === 'berryBush' ? 'un arbusto de bayas' : 'unas setas';
+      this.onSprout?.(`Con la lluvia brotó ${name} cerca del campamento.`);
+      return true;
+    }
+    return false;
+  }
+
+  // Rehace la baldosa de brotes y añade los puntos de recolección nuevos (los brotes sólo
+  // se agregan al final, así que los ya conocidos conservan su índice).
+  refreshSprouts() {
+    const tile = tileFromItems(this.sprouts);
+    this.resources?.setExtraTile(SPROUT_KEY, tile.count ? tile : null);
+    const known = this.spots.filter((s) => s.key === SPROUT_KEY).length;
+    const p = new THREE.Vector3();
+    for (let k = known; k < tile.count; k++) {
+      this.toLocal(p.set(tile.pos[k * 3], tile.pos[k * 3 + 1], tile.pos[k * 3 + 2]), p);
+      this.spots.push({ key: SPROUT_KEY, index: k, kind: 'food', type: RESOURCE_TYPES[tile.type[k]].id, x: p.x, z: p.z, readyAt: 0, taken: null });
     }
   }
 
@@ -660,6 +730,67 @@ export class ColonySystem {
     } else {
       spot.gone = true;
       this.resources?.removeResource(spot.key, spot.index);
+    }
+  }
+
+  // ---- Guardado --------------------------------------------------------
+
+  // Estado de la colonia que cambia con el juego (lo fijo —nombres, genes, rasgos— sale
+  // de la semilla del campamento y no hace falta guardarlo).
+  serialize() {
+    return {
+      gameTime: this.gameTime,
+      colonists: this.colonists.map((c) => ({
+        id: c.id,
+        needs: c.needs,
+        health: c.health,
+        log: c.log,
+        flags: c.flags,
+        chatCooldown: c.chatCooldown,
+        x: c.x,
+        z: c.z,
+        facing: c.facing,
+      })),
+      regrowing: this.spots.filter((s) => s.readyAt > this.gameTime).map((s) => [s.key, s.index, s.readyAt]),
+      removed: this.resources ? this.resources.serializeRemoved() : [],
+      sprouts: this.sprouts,
+    };
+  }
+
+  restore(data) {
+    if (!data) return;
+    this.gameTime = data.gameTime || 0;
+    for (const saved of data.colonists || []) {
+      const c = this.colonists.find((o) => o.id === saved.id);
+      if (!c) continue;
+      Object.assign(c.needs, saved.needs);
+      c.health = saved.health ?? c.health;
+      c.log = Array.isArray(saved.log) ? saved.log : c.log;
+      c.flags = saved.flags || {};
+      c.chatCooldown = saved.chatCooldown || 0;
+      if (Number.isFinite(saved.x) && this.walkable(saved.x, saved.z, 0.2)) {
+        c.x = saved.x;
+        c.z = saved.z;
+      }
+      c.facing = saved.facing ?? c.facing;
+      c.task = null;
+      c.sleeping = false;
+    }
+    if (Array.isArray(data.sprouts) && data.sprouts.length) {
+      this.sprouts = data.sprouts.filter((it) => Number.isInteger(it.typeIndex) && RESOURCE_TYPES[it.typeIndex]).slice(0, MAX_SPROUTS);
+      this.refreshSprouts();
+    }
+    const byKey = new Map(this.spots.map((s) => [`${s.key}:${s.index}`, s]));
+    for (const [key, index, readyAt] of data.regrowing || []) {
+      const s = byKey.get(`${key}:${index}`);
+      if (s) s.readyAt = readyAt;
+    }
+    if (this.resources) this.resources.restoreRemoved(data.removed);
+    for (const [key, indices] of data.removed || []) {
+      for (const index of indices) {
+        const s = byKey.get(`${key}:${index}`);
+        if (s) s.gone = true;
+      }
     }
   }
 

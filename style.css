@@ -789,6 +789,23 @@ summary:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+.place-info .weather {
+  color: var(--ui-text);
+}
+
+.weather[data-state='clear'] .icon {
+  color: #f2c14c;
+}
+
+.weather[data-state='cloudy'] .icon {
+  color: #b9c3d3;
+}
+
+.weather[data-state='rain'] .icon,
+.weather[data-state='storm'] .icon {
+  color: #7fb6ea;
+}
+
 .place-info .icon {
   color: var(--ui-faint);
 }

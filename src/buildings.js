@@ -10,7 +10,7 @@ import { hasTrait, addLog, SKILLS } from './needs.js';
 // colonia asigna como trabajador al colono libre más capacitado para ese oficio.
 
 const STORAGE_KEY = 'colonymaxai.colony';
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2; // 2: además guarda colonos, recursos agotados y el reloj
 const MAX_DISTANCE = 75; // metros desde la fogata donde se puede construir
 const CLICK_TOLERANCE = 6;
 const LABEL_DISTANCE = 260;
@@ -617,11 +617,14 @@ export class BuildingSystem {
 
   save() {
     const camp = this.colony.camp;
-    if (!camp) return;
+    if (!camp || this.loading) return;
     const data = {
       version: SAVE_VERSION,
       campSeed: camp.seed,
+      savedAt: Date.now(),
       stock: this.colony.stock,
+      colony: this.colony.serialize(),
+      world: this.world?.save() ?? null,
       buildings: this.list.map((b) => ({
         type: b.def.id,
         x: b.x,
@@ -649,11 +652,12 @@ export class BuildingSystem {
     } catch {
       data = null;
     }
-    // Sólo si es la colonia de este mismo campamento.
-    if (!data || data.version !== SAVE_VERSION || data.campSeed !== camp.seed) {
+    // Sólo si es la colonia de este mismo campamento (versión 1 = sin colonos).
+    if (!data || !(data.version >= 1 && data.version <= SAVE_VERSION) || data.campSeed !== camp.seed) {
       this.save();
       return;
     }
+    this.loading = true; // que crear edificios no guarde a medias
     Object.assign(this.colony.stock, data.stock);
     for (const s of data.buildings || []) {
       const def = BUILDINGS[s.type];
@@ -667,6 +671,10 @@ export class BuildingSystem {
         b.reason = 'Trabajaba aquí antes.';
       }
     }
+    // Necesidades, salud, posición y registro de cada colono; recursos agotados; reloj.
+    this.colony.restore(data.colony);
+    if (data.world) this.world?.load(data.world);
+    this.loading = false;
     this.onChange?.();
   }
 }

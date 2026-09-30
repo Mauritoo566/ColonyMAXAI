@@ -202,7 +202,9 @@ export function runTask(colony, c, task, dt, env) {
       }
       // Recupera el descanso en un tercio de día.
       n.rest = Math.min(100, n.rest + (100 / (0.33 * DAY)) * dt);
-      if (n.rest >= 97 && !env.isNight) {
+      // Se levanta al estar descansado: de día con casi todo, de noche al llenarse del
+      // todo (no se queda en la tienda con el descanso al 100 %).
+      if (n.rest >= 99.5 || (n.rest >= 97 && !env.isNight)) {
         c.sleeping = false;
         return 'done';
       }
@@ -283,8 +285,10 @@ function runWork(colony, c, task, dt, env) {
     colony.faceTowards(c, b.x, b.z, dt);
     if (!busy(task, dt, 10)) return 'running';
     task.timer = 0;
-    colony.stock.water += def.yield;
-    b.produced += def.yield;
+    // Con lluvia el pozo se llena solo: rinde hasta el doble.
+    const water = def.yield * (1 + (colony.weather?.rain ?? 0));
+    colony.stock.water += water;
+    b.produced += water;
     return 'done';
   }
 
