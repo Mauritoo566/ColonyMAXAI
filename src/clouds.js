@@ -87,7 +87,7 @@ const FADE_GLSL = /* glsl */ `
   float cloudFadeAmount(vec2 fromCenter, float depth) {
     float radial = 1.0 - smoothstep(uInnerRadius, uOuterRadius, length(fromCenter));
     // Sólo las nubes que están delante de lo que miras (las nubes flotan al menos
-    // 1,2 km sobre el suelo, así que basta un margen fijo en metros).
+    // 5 km sobre el suelo, así que basta un margen fijo en metros).
     float inFront = 1.0 - smoothstep(uFocusDistance - 1000.0, uFocusDistance - 200.0, depth);
     float nearCamera = 1.0 - smoothstep(uNearDistance * 0.5, uNearDistance, depth);
     return max(radial * inFront, nearCamera) * uFadeStrength;
@@ -360,7 +360,7 @@ function cellClusters(i, j, lonCells) {
     const lon = ((j + rand()) % lonCells) * CELL;
     const dir = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - lat, lon);
     const ground = Math.max(0, surfaceHeight(dir, 10));
-    const base = RADIUS + ground + 1_200 + rand() * 1_800;
+    const base = RADIUS + ground + 5_000 + rand() * 2_500; // bien por encima de la aldea
     const size = 3_000 + rand() * (MAX_CUMULUS_SIZE - 3_000);
     clusters.push({
       dir,

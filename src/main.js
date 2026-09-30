@@ -4,6 +4,7 @@ import { createPlanet } from './planet.js';
 import { PlanetControls } from './controls.js';
 import { DayNight, formatHour } from './daynight.js';
 import { cloudFade } from './clouds.js';
+import { waterUniforms } from './water.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
@@ -124,6 +125,7 @@ function updateSky(altitude) {
   const daylight = THREE.MathUtils.smoothstep(sunElevation, -0.12, 0.22);
   const dusk = THREE.MathUtils.clamp(1 - Math.abs(sunElevation - 0.03) / 0.14, 0, 1);
   skyColor.copy(SKY_NIGHT).lerp(SKY_DAY, daylight).lerp(SKY_DUSK, dusk * 0.55);
+  waterUniforms.uSkyColor.value.copy(skyColor); // el agua refleja este cielo
 
   const inAtmosphere = 1 - THREE.MathUtils.smoothstep(altitude, 15_000, 120_000);
   scene.background.copy(SPACE_COLOR).lerp(skyColor, inAtmosphere);
@@ -194,6 +196,7 @@ renderer.setAnimationLoop(() => {
   const delta = Math.min(clock.getDelta(), 0.1);
   controls.update(delta);
   dayNight.update(delta);
+  waterUniforms.uTime.value += delta;
 
   const altitude = camera.position.length() - RADIUS;
   const clearance = Math.max(1, altitude - controls.groundHeight);

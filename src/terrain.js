@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RADIUS, MAX_LAND_HEIGHT, elevation, heightFromElevation, moisture } from './elevation.js';
+import { createTerrainMaterial, setChunkWaveOffset, WAVE_TILE } from './water.js';
 
 // Terreno con nivel de detalle (LOD): la esfera se forma con las 6 caras de un cubo
 // y cada cara es un quadtree. Los trozos cercanos a la cámara se dividen en 4 hijos
@@ -77,6 +78,8 @@ function faceColor(e, dir, slope, out) {
 }
 
 const tmpDir = [0, 0, 0];
+// Origen de las olas del agua: la cámara redondeada a múltiplos de WAVE_TILE.
+const waveOrigin = new THREE.Vector3();
 const tmpColor = new THREE.Color();
 
 class Node {
@@ -152,21 +155,25 @@ class Node {
     const triCount = res * res * 2 + res * 4 * 4;
     const positions = new Float32Array(triCount * 9);
     const colors = new Float32Array(triCount * 9);
+    const water = new Float32Array(triCount * 3);
     const cx = this.center.x;
     const cy = this.center.y;
     const cz = this.center.z;
     let t = 0;
 
-    const writeVertex = (x, y, z) => {
+    const writeVertex = (x, y, z, w = -1) => {
       // Posiciones relativas al centro del trozo: así caben en float32 sin perder precisión.
       positions[t * 3] = x - cx;
       positions[t * 3 + 1] = y - cy;
       positions[t * 3 + 2] = z - cz;
       tmpColor.toArray(colors, t * 3);
+      water[t] = w;
       t++;
     };
 
     const emitTriangle = (i0, i1, i2) => {
+      let j1 = i1;
+      let j2 = i2;
       const ax = pos[i0 * 3], ay = pos[i0 * 3 + 1], az = pos[i0 * 3 + 2];
       let bx = pos[i1 * 3], by = pos[i1 * 3 + 1], bz = pos[i1 * 3 + 2];
       let qx = pos[i2 * 3], qy = pos[i2 * 3 + 1], qz = pos[i2 * 3 + 2];
@@ -188,19 +195,30 @@ class Node {
         [bx, qx] = [qx, bx];
         [by, qy] = [qy, by];
         [bz, qz] = [qz, bz];
+        [j1, j2] = [j2, j1];
         up = -up;
       }
 
       const e = (elev[i0] + elev[i1] + elev[i2]) / 3;
-      faceColor(e, tmpDir, 1 - up, tmpColor);
+      let colorE = e;
+      if (e <= 0) {
+        // El tono del agua depende de la profundidad. Se calcula siempre con el mismo
+        // detalle (6 octavas) para que trozos vecinos de distinto nivel coincidan.
+        const l = Math.hypot(tmpDir[0], tmpDir[1], tmpDir[2]);
+        colorE = Math.min(-1e-9, elevation(tmpDir[0] / l, tmpDir[1] / l, tmpDir[2] / l, 6));
+      }
+      faceColor(colorE, tmpDir, 1 - up, tmpColor);
       const k = 1 + (hash3(tmpDir[0], tmpDir[1], tmpDir[2]) - 0.5) * 0.12;
       tmpColor.r *= k;
       tmpColor.g *= k;
       tmpColor.b *= k;
 
-      writeVertex(ax, ay, az);
-      writeVertex(bx, by, bz);
-      writeVertex(qx, qy, qz);
+      // Agua: 0 en los vértices que tocan tierra (espuma), 1 en agua abierta.
+      const isWater = e <= 0 && Math.abs(tmpDir[1]) <= 0.93;
+      const w = (k) => (isWater ? (elev[k] > 0 ? 0 : 1) : -1);
+      writeVertex(ax, ay, az, w(i0));
+      writeVertex(bx, by, bz, w(j1));
+      writeVertex(qx, qy, qz, w(j2));
     };
 
     for (let j = 0; j < res; j++) {
@@ -239,6 +257,8 @@ class Node {
         tmpDir[1] = dirs[i0 * 3 + 1];
         tmpDir[2] = dirs[i0 * 3 + 2];
         faceColor(e, tmpDir, 0, tmpColor);
+        // Si el borde es de agua, el faldón también: así brilla igual y no se nota.
+        const sw = e <= 0 && Math.abs(tmpDir[1]) <= 0.93 ? 1 : -1;
 
         const ax = pos[i0 * 3], ay = pos[i0 * 3 + 1], az = pos[i0 * 3 + 2];
         const bx = pos[i1 * 3], by = pos[i1 * 3 + 1], bz = pos[i1 * 3 + 2];
@@ -249,20 +269,20 @@ class Node {
         const dby = by - dirs[i1 * 3 + 1] * skirtDepth;
         const dbz = bz - dirs[i1 * 3 + 2] * skirtDepth;
 
-        writeVertex(ax, ay, az);
-        writeVertex(bx, by, bz);
-        writeVertex(dax, day, daz);
-        writeVertex(bx, by, bz);
-        writeVertex(dbx, dby, dbz);
-        writeVertex(dax, day, daz);
+        writeVertex(ax, ay, az, sw);
+        writeVertex(bx, by, bz, sw);
+        writeVertex(dax, day, daz, sw);
+        writeVertex(bx, by, bz, sw);
+        writeVertex(dbx, dby, dbz, sw);
+        writeVertex(dax, day, daz, sw);
         // Los mismos dos triángulos con la orientación contraria, para que el faldón
         // se vea desde ambos lados sin usar DoubleSide (que invierte la normal).
-        writeVertex(ax, ay, az);
-        writeVertex(dax, day, daz);
-        writeVertex(bx, by, bz);
-        writeVertex(bx, by, bz);
-        writeVertex(dax, day, daz);
-        writeVertex(dbx, dby, dbz);
+        writeVertex(ax, ay, az, sw);
+        writeVertex(dax, day, daz, sw);
+        writeVertex(bx, by, bz, sw);
+        writeVertex(bx, by, bz, sw);
+        writeVertex(dax, day, daz, sw);
+        writeVertex(dbx, dby, dbz, sw);
         skirtVertexDirs.push(i0, i1, i0, i1, i1, i0, i0, i0, i1, i1, i0, i1);
       }
     }
@@ -270,6 +290,7 @@ class Node {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('aWater', new THREE.BufferAttribute(water, 1));
     // Normales por cara (geometría no indexada = aspecto facetado). Los faldones usan la
     // normal "hacia arriba" para no verse como líneas oscuras entre trozos.
     geometry.computeVertexNormals();
@@ -285,6 +306,9 @@ class Node {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.copy(this.center);
     mesh.receiveShadow = true; // recibe la sombra de las nubes
+    mesh.onBeforeRender = (renderer, scene, camera, geometry, mat) => {
+      setChunkWaveOffset(mat, this.center, waveOrigin);
+    };
     mesh.visible = false;
     this.mesh = mesh;
     return mesh;
@@ -295,11 +319,7 @@ export class Terrain {
   constructor() {
     this.object = new THREE.Group();
     this.object.name = 'terrain';
-    this.material = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.95,
-      metalness: 0,
-    });
+    this.material = createTerrainMaterial();
     this.roots = FACES.map((face) => new Node(face, 0, -1, -1, 2));
     for (const root of this.roots) this.object.add(root.build(this.material));
     this.queue = [];
@@ -309,6 +329,11 @@ export class Terrain {
 
   update(cameraPosition) {
     this.camera.copy(cameraPosition);
+    waveOrigin.set(
+      Math.round(cameraPosition.x / WAVE_TILE) * WAVE_TILE,
+      Math.round(cameraPosition.y / WAVE_TILE) * WAVE_TILE,
+      Math.round(cameraPosition.z / WAVE_TILE) * WAVE_TILE,
+    );
     const altitude = Math.max(0, cameraPosition.length() - RADIUS);
     // Distancia al horizonte, más la distancia a la que se ve una montaña muy alta.
     this.horizon =

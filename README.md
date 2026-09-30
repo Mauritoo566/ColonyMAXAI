@@ -29,6 +29,10 @@ Las nubes son cúmulos low poly con la base plana, en dos capas que existen siem
 
 Para que las nubes no tapen lo que estás mirando, las que quedan entre la cámara y el centro de la pantalla se vuelven casi transparentes (con un borde suave) y dejan de proyectar sombra; lo mismo pasa con cualquier nube muy cerca de la cámara. Desde el espacio el efecto se desactiva.
 
+## Agua
+
+El mar forma parte del terreno (caras planas a nivel 0) y tiene su propio efecto en `src/water.js`: olas animadas que sólo se calculan cerca de la cámara (se desvanecen entre 1,5 y 9 km), reflejo del cielo según el ángulo de visión, brillo del sol y espuma en los bordes que tocan tierra. No usa texturas ni pasadas extra, así que casi no cuesta rendimiento.
+
 Rendimiento: los grandes sistemas nubosos están divididos en zonas y sólo se dibujan las que están de este lado del horizonte (las lejanas con menos polígonos); los cúmulos lejanos usan una forma de 20 triángulos y los que ocupan menos de 2 píxeles no se dibujan.
 
 ## Cómo funciona la escala
