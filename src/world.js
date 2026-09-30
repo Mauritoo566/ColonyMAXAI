@@ -56,7 +56,7 @@ export class WorldClient {
       await this.myRef.set(data);
     } catch (e) {
       if (e?.code === 'invalid_argument') {
-        throw new Error('No tienes permiso para unirte a este mundo. Pide al dueño que te dé acceso de Colaborador o Editor.');
+        throw new Error('Puedes ver este mundo pero no unirte: pide al dueño que te invite por email con permiso de edición (Editor).');
       }
       throw new Error('No se pudo conectar con el mundo. Prueba de nuevo.');
     }

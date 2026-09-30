@@ -186,7 +186,10 @@ function localLogin(screen) {
   const submit = form.querySelector('[type="submit"]');
   const tabs = screen.querySelectorAll('[data-mode]');
   form.hidden = false;
-  $('[data-note]').textContent = 'Sin conexión al mundo compartido: las cuentas y partidas se guardan en este navegador y cada cuenta tiene su propio campamento.';
+  // Abierta dentro de claude.ai pero sin mundo: falta iniciar sesión en Claude o permiso.
+  $('[data-note]').textContent = window.claude?.use
+    ? 'No se pudo conectar al mundo compartido: inicia sesión en Claude y pide al dueño que te invite por email con permiso de edición. Mientras tanto puedes jugar solo en este navegador.'
+    : 'Sin conexión al mundo compartido: las cuentas y partidas se guardan en este navegador y cada cuenta tiene su propio campamento.';
   let mode = Object.keys(readAccounts()).length ? 'login' : 'register';
   const setMode = (m) => {
     mode = m;
