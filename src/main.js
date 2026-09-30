@@ -117,7 +117,6 @@ buildings.blockSelection = () => !!camps.placing || harvest.active;
 const weather = new WeatherSystem(scene);
 weather.setPlace(controls.dir);
 colony.weather = weather;
-Object.assign(window, { __controls: controls, __dayNight: dayNight, __colony: colony, __buildings: buildings, __camera: camera });
 // Lo que se guarda con la colonia además de edificios y colonos: el reloj y el clima.
 buildings.world = {
   save: () => ({
