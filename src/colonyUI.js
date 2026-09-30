@@ -41,8 +41,11 @@ function escapeHtml(text) {
 }
 
 export class ColonyUI {
-  constructor({ colony, controls, camera, canvas, isBlocked = () => false }) {
+  // colony: la simulación (sim/colony.js); view: la vista de los colonos (colonists.js),
+  // que sabe cuál está elegido y dónde se dibuja cada uno.
+  constructor({ colony, view, controls, camera, canvas, isBlocked = () => false }) {
     this.colony = colony;
+    this.view = view;
     this.controls = controls;
     this.camera = camera;
     this.canvas = canvas;
@@ -72,7 +75,7 @@ export class ColonyUI {
     // En pantallas chicas la lista empieza plegada.
     if (window.matchMedia('(max-width: 720px)').matches) $('roster-wrap').open = false;
 
-    colony.onSelect = (c) => this.showColonist(c);
+    view.onSelect = (c) => this.showColonist(c);
     controls.onFollowEnd = () => this.setFollowing(false);
 
     // Clic sobre el mundo: elegir el colono más cercano al puntero.
@@ -85,12 +88,12 @@ export class ColonyUI {
       pressed = null;
       if (!p || e.button !== 0 || this.isBlocked()) return;
       if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > CLICK_TOLERANCE) return;
-      const c = colony.pickAt(e.clientX, e.clientY);
-      if (c) colony.select(c);
-      else if (colony.selected) colony.select(null);
+      const c = view.pickAt(e.clientX, e.clientY);
+      if (c) view.select(c);
+      else if (view.selected) view.select(null);
     });
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && colony.selected && !this.isBlocked()) colony.select(null);
+      if (e.key === 'Escape' && view.selected && !this.isBlocked()) view.select(null);
     });
 
     // Ayuda.
@@ -126,7 +129,7 @@ export class ColonyUI {
       li.title = `${NEEDS.find((n) => n.id === li.dataset.need).name}: ${Math.round(v)}% de media en la colonia`;
     }
     this.updateRoster();
-    if (this.colony.selected) this.updatePanel(this.colony.selected);
+    if (this.view.selected) this.updatePanel(this.view.selected);
   }
 
   // ---- Lista de colonos ----------------------------------------------------
@@ -169,17 +172,18 @@ export class ColonyUI {
         activity.innerHTML = html;
         activity.dataset.html = html;
       }
-      li.firstElementChild.classList.toggle('is-selected', this.colony.selected === c);
+      li.firstElementChild.classList.toggle('is-selected', this.view.selected === c);
     }
   }
 
   // Elegir desde la lista: si el colono no está a la vista, la cámara vuela hasta él.
   focusColonist(c) {
-    this.colony.select(c);
+    this.view.select(c);
     const dir = this.colony.directionOf(c, this.tmpDir);
-    const p = this.tmpProj.copy(c.object.position).project(this.camera);
+    const position = this.view.positionOf(c) ?? dir;
+    const p = this.tmpProj.copy(position).project(this.camera);
     const onScreen = p.z < 1 && Math.abs(p.x) < 0.8 && Math.abs(p.y) < 0.8;
-    const near = this.camera.position.distanceTo(c.object.position) < 400;
+    const near = this.camera.position.distanceTo(position) < 400;
     if (!onScreen || !near) this.controls.flyTo(dir.clone(), FOCUS_CLEARANCE);
   }
 
@@ -290,7 +294,7 @@ export class ColonyUI {
         <button type="button" class="btn" data-follow aria-pressed="false">${icon('follow')}Seguir con la cámara</button>
       </div>`;
     paintAvatar(this.panel.querySelector('.avatar'), c.look);
-    this.panel.querySelector('[data-close]').addEventListener('click', () => this.colony.select(null));
+    this.panel.querySelector('[data-close]').addEventListener('click', () => this.view.select(null));
     this.panel.querySelector('[data-follow]').addEventListener('click', () => {
       if (this.following) this.controls.stopFollow();
       else this.startFollowing();
@@ -358,7 +362,7 @@ export class ColonyUI {
 
   startFollowing() {
     const dir = new THREE.Vector3();
-    this.controls.startFollow(() => (this.colony.selected ? this.colony.directionOf(this.colony.selected, dir) : null));
+    this.controls.startFollow(() => (this.view.selected ? this.colony.directionOf(this.view.selected, dir) : null));
     this.setFollowing(true);
   }
 

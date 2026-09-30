@@ -2,22 +2,26 @@ import * as THREE from 'three';
 import { RADIUS } from './elevation.js';
 import { createPlanet } from './planet.js';
 import { PlanetControls } from './controls.js';
-import { DayNight, formatHour } from './daynight.js';
+import { DayNight, formatHour, DAY_LENGTH_SECONDS } from './daynight.js';
 import { cloudFade } from './clouds.js';
 import { waterUniforms } from './water.js';
 import { CampSystem } from './camp.js';
 import { biomeAt } from './biomes.js';
 import { ResourceSystem } from './resources.js';
 import { createSky } from './sky.js';
-import { ColonySystem } from './colonists.js';
+import { ColonySim } from './sim/colony.js';
+import { ColonyView } from './colonists.js';
 import { ColonyUI } from './colonyUI.js';
-import { BuildingSystem } from './buildings.js';
+import { BuildingSystem, STOCK_NAMES } from './buildings.js';
+import { CRITICAL_HEALTH } from './needs.js';
 import { BuildUI } from './buildUI.js';
 import { WeatherSystem } from './weather.js';
 import { AgeUI } from './ageUI.js';
 import { HarvestTool } from './harvest.js';
 import { requireLogin, logout } from './auth.js';
 import { setStorageUser, storageKey } from './storage.js';
+import { saveColony, loadColony } from './save.js';
+import { GROVE_KEY, SPROUT_KEY } from './resourceGen.js';
 import { connectWorld, OtherCamps } from './world.js';
 
 // Antes de nada: iniciar sesión (o registrarse). En la página publicada el planeta es
@@ -98,7 +102,8 @@ const planet = createPlanet();
 scene.add(planet.object);
 
 const resources = new ResourceSystem(scene);
-const colony = new ColonySystem({ scene, camera, canvas, labelsRoot: document.getElementById('labels') });
+// La colonia: la simulación decide todo (sim/colony.js) y las vistas la dibujan.
+const colony = new ColonySim();
 const resourceFocus = new THREE.Vector3();
 
 const camps = new CampSystem({
@@ -117,16 +122,24 @@ const camps = new CampSystem({
   },
 });
 
-colony.resources = resources; // para quitar del mundo lo que se tala
+const campObject = () => camps.camp?.object ?? null;
+const colonyView = new ColonyView({ scene, camera, canvas, labelsRoot: document.getElementById('labels'), sim: colony, campObject });
 const buildings = new BuildingSystem({
   scene,
   camera,
   canvas,
-  colony,
+  sim: colony,
   terrain: planet.terrain,
   labelsRoot: document.getElementById('labels'),
+  pickColonist: (x, y) => colonyView.pickAt(x, y),
 });
-const harvest = new HarvestTool({ scene, camera, canvas, colony, controls });
+const harvest = new HarvestTool({ scene, camera, canvas, colony, controls, campObject });
+// Recursos del mundo: lo talado desaparece y lo que brota con la lluvia aparece.
+colony.on('resources', () => {
+  resources.restoreRemoved(colony.serializeRemoved());
+  resources.setExtraTile(GROVE_KEY, colony.groveTile);
+  resources.setExtraTile(SPROUT_KEY, colony.sproutTile);
+});
 buildings.blockSelection = () => !!camps.placing || harvest.active;
 
 // Clima: se decide en el campamento (o donde se mire si aún no hay uno).
@@ -134,7 +147,7 @@ const weather = new WeatherSystem(scene);
 weather.setPlace(controls.dir);
 colony.weather = weather;
 // Lo que se guarda con la colonia además de edificios y colonos: el reloj y el clima.
-buildings.world = {
+const worldState = {
   save: () => ({
     elapsed: dayNight.elapsed,
     subsolarLon: dayNight.subsolarLon,
@@ -149,13 +162,42 @@ buildings.world = {
     weather.load(d.weather);
   },
 };
+// ---- Guardado ----------------------------------------------------------------------
+const SAVE_EVERY = 5; // segundos
+let saveTimer = SAVE_EVERY;
+let restoring = false; // mientras se carga una partida no se guarda a medias
+let awaySeconds = 0; // tiempo que pasó desde que se guardó la partida cargada
+function save() {
+  if (!restoring && !catchUp) saveColony(colony, worldState);
+}
+colony.on('changed', save);
 // Guardar también al cerrar o cambiar de pestaña.
-window.addEventListener('pagehide', () => buildings.save());
+window.addEventListener('pagehide', save);
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') buildings.save();
+  if (document.visibilityState === 'hidden') save();
 });
+
+// Cuando se funda (o cambia) el campamento, la simulación empieza de cero en ese lugar y
+// se carga la partida guardada si es de ese mismo campamento.
+let simCamp = null;
+function syncCamp() {
+  if (camps.camp === simCamp) return;
+  simCamp = camps.camp;
+  const c = simCamp;
+  restoring = true;
+  colony.setCamp(c ? { dir: c.dir, height: c.height, yaw: c.yaw, seed: c.seed } : null);
+  const data = c ? loadColony() : null;
+  if (data && colony.restore(data)) {
+    if (data.world) worldState.load(data.world);
+    awaySeconds = Number.isFinite(data.savedAt) ? Math.max(0, (Date.now() - data.savedAt) / 1000) : 0;
+  }
+  restoring = false;
+  save();
+}
+
 const colonyUI = new ColonyUI({
   colony,
+  view: colonyView,
   controls,
   camera,
   canvas,
@@ -164,19 +206,15 @@ const colonyUI = new ColonyUI({
 const buildUI = new BuildUI({ buildings, colony, harvest, onFocusColonist: (c) => colonyUI.focusColonist(c) });
 // Sólo una ficha abierta a la vez.
 colonyUI.onOpen = () => buildings.select(null);
-buildUI.onOpen = () => colony.select(null);
+buildUI.onOpen = () => colonyView.select(null);
 const ageUI = new AgeUI({
   colony,
-  timeLabel: () => {
-    const d = camps.camp?.dir;
-    return d ? `Día ${dayNight.day} · ${formatHour(dayNight.localHour(Math.atan2(d.x, d.z)))}` : '';
-  },
+  timeLabel: campTimeLabel,
 });
 ageUI.onOpen = () => {
-  colony.select(null);
+  colonyView.select(null);
   buildings.select(null);
 };
-colony.onAgeChange = () => buildings.save();
 
 // ---- Mundo compartido: los campamentos de los demás, en vivo ----------------------
 const world = player.world;
@@ -238,7 +276,7 @@ function publishWorld() {
     camp: camp ? { x: camp.dir.x, y: camp.dir.y, z: camp.dir.z, yaw: round(camp.yaw, 1000), height: round(camp.height) } : null,
     age: colony.age,
     population: colony.count,
-    buildings: buildings.list.map((b) => ({ t: b.def.id, l: b.level, x: round(b.x), z: round(b.z), yaw: round(b.yaw, 100), d: b.done || b.upgrading })),
+    buildings: colony.buildings.map((b) => ({ t: b.def.id, l: b.level, x: round(b.x), z: round(b.z), yaw: round(b.yaw, 100), d: b.done || b.upgrading })),
   });
 }
 let publishTimer = 2;
@@ -414,6 +452,110 @@ function updateQuality(rawDelta) {
   planet.terrain.detailScale = quality.scale;
 }
 
+// ---- Mientras no estabas ------------------------------------------------------------
+// El tiempo sigue corriendo sin el jugador (a velocidad ×1). Al volver se simula lo que
+// pasó, con la misma IA y en pocos fotogramas, hasta un máximo de dos días de juego. Nadie
+// empeora más allá de la salud crítica (needs.js): el dueño decide al volver.
+const AWAY_MAX_SECONDS = 2 * DAY_LENGTH_SECONDS;
+const AWAY_MIN_SECONDS = 20; // menos que esto no vale un resumen (recargar la página)
+const CATCH_UP_CHUNK = 5; // segundos de juego por tramo (~20 minutos: día y noche bien)
+const CATCH_UP_BUDGET_MS = 12; // tiempo por fotograma dedicado a ponerse al día
+let catchUp = null; // { left, total, capped, before }
+
+function campTimeLabel() {
+  const d = camps.camp?.dir;
+  return d ? `Día ${dayNight.day} · ${formatHour(dayNight.localHour(Math.atan2(d.x, d.z)))}` : '';
+}
+
+function startCatchUp(seconds) {
+  const total = Math.min(seconds, AWAY_MAX_SECONDS);
+  catchUp = {
+    left: total,
+    total,
+    capped: seconds > AWAY_MAX_SECONDS,
+    before: {
+      stock: { ...colony.stock },
+      spoiled: colony.spoiled,
+      done: new Map(colony.buildings.map((b) => [b, { done: b.done, level: b.level }])),
+    },
+  };
+  document.getElementById('catch-up').hidden = false;
+}
+
+function runCatchUp() {
+  const campDir = camps.camp?.dir;
+  if (!campDir) {
+    catchUp = null;
+    document.getElementById('catch-up').hidden = true;
+    return;
+  }
+  const start = performance.now();
+  while (catchUp.left > 0 && performance.now() - start < CATCH_UP_BUDGET_MS) {
+    const dt = Math.min(CATCH_UP_CHUNK, catchUp.left);
+    catchUp.left -= dt;
+    dayNight.advance(dt);
+    weather.update(dt, 0, camera, Infinity);
+    colony.update(dt, {
+      timeScale: 1,
+      timeLabel: campTimeLabel,
+      isNight: campDir.dot(dayNight.sunDirection) < -0.05,
+      absent: true,
+      maxSteps: Math.ceil(dt / 0.1) + 1,
+    });
+  }
+  if (catchUp.left > 0) return;
+  showAwaySummary(catchUp);
+  catchUp = null;
+  document.getElementById('catch-up').hidden = true;
+  save();
+}
+
+function showAwaySummary({ total, capped, before }) {
+  const hours = Math.round((total / DAY_LENGTH_SECONDS) * 24);
+  document.getElementById('away-title').textContent =
+    hours >= 1 ? `Pasaron ${hours} ${hours === 1 ? 'hora' : 'horas'} en la colonia` : 'Pasó un rato en la colonia';
+  const lines = [];
+  if (capped) lines.push('Estuviste fuera mucho tiempo: se resumen los últimos dos días.');
+  const changes = Object.keys(STOCK_NAMES)
+    .map((k) => [k, Math.round((colony.stock[k] ?? 0) - (before.stock[k] ?? 0))])
+    .filter(([, d]) => d !== 0)
+    .map(([k, d]) => `${d > 0 ? '+' : '−'}${Math.abs(d)} ${STOCK_NAMES[k]}`);
+  lines.push(changes.length ? `Almacén: ${changes.join(', ')}.` : 'El almacén quedó igual.');
+  const built = colony.buildings.filter((b) => b.done && before.done.get(b) && !before.done.get(b).done && before.done.get(b).level === b.level).length;
+  const upgraded = colony.buildings.filter((b) => before.done.get(b) && b.level > before.done.get(b).level).length;
+  if (built) lines.push(`Terminaron ${built === 1 ? 'una obra' : `${built} obras`}.`);
+  if (upgraded) lines.push(`Terminaron ${upgraded === 1 ? 'una mejora' : `${upgraded} mejoras`}.`);
+  const spoiled = Math.round(colony.spoiled - before.spoiled);
+  if (spoiled > 0) lines.push(`Se pudrieron ${spoiled} de comida al aire libre.`);
+  const critical = colony.colonists.filter((c) => c.health <= CRITICAL_HEALTH + 0.5);
+  if (critical.length) {
+    const names = critical.map((c) => c.name);
+    const who = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} y ${names.at(-1)}`;
+    // Qué les falta (lo que baja la salud, needs.js).
+    const lacks = [
+      critical.some((c) => c.needs.food <= 1) && 'comida',
+      critical.some((c) => c.needs.water <= 1) && 'agua',
+      critical.some((c) => c.needs.warmth < 10) && 'calor',
+    ].filter(Boolean);
+    const what = lacks.length ? lacks.join(lacks.length === 2 ? ' y ' : ', ') : 'comida, agua o calor';
+    lines.push(`${who} ${names.length === 1 ? 'quedó' : 'quedaron'} con salud crítica: ${names.length === 1 ? 'le' : 'les'} falta ${what}.`);
+  } else {
+    lines.push('Todos los colonos siguen bien.');
+  }
+  const list = document.getElementById('away-list');
+  list.textContent = '';
+  for (const text of lines) {
+    const li = document.createElement('li');
+    li.textContent = text;
+    list.append(li);
+  }
+  list.lastChild.classList.toggle('is-bad', critical.length > 0);
+  document.getElementById('away-card').hidden = false;
+}
+document.getElementById('away-close').addEventListener('click', () => {
+  document.getElementById('away-card').hidden = true;
+});
+
 const clock = new THREE.Clock();
 let labelTimer = 0;
 let weatherPlaceTimer = 0;
@@ -435,6 +577,7 @@ renderer.setAnimationLoop(() => {
   else resourceFocus.copy(controls.dir);
   resources.update(camera, resourceFocus, clearance, delta);
   camps.update(delta);
+  syncCamp();
   const campDir = camps.camp?.dir;
   // El clima es el del campamento; sin campamento, el del lugar que se mira.
   weatherPlaceTimer -= delta;
@@ -445,14 +588,28 @@ renderer.setAnimationLoop(() => {
   const nearCamp = campDir ? 1 - THREE.MathUtils.smoothstep(controls.dir.angleTo(campDir) * RADIUS, 40_000, 150_000) : 1;
   weatherNear = nearCamp * (1 - THREE.MathUtils.smoothstep(clearance, 8_000, 80_000));
   weather.update(delta * dayNight.speed, delta, camera, nearCamp > 0.5 ? clearance : Infinity);
-  const campTime = () => `Día ${dayNight.day} · ${formatHour(dayNight.localHour(Math.atan2(campDir.x, campDir.z)))}`;
-  colony.update(delta, camps.camp, {
-    timeScale: dayNight.speed,
-    // De noche hace más frío y los colonos tienden a dormir.
-    isNight: campDir ? campDir.dot(dayNight.sunDirection) < -0.05 : false,
-    timeLabel: campTime,
-  });
-  if (camps.camp) buildings.update(delta, { timeLabel: campTime, timeScale: dayNight.speed });
+  if (catchUp) {
+    runCatchUp();
+  } else {
+    colony.update(delta, {
+      timeScale: dayNight.speed,
+      // De noche hace más frío y los colonos tienden a dormir.
+      isNight: campDir ? campDir.dot(dayNight.sunDirection) < -0.05 : false,
+      timeLabel: campTimeLabel,
+    });
+    // Recién cargada una colonia guardada: simular el tiempo que no estuvo el jugador.
+    if (awaySeconds) {
+      if (awaySeconds >= AWAY_MIN_SECONDS) startCatchUp(awaySeconds);
+      awaySeconds = 0;
+    }
+  }
+  colonyView.update(delta * Math.min(dayNight.speed, 8));
+  buildings.update();
+  saveTimer -= delta;
+  if (saveTimer <= 0) {
+    saveTimer = SAVE_EVERY;
+    save();
+  }
   colonyUI.update(delta);
   buildUI.update(delta);
   ageUI.update(delta);

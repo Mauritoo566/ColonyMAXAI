@@ -17,10 +17,12 @@ const MARKER_HEIGHT = { wood: 7.2, food: 1.5, stone: 1.4 };
 const MARKER_KINDS = ['wood', 'stone', 'food'];
 
 export class HarvestTool {
-  constructor({ scene, camera, canvas, colony, controls }) {
+  // colony: la simulación (sim/colony.js); campObject(): el modelo del campamento.
+  constructor({ scene, camera, canvas, colony, controls, campObject }) {
     this.camera = camera;
     this.canvas = canvas;
     this.colony = colony;
+    this.campObject = campObject;
     this.active = false;
     this.mode = 'mark'; // 'mark' | 'unmark' | 'zone'
     this.message = null; // aviso si la zona no se puede poner
@@ -77,15 +79,14 @@ export class HarvestTool {
       fiber: pileGeometry(fiberPile),
       water: pileGeometry(waterPile),
     };
-    colony.onZonesChange = () => {
+    colony.on('zones', () => {
       this.zonesDirty = true;
       this.onChange?.();
-    };
-
-    colony.onMarksChange = () => {
+    });
+    colony.on('marks', () => {
       this.markersDirty = true;
       this.onChange?.();
-    };
+    });
     controls.blockLeftDrag = () => this.active;
 
     canvas.addEventListener('pointerdown', (e) => {
@@ -94,7 +95,7 @@ export class HarvestTool {
       if (!p) return;
       // Los lados del rectángulo siguen la vista: "a lo largo" es hacia donde mira la cámara.
       const f = this.tmp.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-      f.applyQuaternion(this.colony.camp.object.quaternion.clone().invert());
+      f.applyQuaternion(this.colony.camp.quaternion.clone().invert());
       const angle = Math.atan2(-f.x, f.z);
       this.drag = { ax: p.x, az: p.z, bx: p.x, bz: p.z, angle, sx: e.clientX, sy: e.clientY };
       this.updateArea();
@@ -157,9 +158,9 @@ export class HarvestTool {
 
   updateArea() {
     const d = this.drag;
-    const camp = this.colony.camp;
-    if (!d || !camp) return;
-    if (this.area.parent !== camp.object) camp.object.add(this.area);
+    const campObject = this.campObject();
+    if (!d || !campObject) return;
+    if (this.area.parent !== campObject) campObject.add(this.area);
     const rect = rectFromCorners(d.ax, d.az, d.bx, d.bz, d.angle);
     if (rect.hw < 0.25 && rect.hd < 0.25) {
       this.area.visible = false;
@@ -180,8 +181,9 @@ export class HarvestTool {
   updateZones(delta) {
     const colony = this.colony;
     const camp = colony.camp;
-    if (this.zoneGroup.parent !== camp.object) {
-      camp.object.add(this.zoneGroup);
+    const campObject = this.campObject();
+    if (this.zoneGroup.parent !== campObject) {
+      campObject.add(this.zoneGroup);
       this.zonesDirty = true;
     }
     this.pileTimer -= delta;
@@ -267,14 +269,15 @@ export class HarvestTool {
   // Llamar cada fotograma: rehace los rombos si cambió algo y los hace flotar.
   update(time, delta = 0) {
     const camp = this.colony.camp;
-    if (!camp) {
+    const campObject = this.campObject();
+    if (!camp || !campObject) {
       this.markers.removeFromParent();
       this.zoneGroup.removeFromParent();
       return;
     }
     this.updateZones(delta);
-    if (this.markers.parent !== camp.object) {
-      camp.object.add(this.markers);
+    if (this.markers.parent !== campObject) {
+      campObject.add(this.markers);
       this.markersDirty = true;
     }
     if (this.markersDirty) {
@@ -289,9 +292,9 @@ export class HarvestTool {
       }
     }
     // De cara a la cámara (en el sistema del campamento).
-    this.billboard.copy(camp.object.quaternion).invert().multiply(this.camera.quaternion);
+    this.billboard.copy(camp.quaternion).invert().multiply(this.camera.quaternion);
     // Más grandes de lejos, para que se sigan viendo.
-    const far = THREE.MathUtils.clamp(this.camera.position.distanceTo(camp.object.position) / 40, 1, 9);
+    const far = THREE.MathUtils.clamp(this.camera.position.distanceTo(camp.position) / 40, 1, 9);
     const size = new THREE.Vector3(far, far, far);
     const m = new THREE.Matrix4();
     const pos = new THREE.Vector3();

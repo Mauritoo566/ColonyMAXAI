@@ -7,9 +7,10 @@
 //   eat, drink, sleep, warm, chat, build, work, wander
 
 import { hasTrait } from './needs.js';
-import { levelOf, STOCK_NAMES } from './buildings.js';
+import { levelOf, STOCK_NAMES } from './sim/buildingTypes.js';
+import { DAY_LENGTH_SECONDS } from './daynight.js';
 
-const DAY = 360;
+const DAY = DAY_LENGTH_SECONDS;
 
 // Urgencia de una necesidad: 0 si está llena, 1 si está vacía (crece rápido al final).
 function urgency(value) {

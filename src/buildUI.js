@@ -1,9 +1,10 @@
 import { BUILDING_TYPES, BUILD_CATEGORIES, STOCK_NAMES, levelOf } from './buildings.js';
 import { AGES, ageInfo } from './ages.js';
-import { FOOD_SPOIL_SECONDS, zoneCapacity } from './colonists.js';
+import { FOOD_SPOIL_SECONDS, zoneCapacity } from './sim/colony.js';
 import { storageKey } from './storage.js';
+import { DAY_LENGTH_SECONDS } from './daynight.js';
 
-const DAY_SECONDS = 360;
+const DAY_SECONDS = DAY_LENGTH_SECONDS;
 import { SKILLS } from './needs.js';
 
 // Interfaz de construcción: barra para elegir qué construir, el almacén de la colonia

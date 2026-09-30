@@ -10,6 +10,20 @@ import {
 import { biomeAt, BIOMES } from './biomes.js';
 import { Parts, mat, stick, v, triangle, seededRandom, vary } from './modelKit.js';
 import { storageKey } from './storage.js';
+import {
+  FLAT_RADIUS,
+  BLEND_RADIUS,
+  TIPIS,
+  RACK,
+  WOODPILE,
+  STORAGE,
+  BANNER,
+  polar,
+  campZone,
+  seedFromDir,
+} from './sim/campLayout.js';
+
+export { campLayout, campObstacles, seedFromDir } from './sim/campLayout.js';
 
 // Campamento inicial de la civilización: el jugador elige dónde fundarlo haciendo clic
 // en el terreno. Al fundarlo el terreno se nivela en un círculo y se pinta un claro de
@@ -25,11 +39,6 @@ const MIN_CAMP_DISTANCE = 2_000; // metros sobre la superficie entre dos campame
 const MAX_GHOST_SCALE = 6; // la vista previa crece desde lejos, pero hasta este límite
 const SAVE_VERSION = 1;
 
-// Terreno que se modifica alrededor del campamento (metros).
-const FLAT_RADIUS = 30; // círculo nivelado
-const BLEND_RADIUS = 32; // transición suave hasta el terreno natural
-const CLEAR_RADIUS = 21; // claro de tierra pisada
-const DETAIL_RADIUS = 1_500; // malla más fina alrededor
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
@@ -287,66 +296,6 @@ function createFlag() {
   return flag;
 }
 
-// Distribución del campamento (coordenadas locales en metros, la fogata en el centro).
-// La usan el modelo y los colonos (para no atravesar tiendas ni la fogata).
-const TIPIS = [
-  { angle: 0.2, dist: 11.5, size: 1.05, cloth: '#dccaa2', bands: [[0.18, 0.26, '#a8452d'], [0.3, 0.33, '#2f5d7a'], [0.62, 0.66, '#a8452d']] },
-  { angle: 1.75, dist: 12.5, size: 1.2, cloth: '#cdb088', bands: [[0.2, 0.3, '#2f5d7a'], [0.34, 0.37, '#e0c25a'], [0.6, 0.64, '#2f5d7a']] },
-  { angle: 3.4, dist: 11, size: 0.95, cloth: '#e4d7b6', bands: [[0.16, 0.22, '#7a3b8a'], [0.58, 0.62, '#7a3b8a']] },
-  { angle: 4.9, dist: 13, size: 1.1, cloth: '#d1b98e', bands: [[0.22, 0.3, '#a8452d'], [0.33, 0.36, '#1f1f1f'], [0.64, 0.68, '#a8452d']] },
-];
-const RACK = { angle: 2.6, dist: 9 };
-const WOODPILE = { angle: 5.8, dist: 9.5 };
-const STORAGE = { angle: 1.0, dist: 8 };
-const BANNER = { angle: 4.1, dist: 6.5 };
-const BENCH_ANGLES = [0.4, 0.4 + Math.PI / 2, 0.4 + Math.PI, 0.4 + (3 * Math.PI) / 2];
-const BENCH_DIST = 4.4;
-
-function polar({ angle, dist }) {
-  return [Math.cos(angle) * dist, Math.sin(angle) * dist];
-}
-
-// Lugares útiles del campamento para los colonos (coordenadas locales).
-export function campLayout() {
-  const tents = TIPIS.map((t) => {
-    const [x, z] = polar(t);
-    const r = 3.5 * t.size;
-    const d = Math.hypot(x, z);
-    // La puerta mira a la fogata.
-    return { x, z, r, door: { x: x - (x / d) * (r + 0.9), z: z - (z / d) * (r + 0.9) } };
-  });
-  const [sx, sz] = polar(STORAGE);
-  const sd = Math.hypot(sx, sz);
-  return {
-    fire: { x: 0, z: 0 },
-    tents,
-    pots: { x: sx, z: sz }, // las vasijas y cestas del almacén
-    storage: { x: sx + (sx / sd) * 3.4, z: sz + (sz / sd) * 3.4 }, // junto a las vasijas, del lado de fuera
-  };
-}
-
-// Obstáculos del campamento como círculos { x, z, r } en coordenadas locales.
-export function campObstacles() {
-  const list = [{ x: 0, z: 0, r: 2.3, kind: 'fire' }];
-  for (const t of TIPIS) {
-    const [x, z] = polar(t);
-    list.push({ x, z, r: 3.5 * t.size + 0.4, kind: 'tent' });
-  }
-  for (const a of BENCH_ANGLES) {
-    const x = Math.sin(a) * BENCH_DIST;
-    const z = Math.cos(a) * BENCH_DIST;
-    // Cada banco es un tronco de ~3,5 m: dos círculos a lo largo.
-    const tx = Math.cos(a) * 1;
-    const tz = -Math.sin(a) * 1;
-    list.push({ x: x + tx, z: z + tz, r: 0.9, kind: 'bench' }, { x: x - tx, z: z - tz, r: 0.9, kind: 'bench' });
-  }
-  for (const [item, r] of [[RACK, 2.1], [WOODPILE, 2.6], [STORAGE, 2.4], [BANNER, 0.5]]) {
-    const [x, z] = polar(item);
-    list.push({ x, z, r, kind: 'prop' });
-  }
-  return list;
-}
-
 // Modelo completo del campamento, centrado en la fogata. "biome" (de biomes.js) adapta
 // los adornos del suelo al lugar; sin bioma (la vista previa) no se ponen.
 export function createCampModel(seed = 1, biome = null) {
@@ -514,16 +463,7 @@ export function buildCamp(dir, height, yaw, terrain, zoneExtra = {}) {
   const biome = biomeAt(dir.x, dir.y, dir.z);
   const ground = biome.details ? biome : BIOMES.grassland;
   // Nivelar el terreno y pintar el claro; los trozos de terreno afectados se regeneran.
-  const zone = addTerrainZone({
-    dir: dir.clone(),
-    height,
-    flatRadius: FLAT_RADIUS,
-    blendRadius: BLEND_RADIUS,
-    clearRadius: CLEAR_RADIUS,
-    detailRadius: DETAIL_RADIUS,
-    dirtColor: ground.dirt,
-    ...zoneExtra,
-  });
+  const zone = addTerrainZone(campZone(dir, height, ground, zoneExtra));
   terrain.invalidateZone(zone);
   const seed = seedFromDir(dir);
   const object = createCampModel(seed, ground);
@@ -553,9 +493,6 @@ function parseSave(data) {
   };
 }
 
-export function seedFromDir(dir) {
-  return Math.floor(Math.abs(Math.sin(dir.x * 91.7 + dir.y * 47.3 + dir.z * 13.9)) * 4294967295) >>> 0;
-}
 
 // ---------------------------------------------------------------------------
 // Sistema: botones, modo de colocación, marcador y guardado

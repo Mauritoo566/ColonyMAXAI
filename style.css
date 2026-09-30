@@ -835,6 +835,42 @@ summary:focus-visible {
   pointer-events: none;
 }
 
+/* Resumen de lo que pasó mientras el jugador no estaba */
+.away-card {
+  position: fixed;
+  top: calc(72px + var(--safe-top));
+  left: 50%;
+  z-index: 7;
+  transform: translateX(-50%);
+  width: min(360px, calc(100vw - 2 * var(--gap)));
+  box-sizing: border-box;
+  padding: 16px;
+}
+
+.away-title {
+  margin: 4px 0 10px;
+  font: 700 20px/1.2 var(--font-display);
+}
+
+.away-list {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  color: var(--ui-muted);
+}
+
+.away-list li + li {
+  margin-top: 4px;
+}
+
+.away-list .is-bad {
+  color: var(--bad);
+}
+
+.away-card .btn {
+  width: 100%;
+  justify-content: center;
+}
+
 .place-tooltip {
   position: fixed;
   left: 0;

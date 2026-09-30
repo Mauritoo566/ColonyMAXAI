@@ -2,14 +2,17 @@
 // (metabolismo, frío, energía...) lo deciden los genes (genes.js).
 //
 // Todas las necesidades van de 0 (muy mal) a 100 (perfecto) y cambian con el tiempo de
-// juego (un día dura DAY_LENGTH_SECONDS a velocidad ×1). Por ahora bajan despacio: aún
-// no hay IA que las satisfaga, salvo el calor (la fogata calienta a quien esté cerca)
-// y el ánimo (la compañía anima). La salud sólo baja si falta comida, agua o calor.
+// juego (un día dura DAY_LENGTH_SECONDS a velocidad ×1) y cada colono las atiende con su
+// IA (ai.js). La salud sólo baja si falta comida, agua o calor.
 
 import { DAY_LENGTH_SECONDS } from './daynight.js';
 import { createGenome, gene } from './genes.js';
 
 const DAY = DAY_LENGTH_SECONDS;
+
+// Mientras el dueño de la colonia no está, nadie puede empeorar más allá de esto: el
+// que estaba por morir queda con salud crítica y el dueño decide al volver.
+export const CRITICAL_HEALTH = 10;
 
 export const NEEDS = [
   { id: 'food', name: 'Comida', low: 'Tiene hambre', color: 'var(--food)' },
@@ -143,7 +146,8 @@ export function addLog(c, time, text) {
 const clamp = (v) => Math.min(100, Math.max(0, v));
 
 // Actualiza necesidades y salud. env: { dt (segundos de juego), ambient (0–1, calor del
-// lugar según clima y hora), nearFire, companion (colono cercano o null), walking, time }
+// lugar según clima y hora), nearFire, companion (colono cercano o null), walking, time,
+// absent (el dueño no está: la salud no baja de CRITICAL_HEALTH) }
 export function updateNeeds(c, env) {
   const { dt } = env;
   const n = c.needs;
@@ -184,9 +188,12 @@ export function updateNeeds(c, env) {
   // Salud: baja si falta lo básico; si no, se recupera despacio. Aún no mueren.
   const critical = n.food <= 0 || n.water <= 0 || n.warmth < 8;
   const vigor = gene(g, 'vigor');
+  const healthBefore = c.health;
   if (critical) c.health -= (100 / (1.5 * DAY)) * (1.3 - vigor * 0.6) * dt;
   else if (Math.min(n.food, n.water, n.warmth) > 25) c.health += (100 / (3 * DAY)) * (0.7 + vigor * 0.6) * dt;
-  c.health = Math.min(100, Math.max(1, c.health));
+  // Ausente: no baja de la salud crítica (si ya estaba por debajo, al menos no empeora).
+  const floor = env.absent ? Math.min(CRITICAL_HEALTH, healthBefore) : 1;
+  c.health = Math.min(100, Math.max(floor, c.health));
 
   // Registro: avisos cuando una necesidad cruza un umbral (con margen para no repetir).
   for (const need of NEEDS) {

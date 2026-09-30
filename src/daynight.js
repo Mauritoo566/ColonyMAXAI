@@ -24,8 +24,13 @@ export class DayNight {
   }
 
   update(delta) {
-    this.elapsed += delta * this.speed;
-    this.subsolarLon -= ((delta * this.speed) / DAY_LENGTH_SECONDS) * Math.PI * 2;
+    this.advance(delta * this.speed);
+  }
+
+  // Avanza "seconds" segundos de juego, sin importar la velocidad elegida.
+  advance(seconds) {
+    this.elapsed += seconds;
+    this.subsolarLon -= (seconds / DAY_LENGTH_SECONDS) * Math.PI * 2;
     this.subsolarLon = THREE.MathUtils.euclideanModulo(this.subsolarLon, Math.PI * 2);
     const c = Math.cos(this.declination);
     this.sunDirection.set(
@@ -34,7 +39,7 @@ export class DayNight {
       c * Math.cos(this.subsolarLon),
     );
 
-    this.moonPhase += ((delta * this.speed) / (DAY_LENGTH_SECONDS * MOON_CYCLE_DAYS)) * Math.PI * 2;
+    this.moonPhase += (seconds / (DAY_LENGTH_SECONDS * MOON_CYCLE_DAYS)) * Math.PI * 2;
     this.moonPhase = THREE.MathUtils.euclideanModulo(this.moonPhase, Math.PI * 2);
     const moonLon = this.subsolarLon - this.moonPhase;
     const cm = Math.cos(this.moonDeclination);

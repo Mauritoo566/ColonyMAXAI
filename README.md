@@ -54,7 +54,7 @@ Cada punto de tierra tiene una **temperatura** (baja con la latitud y con la alt
 
 ## Colonos
 
-Al fundar el campamento aparecen 5 colonos (`src/colonists.js`), siempre los mismos para ese lugar. Pasean por el campamento esquivando tiendas, fogata y a los demás, sin entrar al agua ni a pendientes fuertes. Todavía no tienen IA: pasean al azar.
+Al fundar el campamento aparecen 5 colonos (`src/colonists.js`), siempre los mismos para ese lugar. Pasean por el campamento esquivando tiendas, fogata y a los demás, sin entrar al agua ni a pendientes fuertes. Qué hace cada uno lo decide su IA (ver más abajo).
 
 Cada colono tiene:
 
@@ -97,6 +97,8 @@ En la pestaña Almacenes se dibuja la **zona de acopio** al aire libre: un rect�
 ### Guardado
 
 Todo se guarda en el navegador (`localStorage`) cada pocos segundos y al cerrar la pestaña: edificios, trabajadores, almacén, las necesidades, salud, posición y registro de cada colono, los recursos talados o que están volviendo a crecer, los brotes de la lluvia, la hora, la fase de la Luna y el clima. Al volver se restaura todo en lugar de empezar de cero.
+
+El tiempo sigue corriendo aunque no estés (a velocidad ×1). Al volver, la colonia se pone al día en unos segundos con la misma IA, hasta un máximo de dos días de juego, y aparece un resumen **Mientras no estabas** (cambios del almacén, obras terminadas, comida podrida y quién está mal). Mientras no estás nadie empeora más allá de la **salud crítica** (`CRITICAL_HEALTH` en `src/needs.js`).
 
 ## Recursos naturales
 
@@ -158,23 +160,42 @@ El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: ca
 
 ## Estructura
 
+La simulación de la colonia está separada de lo que se dibuja: `src/sim/` no usa la página ni WebGL (sólo la matemática de Three.js), así que corre igual en el navegador y en Node, donde la va a ejecutar el servidor del juego. La vista escucha sus eventos y la dibuja. Para usarla desde Node: `npm install` (instala `three` 0.170.0, la misma versión que carga la página).
+
 - `index.html` – página y *import map* de Three.js
+- `package.json` – dependencias para correr la simulación en Node
+- `src/sim/colony.js` – simulación de una colonia: colonos, IA, edificios, almacén, zona de acopio, recursos, edades y guardado
+- `src/sim/buildingTypes.js` – tipos de edificio y sus niveles (datos)
+- `src/sim/campLayout.js` – distribución del campamento, terreno que nivela y su semilla
+- `src/save.js` – guardado de la partida en el navegador
 - `src/main.js` – escena, luces, estrellas, cielo y bucle de animación
+- `src/auth.js` – pantalla de acceso: cuentas locales o jugador del mundo compartido
+- `src/storage.js` – claves de `localStorage` de cada cuenta
+- `src/world.js` – mundo compartido: publicar la colonia y ver los campamentos de los demás
 - `src/controls.js` – cámara tipo globo terráqueo con zoom hasta el suelo
 - `src/planet.js` – planeta: terreno, nubes y atmósfera
 - `src/clouds.js` – nubes (sistemas grandes y cúmulos cercanos)
 - `src/daynight.js` – ciclo de día y noche y órbita de la Luna
+- `src/weather.js` – clima del campamento y gotas de lluvia
 - `src/sky.js` – el Sol y la Luna que se ven en el cielo
 - `src/water.js` – efecto del agua
-- `src/colonists.js` – colonos: modelo, movimiento, selección y nombres
+- `src/colonists.js` – vista de los colonos: modelo, animación, nombres y selección
 - `src/needs.js` – necesidades, salud, personalidad e historia
 - `src/genes.js` – genética: alelos, herencia y aspecto
 - `src/colonyUI.js` – interfaz de la colonia y ficha de cada colono
-- `src/ai.js` – IA de los colonos: elegir y ejecutar tareas
-- `src/buildings.js` – edificios: tipos, modelos, obras, trabajadores y guardado
+- `src/ai.js` – IA de los colonos: elegir y ejecutar tareas (parte de la simulación)
+- `src/buildings.js` – vista de los edificios: modelos, etiquetas, colocación y selección
+- `src/buildingModels.js` – modelos 3D de cada nivel de edificio
 - `src/buildUI.js` – barra de construcción, almacén y ficha de cada edificio
-- `src/camp.js` – campamento inicial: modelo, colocación y guardado
-- `src/resources.js` – recursos naturales: tipos, modelos y generación por baldosas
+- `src/ages.js` – edades de la colonia y requisitos para avanzar
+- `src/ageUI.js` – barra y panel de edades
+- `src/harvest.js` – herramienta Recolectar, marcas y zona de acopio
+- `src/rect.js` – rectángulos girados sobre el suelo (marcas y zona de acopio)
+- `src/camp.js` – campamento: modelo, elegir dónde fundarlo y guardado
+- `src/resources.js` – recursos naturales: modelos, baldosas y dibujo con InstancedMesh
+- `src/resourceTypes.js` – tipos de recurso y cantidades por bioma (datos puros)
+- `src/resourceGen.js` – generación de los recursos de cada baldosa (sin Three.js)
+- `src/resourceWorker.js` – worker que genera baldosas de recursos en segundo plano
 - `src/modelKit.js` – herramientas para modelar objetos low poly
 - `src/biomes.js` – biomas: qué hay en cada punto y con qué colores y adornos se dibuja
 - `src/terrain.js` – terreno con nivel de detalle (LOD) y reparto del trabajo a los workers
