@@ -7,7 +7,7 @@
 //   eat, drink, sleep, warm, chat, build, work, wander
 
 import { hasTrait } from './needs.js';
-import { levelOf } from './buildings.js';
+import { levelOf, STOCK_NAMES } from './buildings.js';
 
 const DAY = 360;
 
@@ -285,6 +285,13 @@ function runWork(colony, c, task, dt, env) {
   const def = b.def;
 
   const level = levelOf(b);
+  // Con el almacén lleno no tiene sentido traer más: espera (y avisa en la ficha).
+  if (colony.isFull(def.stock) && task.phase !== 'returning') {
+    task.noResource = true;
+    task.storeFull = true;
+    b.status = `El almacén está lleno de ${STOCK_NAMES[def.stock]}: construye o mejora almacenes`;
+    return busy(task, dt, 20) ? 'done' : 'running';
+  }
   if (def.id === 'well') {
     // Recolector de lluvia: el aguatero vacía las vasijas en el almacén (si hay agua).
     if (level.rainOnly && b.store < 1) {
@@ -306,7 +313,7 @@ function runWork(colony, c, task, dt, env) {
       // Con lluvia el pozo se llena solo: rinde hasta el doble.
       water = level.yield * (1 + (colony.weather?.rain ?? 0));
     }
-    colony.stock.water += water;
+    water = colony.addStock('water', water);
     b.produced += water;
     b.status = null;
     return 'done';
@@ -351,9 +358,9 @@ function runWork(colony, c, task, dt, env) {
   if (task.phase === 'returning') {
     if (!go(colony, c, task, edgeOf(b, c), dt, 0.9)) return 'running';
     const amount = task.spot.scavenge ? def.scavenge.yield : level.yield;
-    colony.stock[def.stock] += amount;
-    for (const [k, n] of Object.entries(def.extra || {})) colony.stock[k] = (colony.stock[k] || 0) + n;
-    b.produced += amount;
+    const added = colony.addStock(def.stock, amount);
+    for (const [k, n] of Object.entries(def.extra || {})) colony.addStock(k, n);
+    b.produced += added;
     if (!task.spot.scavenge) b.status = null;
     return 'done';
   }
@@ -391,6 +398,7 @@ export function taskActivity(colony, c, task) {
       return walking ? `Va a construir: ${task.building.name}` : `Construyendo: ${task.building.name}`;
     case 'work': {
       const def = task.building.def;
+      if (task.storeFull) return 'Espera: el almacén está lleno';
       if (task.noResource) return def.id === 'well' ? 'Espera a que llueva' : def.noResourceText;
       if (def.id === 'well') {
         if (levelOf(task.building).rainOnly) return walking ? 'Va al recolector de lluvia' : 'Vaciando las vasijas de lluvia';

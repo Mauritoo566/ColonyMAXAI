@@ -24,6 +24,9 @@ import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, task
 export const START_COLONISTS = 5;
 // Provisiones con las que llega la colonia (comidas, jarras de agua, madera, piedra).
 export const START_STOCK = { food: 12, water: 12, wood: 45, stone: 20, fiber: 10 };
+// Lo que cabe en el almacén del campamento (las vasijas y cestas junto a la fogata).
+// Cada almacén construido suma su capacidad.
+export const CAMP_CAPACITY = { food: 40, water: 30, wood: 60, stone: 40, fiber: 30 };
 
 const WALK_SPEED = 1.4; // m/s
 const COLONIST_RADIUS = 0.45;
@@ -650,6 +653,31 @@ export class ColonySystem {
         spots.push({ key, index: k, kind, type: RESOURCE_TYPES[tile.type[k]].id, x: p.x, z: p.z, readyAt: 0, taken: null });
       }
     }
+  }
+
+  // ---- Almacén -----------------------------------------------------------
+
+  // Cuánto cabe de un recurso: el almacén del campamento más los almacenes construidos
+  // (mientras se mejora, un almacén sigue guardando lo de su nivel actual).
+  capacity(kind) {
+    let cap = CAMP_CAPACITY[kind] ?? Infinity;
+    for (const b of this.buildings) {
+      if (b.def.id !== 'stockpile' || (!b.done && !b.upgrading)) continue;
+      cap += b.def.levels[b.level - 1].capacity[kind] ?? 0;
+    }
+    return cap;
+  }
+
+  isFull(kind) {
+    return this.stock[kind] >= this.capacity(kind);
+  }
+
+  // Guarda lo que quepa y devuelve cuánto entró.
+  addStock(kind, amount) {
+    const room = Math.max(0, this.capacity(kind) - (this.stock[kind] ?? 0));
+    const added = Math.min(amount, room);
+    this.stock[kind] = (this.stock[kind] ?? 0) + added;
+    return added;
   }
 
   // ---- Edades ------------------------------------------------------------

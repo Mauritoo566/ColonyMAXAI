@@ -99,6 +99,12 @@ export class BuildUI {
     this.tab = first.id;
     this.setTab(saved === 'none' ? null : BUILD_CATEGORIES.some((c) => c.id === saved) ? saved : first.id);
 
+    // Clic en la fila del almacén (tarjeta de la colonia): abrir la ficha del almacén.
+    this.stock.addEventListener('click', () => {
+      if (buildings.store) buildings.select(buildings.store);
+    });
+    this.stock.title = 'Ver el almacén';
+
     buildings.onSelect = (b) => this.show(b);
     buildings.onChange = () => {
       this.timer = 0;
@@ -133,9 +139,11 @@ export class BuildUI {
     const stock = this.colony.stock;
     for (const li of this.stock.children) {
       const v = Math.floor(stock[li.dataset.stock]);
+      const cap = this.colony.capacity(li.dataset.stock);
       li.lastChild.textContent = String(v);
       li.classList.toggle('is-empty', v <= 0);
-      li.title = `${STOCK_NAMES[li.dataset.stock]}: ${v}`;
+      li.classList.toggle('is-full', v >= cap);
+      li.title = `${STOCK_NAMES[li.dataset.stock]}: ${v} de ${cap}${v >= cap ? ' (lleno)' : ''}`;
     }
     for (const button of this.list.querySelectorAll('[data-build]')) {
       const def = BUILDING_TYPES.find((d) => d.id === button.dataset.build);
@@ -153,6 +161,74 @@ export class BuildUI {
     if (this.buildings.selected) this.render(this.buildings.selected);
   }
 
+  // ---- Almacén ------------------------------------------------------------------
+
+  // Filas "recurso: guardado / capacidad" con barra.
+  stockRowsHtml() {
+    const colony = this.colony;
+    return STOCK.map((r) => {
+      const have = Math.floor(colony.stock[r.id] ?? 0);
+      const cap = colony.capacity(r.id);
+      const fill = Math.min(1, have / cap);
+      const tone = fill >= 1 ? 'var(--bad)' : fill > 0.85 ? 'var(--warn)' : r.color;
+      return `
+        <div class="store-row">
+          <span class="store-name" style="--res:${r.color}">${icon(r.icon)}${STOCK_NAMES[r.id]}</span>
+          <span class="bar" style="--bar:${tone}"><i style="width:${Math.round(fill * 100)}%"></i></span>
+          <strong>${have}<small> / ${cap}</small></strong>
+        </div>`;
+    }).join('');
+  }
+
+  // Lo que suma un almacén construido (y lo que sumará mejorado).
+  storageAddsHtml(level, next) {
+    const list = (cap) => STOCK.map((r) => `<span style="--res:${r.color}">${icon(r.icon)}+${cap[r.id] ?? 0}</span>`).join('');
+    return `<section class="cp-section">
+        <h3>Amplía el almacén</h3>
+        <div class="store-adds">${list(level.capacity)}</div>
+        ${next ? `<p class="reason">Mejorado a ${next.name}: <span class="store-adds store-adds--inline">${list(next.capacity)}</span></p>` : ''}
+      </section>
+      <section class="cp-section">
+        <h3>Almacén de la colonia</h3>
+        ${this.stockRowsHtml()}
+      </section>`;
+  }
+
+  renderStore(b) {
+    const colony = this.colony;
+    const piles = this.buildings.list.filter((o) => o.def.id === 'stockpile' && (o.done || o.upgrading)).length;
+    const key = ['store', piles, JSON.stringify(STOCK.map((r) => [Math.floor(colony.stock[r.id] ?? 0), colony.capacity(r.id)]))].join('|');
+    if (this.renderedFor === key) return;
+    this.renderedFor = key;
+    this.panel.innerHTML = `
+      <header class="cp-head">
+        <span class="bp-icon">${icon('wood')}</span>
+        <div>
+          <h2 class="cp-name">${b.name}</h2>
+          <p class="cp-sub">${Math.round(this.buildings.storeFill() * 100)}% lleno en lo más ocupado</p>
+        </div>
+        <button type="button" class="icon-button" data-close aria-label="Cerrar ficha">${icon('close')}</button>
+      </header>
+      <div class="cp-body">
+        <p class="reason">Las vasijas, cestas y sacos junto a la fogata. Aquí los colonos dejan lo que recogen y de aquí comen y beben cuando no hay nada cerca.</p>
+        <section class="cp-section">
+          <h3>Guardado</h3>
+          ${this.stockRowsHtml()}
+        </section>
+        <section class="cp-section">
+          <h3>Capacidad</h3>
+          <div class="stat-line"><span>Almacenes construidos</span><strong>${piles}</strong></div>
+          <p class="reason">Cuando algo se llena, quien lo trae espera sin trabajar. Construye almacenes en la pestaña <strong>Almacenes</strong> de la barra de construcción (y mejóralos a granero) para guardar más.</p>
+          <button type="button" class="btn btn--primary" data-open-storage>${icon('wood')}Construir un almacén</button>
+        </section>
+      </div>`;
+    this.panel.querySelector('[data-close]').addEventListener('click', () => this.buildings.select(null));
+    this.panel.querySelector('[data-open-storage]').addEventListener('click', () => {
+      this.setTab('storage');
+      this.buildings.select(null);
+    });
+  }
+
   // ---- Ficha del edificio ----------------------------------------------------
 
   show(b) {
@@ -167,8 +243,10 @@ export class BuildUI {
   }
 
   render(b) {
+    if (b.isStore) return this.renderStore(b);
     const def = b.def;
     const skill = SKILLS.find((s) => s.id === def.skill);
+    const isStorage = !def.skill;
     const level = levelOf(b);
     const next = levelOf(b, 1);
     const age = ageInfo(b.level);
@@ -176,10 +254,12 @@ export class BuildUI {
       ? `Mejorando · ${Math.round(b.progress * 100)}%`
       : !b.done
         ? `En construcción · ${Math.round(b.progress * 100)}%`
-        : b.worker
-          ? 'Funcionando'
-          : 'Sin trabajador';
-    const ranking = this.buildings.ranking(b);
+        : isStorage
+          ? 'En uso'
+          : b.worker
+            ? 'Funcionando'
+            : 'Sin trabajador';
+    const ranking = isStorage ? [] : this.buildings.ranking(b);
     const upgradeProblem = this.buildings.upgradeProblem(b);
     const stored = level.rainOnly ? Math.floor(b.store) : null;
     // Clave para no redibujar si nada cambió.
@@ -187,7 +267,7 @@ export class BuildUI {
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
-    const produced = def.id === 'well' ? `${Math.floor(b.produced)} jarras de agua` : `${Math.floor(b.produced)} de ${STOCK_NAMES[def.stock]}`;
+    const produced = isStorage ? '' : def.id === 'well' ? `${Math.floor(b.produced)} jarras de agua` : `${Math.floor(b.produced)} de ${STOCK_NAMES[def.stock]}`;
     this.panel.innerHTML = `
       <header class="cp-head">
         <span class="bp-icon">${icon(def.icon)}</span>
@@ -210,9 +290,9 @@ export class BuildUI {
             ? `<section class="cp-section">
                 <h3>Obra</h3>
                 <div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.progress * 100)}%"></i></div>
-                <p class="reason">Los colonos construyen de día cuando tienen lo básico cubierto. Quien sabe más de construcción avanza más rápido. Al terminar, la colonia elegirá a la persona más capacitada en ${skill.name.toLowerCase()} para trabajar aquí.</p>
+                <p class="reason">Los colonos construyen de día cuando tienen lo básico cubierto. Quien sabe más de construcción avanza más rápido. ${isStorage ? 'Al terminar, el almacén de la colonia podrá guardar más.' : `Al terminar, la colonia elegirá a la persona más capacitada en ${skill.name.toLowerCase()} para trabajar aquí.`}</p>
               </section>`
-            : `<section class="cp-section">
+            : `${isStorage ? this.storageAddsHtml(level, next) : `<section class="cp-section">
                 <h3>Trabajador</h3>
                 ${
                   b.worker
@@ -230,7 +310,7 @@ export class BuildUI {
                 <h3>Producción</h3>
                 <div class="stat-line"><span>Ha producido</span><strong>${produced}</strong></div>
                 ${stored !== null ? `<div class="stat-line"><span>Agua en las vasijas</span><strong>${stored} / ${level.capacity}</strong></div>` : ''}
-              </section>
+              </section>`}
               <section class="cp-section">
                 <h3>Mejora</h3>
                 <ol class="level-track" aria-label="Niveles">
@@ -251,7 +331,7 @@ export class BuildUI {
                 }
               </section>`
         }
-        <section class="cp-section">
+        ${isStorage ? '' : `<section class="cp-section">
           <h3>Más capacitados en ${skill.name.toLowerCase()}</h3>
           <ul class="candidate-list">
             ${ranking
@@ -266,7 +346,7 @@ export class BuildUI {
               )
               .join('')}
           </ul>
-        </section>
+        </section>`}
       </div>`;
     const workerAvatar = this.panel.querySelector('.worker-card .avatar');
     if (b.worker && workerAvatar) paintAvatar(workerAvatar, b.worker.look);

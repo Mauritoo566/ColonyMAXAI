@@ -73,6 +73,10 @@ La colonia avanza por edades (`src/ages.js`, barra decorada arriba al centro): P
 
 Si se acaban los árboles o las piedras grandes cerca, el leñador junta ramas caídas y el cantero piedras sueltas (rinden menos, pero siguen trabajando).
 
+### Almacén
+
+Lo que recoge la colonia se guarda en el **almacén del campamento** (las vasijas, cestas y sacos junto a la fogata). Tiene etiqueta en el mundo y, al hacerle clic (o en la fila de recursos de la tarjeta de la colonia), se abre su ficha con lo guardado y la capacidad. Cada recurso tiene un límite: cuando algo se llena, quien lo trae espera sin trabajar. Para guardar más se construyen almacenes (pestaña Almacenes): la **pila de troncos y cestas** de la Edad Primitiva, que se mejora a **granero** en la Tribal.
+
 ### Guardado
 
 Todo se guarda en el navegador (`localStorage`) cada pocos segundos y al cerrar la pestaña: edificios, trabajadores, almacén, las necesidades, salud, posición y registro de cada colono, los recursos talados o que están volviendo a crecer, los brotes de la lluvia, la hora, la fase de la Luna y el clima. Al volver se restaura todo en lugar de empezar de cero.

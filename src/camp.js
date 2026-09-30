@@ -319,6 +319,7 @@ export function campLayout() {
   return {
     fire: { x: 0, z: 0 },
     tents,
+    pots: { x: sx, z: sz }, // las vasijas y cestas del almacén
     storage: { x: sx + (sx / sd) * 3.4, z: sz + (sz / sd) * 3.4 }, // junto a las vasijas, del lado de fuera
   };
 }

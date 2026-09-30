@@ -117,14 +117,39 @@ export const BUILDING_TYPES = [
   },
 ];
 
-for (const def of BUILDING_TYPES) {
-  def.name = def.levels[0].name;
-  def.desc = def.levels[0].desc;
-}
 
 // Nivel actual (o el siguiente) de un edificio.
 export function levelOf(b, offset = 0) {
   return b.def.levels[b.level - 1 + offset] ?? null;
+}
+
+// Almacenes: no tienen trabajador; cada uno amplía lo que cabe en el almacén.
+BUILDING_TYPES.push({
+  id: 'stockpile',
+  category: 'storage',
+  icon: 'wood',
+  cost: { wood: 12, fiber: 4 },
+  buildTime: 40,
+  footprint: 2.6,
+  levels: [
+    {
+      name: 'Pila de troncos y cestas',
+      desc: 'Troncos apilados, cestas de fibra y pieles para tapar. Amplía lo que cabe en el almacén de la colonia.',
+      capacity: { food: 25, water: 15, wood: 40, stone: 30, fiber: 20 },
+      model: stockpileModel1,
+    },
+    {
+      name: 'Granero',
+      desc: 'Una choza sobre pilotes con techo de paja: mantiene la comida seca y guarda mucho más.',
+      capacity: { food: 70, water: 35, wood: 90, stone: 70, fiber: 50 },
+      model: stockpileModel2,
+      upgradeCost: { wood: 30, stone: 10, fiber: 12 },
+    },
+  ],
+});
+for (const def of BUILDING_TYPES) {
+  def.name ??= def.levels[0].name;
+  def.desc ??= def.levels[0].desc;
 }
 
 // Categorías de la barra de construcción (las vacías se muestran como "próximamente").
@@ -308,6 +333,44 @@ function wellModel1(p) {
   p.add(new THREE.CircleGeometry(0.17, 8), '#2a4a66', mat(0, 0.665, 0, -Math.PI / 2));
   p.add(new THREE.CylinderGeometry(0.24, 0.18, 0.42, 8), '#b8683a', mat(0.7, 0.21, 0.5));
   p.add(new THREE.CylinderGeometry(0.2, 0.16, 0.34, 8), '#98482a', mat(-0.65, 0.17, 0.55));
+}
+
+// Pila de troncos y cestas (almacén primitivo).
+function stockpileModel1(p) {
+  for (let row = 0; row < 3; row++) {
+    for (let i = 0; i < 4 - row; i++) {
+      const y = 0.26 + row * 0.44;
+      const z = -1.2 + (i - (3 - row) / 2) * 0.48;
+      stick(p, v(-1.9, y, z), v(0.2, y, z), 0.23, (i + row) % 2 ? '#7a5230' : '#6b4a2e', 6);
+    }
+  }
+  for (const [x, z, s] of [[1.1, -0.9, 1], [1.7, -0.2, 0.85], [1.0, 0.5, 0.9], [-0.6, 0.9, 1.05]]) {
+    p.add(new THREE.CylinderGeometry(0.42 * s, 0.34 * s, 0.6 * s, 8), '#b89a5e', mat(x, 0.3 * s, z));
+    p.add(new THREE.CylinderGeometry(0.43 * s, 0.43 * s, 0.05, 8), '#8f7442', mat(x, 0.6 * s, z));
+  }
+  p.add(new THREE.IcosahedronGeometry(0.3, 0), '#b8283a', mat(1.1, 0.68, -0.9, 0, 0, 0, 1, 0.5, 1));
+  p.add(new THREE.DodecahedronGeometry(0.3, 0), '#8f8a82', mat(1.7, 0.6, -0.2, 0, 0, 0, 1, 0.5, 1));
+  // Piedras amontonadas y una piel encima de la leña.
+  for (let k = 0; k < 6; k++) p.add(new THREE.DodecahedronGeometry(0.26, 0), k % 2 ? '#8f8a82' : '#7d786f', mat(-1.6 + (k % 3) * 0.45, 0.2 + Math.floor(k / 3) * 0.3, 1.2, k, k, 0));
+  p.add(new THREE.BoxGeometry(1.6, 0.05, 1.3), '#a0764a', mat(-0.8, 1.42, -1.2, 0.1, 0, 0.06));
+  stick(p, v(-1.4, 0, 0.2), v(-1.3, 1.2, 0.1), 0.05, '#5a3a22', 4);
+}
+
+// Granero: choza sobre pilotes con techo de paja y escalera.
+function stockpileModel2(p) {
+  for (const [x, z] of [[-1.3, -1.1], [1.3, -1.1], [-1.3, 1.1], [1.3, 1.1]]) {
+    stick(p, v(x, 0, z), v(x, 0.9, z), 0.1, '#5a3a22', 5);
+    p.add(new THREE.CylinderGeometry(0.28, 0.28, 0.08, 8), '#8f8a82', mat(x, 0.92, z));
+  }
+  p.add(new THREE.BoxGeometry(3.1, 0.15, 2.7), '#6b4a2e', mat(0, 1.0, 0));
+  p.add(new THREE.CylinderGeometry(1.35, 1.35, 1.5, 10), '#a07a4a', mat(0, 1.8, 0));
+  p.add(new THREE.ConeGeometry(1.9, 1.7, 10), '#c9a45a', mat(0, 3.35, 0));
+  p.add(new THREE.CylinderGeometry(0.2, 0.2, 0.25, 6), '#a8843e', mat(0, 4.25, 0));
+  p.add(new THREE.BoxGeometry(0.7, 1.0, 0.1), '#3a2618', mat(0, 1.6, 1.33));
+  stick(p, v(-0.3, 0, 2.3), v(-0.3, 1.05, 1.4), 0.04, '#7a5230', 4);
+  stick(p, v(0.3, 0, 2.3), v(0.3, 1.05, 1.4), 0.04, '#7a5230', 4);
+  for (let k = 1; k < 4; k++) stick(p, v(-0.3, k * 0.26, 2.3 - k * 0.22), v(0.3, k * 0.26, 2.3 - k * 0.22), 0.03, '#7a5230', 3);
+  for (const [x, z] of [[2.0, 0.6], [2.2, -0.4]]) p.add(new THREE.CylinderGeometry(0.34, 0.28, 0.5, 8), '#b89a5e', mat(x, 0.25, z));
 }
 
 // Andamio de obra: base de tablones y cuatro postes.
@@ -576,6 +639,51 @@ export class BuildingSystem {
     return b;
   }
 
+  // El almacén del campamento (vasijas y cestas junto a la fogata): no es un edificio
+  // construido, pero se puede elegir para ver lo guardado y cuánto cabe.
+  createCampStore() {
+    if (this.store) {
+      this.scene.remove(this.store.object);
+      this.store.label.remove();
+      this.store = null;
+    }
+    const colony = this.colony;
+    if (!colony.camp) return;
+    const { x, z } = colony.layout.pots;
+    const height = colony.heightAt(x, z);
+    const dir = colony.toDirection(x, z, new THREE.Vector3());
+    const object = new THREE.Group();
+    object.position.copy(dir).multiplyScalar(RADIUS + height);
+    object.quaternion.copy(colony.camp.object.quaternion);
+    this.scene.add(object);
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.className = 'building-label building-label--store';
+    label.innerHTML = `<span class="building-label-name">Almacén</span><span class="building-label-sub"></span><span class="building-label-bar" hidden><i></i></span>`;
+    label.hidden = true;
+    this.labelsRoot.appendChild(label);
+    const store = {
+      isStore: true,
+      name: 'Almacén del campamento',
+      def: { id: 'campstore', icon: 'wood', footprint: 2.2 },
+      x,
+      z,
+      dir,
+      object,
+      label,
+      done: true,
+    };
+    label.addEventListener('click', () => this.select(store));
+    this.store = store;
+  }
+
+  // Lo más lleno del almacén (0–1), para la etiqueta.
+  storeFill() {
+    let fill = 0;
+    for (const k of Object.keys(STOCK_NAMES)) fill = Math.max(fill, this.colony.stock[k] / this.colony.capacity(k));
+    return fill;
+  }
+
   removeAll() {
     for (const b of this.list) {
       this.scene.remove(b.object);
@@ -663,7 +771,7 @@ export class BuildingSystem {
 
   // La colonia elige al colono libre más capacitado.
   assignWorker(b) {
-    if (!b.done || b.worker) return;
+    if (!b.done || b.worker || !b.def.skill) return;
     const free = this.ranking(b).filter((c) => !c.job);
     if (!free.length) {
       b.reason = 'No hay colonos libres. Puedes elegir a uno de la lista.';
@@ -710,7 +818,7 @@ export class BuildingSystem {
     const rect = this.canvas.getBoundingClientRect();
     let best = null;
     let bestD = Infinity;
-    for (const b of this.list) {
+    for (const b of this.store ? [...this.list, this.store] : this.list) {
       const p = this.tmp.copy(b.object.position).addScaledVector(b.dir, 1.5);
       const dist3 = this.camera.position.distanceTo(p);
       p.project(this.camera);
@@ -776,8 +884,8 @@ export class BuildingSystem {
 
   updateLabels() {
     const rect = this.canvas.getBoundingClientRect();
-    for (const b of this.list) {
-      const p = this.tmp.copy(b.object.position).addScaledVector(b.dir, b.done ? 4.6 : 3.4);
+    for (const b of this.store ? [...this.list, this.store] : this.list) {
+      const p = this.tmp.copy(b.object.position).addScaledVector(b.dir, b.isStore ? 2.4 : b.done ? 4.6 : 3.4);
       const dist = this.camera.position.distanceTo(p);
       p.project(this.camera);
       const visible = dist < LABEL_DISTANCE && p.z < 1 && Math.abs(p.x) < 1.05 && Math.abs(p.y) < 1.05;
@@ -785,7 +893,11 @@ export class BuildingSystem {
       if (!visible) continue;
       const sub = b.label.querySelector('.building-label-sub');
       const bar = b.label.querySelector('.building-label-bar');
-      const text = b.done ? (b.worker ? b.worker.name : 'Sin trabajador') : `${b.upgrading ? 'Mejorando' : 'En obra'} · ${Math.round(b.progress * 100)}%`;
+      const text = b.isStore
+        ? `${Math.round(this.storeFill() * 100)}% lleno`
+        : b.done && b.def.id === 'stockpile'
+          ? 'Almacén'
+          : b.done ? (b.worker ? b.worker.name : 'Sin trabajador') : `${b.upgrading ? 'Mejorando' : 'En obra'} · ${Math.round(b.progress * 100)}%`;
       if (sub.textContent !== text) sub.textContent = text;
       bar.hidden = b.done;
       if (!b.done) bar.firstChild.style.width = `${Math.round(b.progress * 100)}%`;
@@ -830,6 +942,7 @@ export class BuildingSystem {
   load(camp) {
     this.removeAll();
     this.stopPlacing();
+    this.createCampStore();
     if (!camp) return;
     let data = null;
     try {
