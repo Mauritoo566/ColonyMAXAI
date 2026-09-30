@@ -18,7 +18,7 @@ Luego abre <http://localhost:8000>. (Abrir `index.html` directamente con doble c
 
 - Arrastrar: moverse sobre el planeta
 - Rueda del ratón o pellizcar: acercar / alejar (desde el espacio hasta unos metros del suelo)
-- Botón derecho, Shift + arrastrar o girar con dos dedos: rotar la vista
+- Botón derecho, Shift + arrastrar o girar con dos dedos: rotar la vista (en horizontal) y levantar la mirada hacia el cielo (en vertical)
 - Botones Pausa / ×1 / ×10 / ×60: velocidad del paso del tiempo (a ×1 un día dura 6 minutos)
 
 ## Campamento inicial
@@ -70,6 +70,8 @@ Aparecen solos por todo el planeta (`src/resources.js`), al azar pero siempre en
 
 ## Día, noche y nubes
 
+El Sol y la Luna se ven en el cielo (`src/sky.js`): el Sol es un disco con resplandor y la Luna una esfera con cráteres iluminada sólo por el Sol, así que sus fases son reales. La Luna tiene su propia órbita (un ciclo cada 8 días de juego) y su luz ilumina la noche según la fase.
+
 El Sol gira alrededor del planeta; la hora que se muestra es la hora solar del lugar que estás mirando. De noche una luz de luna azulada y más luz ambiente mantienen el paisaje visible, y el cielo pasa por tonos de atardecer.
 
 Las nubes son cúmulos low poly con la base plana, en dos capas que existen siempre en todo el planeta: grandes sistemas nubosos y cúmulos pequeños repartidos en celdas de 1°. Cada celda genera siempre los mismos cúmulos, así que al acercarte no aparecen nubes nuevas: de lejos cada cúmulo es una sola bola y de cerca se separa en sus bolitas. El Sol proyecta la sombra de las nubes sobre el terreno con un mapa de sombras que se ajusta a la zona que estás mirando.
@@ -97,7 +99,8 @@ El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: ca
 - `src/controls.js` – cámara tipo globo terráqueo con zoom hasta el suelo
 - `src/planet.js` – planeta: terreno, nubes y atmósfera
 - `src/clouds.js` – nubes (sistemas grandes y cúmulos cercanos)
-- `src/daynight.js` – ciclo de día y noche
+- `src/daynight.js` – ciclo de día y noche y órbita de la Luna
+- `src/sky.js` – el Sol y la Luna que se ven en el cielo
 - `src/water.js` – efecto del agua
 - `src/camp.js` – campamento inicial: modelo, colocación y guardado
 - `src/resources.js` – recursos naturales: tipos, modelos y generación por baldosas

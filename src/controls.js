@@ -6,6 +6,7 @@ const MAX_ALTITUDE = RADIUS * 4;
 const MAX_LAT = THREE.MathUtils.degToRad(89);
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const MAX_TILT = THREE.MathUtils.degToRad(62); // vista de estrategia cerca del suelo
+const MAX_LOOK_UP = THREE.MathUtils.degToRad(80); // cuánto se puede levantar la mirada
 const FLIGHT_MIN_SECONDS = 1.5;
 const FLIGHT_MAX_SECONDS = 10;
 
@@ -31,7 +32,8 @@ export class PlanetControls {
     this.lon = THREE.MathUtils.degToRad(0);
     this.altitude = RADIUS * 2.2;
     this.heading = 0;
-    this.target = { lat: this.lat, lon: this.lon, altitude: this.altitude, heading: this.heading };
+    this.lookUp = 0; // mirada levantada por el jugador (radianes)
+    this.target = { lat: this.lat, lon: this.lon, altitude: this.altitude, heading: this.heading, lookUp: 0 };
     this.groundHeight = 0;
     this.lowness = 0; // 0 = mirando desde el espacio, 1 = a ras de suelo
 
@@ -162,6 +164,7 @@ export class PlanetControls {
       FLIGHT_MIN_SECONDS,
       FLIGHT_MAX_SECONDS,
     );
+    this.target.lookUp = 0; // el vuelo termina con la vista normal
     this.flight = {
       startHeading: this.heading,
       // Punto que la cámara mira durante todo el vuelo (el destino, sobre el suelo).
@@ -247,6 +250,8 @@ export class PlanetControls {
     if (p.button === 2 || p.shift) {
       this.cancelFlight();
       this.target.heading -= dx * 0.005; // botón derecho: girar la vista
+      // y en vertical: levantar o bajar la mirada (para ver el cielo, el Sol y la Luna)
+      this.target.lookUp = THREE.MathUtils.clamp(this.target.lookUp - dy * 0.004, 0, MAX_LOOK_UP);
     } else {
       this.pan(dx, dy);
     }
@@ -264,6 +269,7 @@ export class PlanetControls {
   }
 
   update(delta) {
+    this.lookUp += (this.target.lookUp - this.lookUp) * (1 - Math.exp(-delta * 8));
     if (this.flight) {
       this.updateFlight(delta);
       // Durante el vuelo el rumbo cambia de forma gradual en la primera mitad.
@@ -309,7 +315,7 @@ export class PlanetControls {
     // Inclinación: mirando hacia abajo desde el espacio, casi al horizonte cerca del suelo.
     const clearance = this.viewClearance ?? Math.max(1, this.altitude - this.groundHeight);
     this.lowness = lowness(clearance);
-    const tilt = tiltFor(clearance);
+    const tilt = tiltFor(clearance) + this.lookUp;
 
     camera.position.copy(dir).multiplyScalar(RADIUS + this.altitude);
     look.copy(dir).multiplyScalar(-Math.cos(tilt)).addScaledVector(forward, Math.sin(tilt));

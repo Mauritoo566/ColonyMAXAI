@@ -8,6 +8,7 @@ import { waterUniforms } from './water.js';
 import { CampSystem } from './camp.js';
 import { biomeAt } from './biomes.js';
 import { ResourceSystem } from './resources.js';
+import { createSky } from './sky.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
@@ -62,6 +63,7 @@ const ambient = new THREE.AmbientLight('#5a6c99', 0.55);
 scene.add(ambient);
 
 const stars = createStars(4000);
+const sky = createSky(scene);
 scene.add(stars);
 
 const planet = createPlanet();
@@ -145,7 +147,10 @@ function updateSun(clearance) {
     cam.updateProjectionMatrix();
   }
 
-  moon.position.copy(sunDir).negate();
+  // Luz nocturna: llega desde la Luna si está sobre el horizonte y, si no, desde el
+  // lado opuesto al Sol (así la noche nunca queda negra).
+  const moonUp = controls.dir.dot(dayNight.moonDirection) > 0.05;
+  moon.position.copy(moonUp ? dayNight.moonDirection : sunDir.clone().negate());
 }
 
 // Color del cielo según la altura del Sol sobre el horizonte en el lugar de la cámara.
@@ -167,7 +172,7 @@ function updateSky(altitude) {
   // De noche sube la luz ambiente y la de la luna para que se siga viendo el paisaje.
   const night = 1 - daylight;
   ambient.intensity = 0.45 + 1.1 * night;
-  moon.intensity = 0.4 + 1.4 * night;
+  moon.intensity = (0.4 + 1.4 * night) * (0.55 + 0.45 * dayNight.moonIllumination);
 
   if (altitude < 200_000) {
     const horizon = Math.sqrt(altitude * (2 * RADIUS + altitude));
@@ -272,5 +277,6 @@ renderer.setAnimationLoop(() => {
   }
 
   if (shadowFrame++ % SHADOW_EVERY_FRAMES === 0) renderer.shadowMap.needsUpdate = true;
+  sky.update(camera, dayNight.sunDirection, dayNight.moonDirection, sun.color);
   renderer.render(scene, camera);
 });

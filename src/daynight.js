@@ -4,6 +4,7 @@ import * as THREE from 'three';
 // El "punto subsolar" es el lugar del planeta donde es mediodía exacto.
 
 export const DAY_LENGTH_SECONDS = 360; // un día completo dura 6 minutos a velocidad ×1
+export const MOON_CYCLE_DAYS = 8; // días de juego entre dos lunas llenas
 
 export class DayNight {
   constructor({ startLon = 0, startHour = 10 } = {}) {
@@ -12,6 +13,11 @@ export class DayNight {
     this.subsolarLon = startLon - ((startHour - 12) / 24) * Math.PI * 2;
     this.speed = 1;
     this.sunDirection = new THREE.Vector3();
+    // La Luna va algo por detrás del Sol en el cielo: el ángulo entre ambos marca la
+    // fase (0 = luna nueva, π = luna llena). Empieza en cuarto creciente avanzado.
+    this.moonPhase = 2.3;
+    this.moonDeclination = THREE.MathUtils.degToRad(-6);
+    this.moonDirection = new THREE.Vector3();
     this.update(0);
   }
 
@@ -24,6 +30,17 @@ export class DayNight {
       Math.sin(this.declination),
       c * Math.cos(this.subsolarLon),
     );
+
+    this.moonPhase += ((delta * this.speed) / (DAY_LENGTH_SECONDS * MOON_CYCLE_DAYS)) * Math.PI * 2;
+    this.moonPhase = THREE.MathUtils.euclideanModulo(this.moonPhase, Math.PI * 2);
+    const moonLon = this.subsolarLon - this.moonPhase;
+    const cm = Math.cos(this.moonDeclination);
+    this.moonDirection.set(cm * Math.sin(moonLon), Math.sin(this.moonDeclination), cm * Math.cos(moonLon));
+  }
+
+  // Parte iluminada de la Luna vista desde el planeta (0 = nueva, 1 = llena).
+  get moonIllumination() {
+    return (1 - Math.cos(this.moonPhase)) / 2;
   }
 
   // Hora solar local (0–24) en una longitud dada.
