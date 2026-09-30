@@ -1,5 +1,8 @@
 import { BUILDING_TYPES, BUILD_CATEGORIES, STOCK_NAMES, levelOf } from './buildings.js';
 import { AGES, ageInfo } from './ages.js';
+import { FOOD_SPOIL_SECONDS, ZONE_RADIUS, zoneCapacity } from './colonists.js';
+
+const DAY_SECONDS = 360;
 import { SKILLS } from './needs.js';
 
 // Interfaz de construcción: barra para elegir qué construir, el almacén de la colonia
@@ -36,8 +39,9 @@ function costHtml(def, stock) {
 }
 
 export class BuildUI {
-  constructor({ buildings, colony, onFocusColonist }) {
+  constructor({ buildings, colony, harvest, onFocusColonist }) {
     this.buildings = buildings;
+    this.harvest = harvest;
     this.colony = colony;
     this.onFocusColonist = onFocusColonist;
     this.timer = 0;
@@ -69,13 +73,24 @@ export class BuildUI {
         <span class="build-name">${def.name}</span>
         <span class="build-cost"></span>
       </button>`,
-    ).join('') + BUILD_CATEGORIES.filter((cat) => !BUILDING_TYPES.some((d) => d.category === cat.id)).map(
+    ).join('') + `
+      <button type="button" class="build-item build-item--zone" data-zone data-cat="storage" aria-pressed="false"
+        title="Dibuja un área al aire libre donde se amontona lo que no cabe en el almacén. La comida ahí se pudre.">
+        <span class="build-icon">${icon('stone')}</span>
+        <span class="build-name">Zona al aire libre</span>
+        <span class="build-cost"><span>Gratis</span></span>
+      </button>` + BUILD_CATEGORIES.filter((cat) => !BUILDING_TYPES.some((d) => d.category === cat.id)).map(
       (cat) => `
       <div class="build-soon" data-cat="${cat.id}">
         <span class="build-icon">${icon(cat.icon)}</span>
         <span><strong>Próximamente</strong>${cat.soon}</span>
       </div>`,
     ).join('');
+    this.list.querySelector('[data-zone]').addEventListener('click', () => {
+      if (buildings.placing) buildings.stopPlacing();
+      const on = !(harvest.active && harvest.mode === 'zone');
+      harvest.setActive(on, on ? 'zone' : 'mark');
+    });
     for (const button of this.list.querySelectorAll('[data-build]')) {
       button.addEventListener('click', () => {
         const def = BUILDING_TYPES.find((d) => d.id === button.dataset.build);
@@ -99,6 +114,22 @@ export class BuildUI {
     this.tab = first.id;
     this.setTab(saved === 'none' ? null : BUILD_CATEGORIES.some((c) => c.id === saved) ? saved : first.id);
 
+    // Herramienta de recolección: reemplaza la lista de edificios mientras está activa.
+    this.harvestButton = $('harvest-button');
+    this.harvestCount = $('harvest-count');
+    this.harvestTools = $('harvest-tools');
+    this.harvestHint = $('harvest-hint');
+    this.harvestButton.addEventListener('click', () => {
+      if (buildings.placing) buildings.stopPlacing();
+      harvest.setActive(!harvest.active);
+    });
+    for (const button of this.harvestTools.querySelectorAll('[data-harvest-mode]')) {
+      button.addEventListener('click', () => harvest.setActive(true, button.dataset.harvestMode));
+    }
+    $('harvest-clear').addEventListener('click', () => colony.clearMarks());
+    harvest.onChange = () => this.refreshHarvest();
+    buildings.onPlacingStart = () => harvest.setActive(false);
+
     // Clic en la fila del almacén (tarjeta de la colonia): abrir la ficha del almacén.
     this.stock.addEventListener('click', () => {
       if (buildings.store) buildings.select(buildings.store);
@@ -111,8 +142,55 @@ export class BuildUI {
     };
   }
 
+  refreshHarvest() {
+    const h = this.harvest;
+    const n = this.colony.markedCount;
+    const zoning = h.active && h.mode === 'zone';
+    this.harvestButton.setAttribute('aria-pressed', String(h.active && !zoning));
+    this.list.querySelector('[data-zone]').setAttribute('aria-pressed', String(zoning));
+    this.harvestCount.hidden = n === 0;
+    this.harvestCount.textContent = String(n);
+    this.harvestTools.hidden = !h.active || zoning;
+    this.harvestTools.querySelector('.harvest-modes').hidden = zoning;
+    if (zoning) {
+      // Dibujando una zona: se sigue viendo la pestaña Almacenes, con el aviso abajo.
+      this.setTab('storage', false);
+      this.showZoneHint(h.message);
+      return;
+    }
+    this.showZoneHint(null, true);
+    if (h.active) {
+      this.list.hidden = true;
+      this.bar.classList.remove('is-collapsed');
+      for (const tab of this.tabs.children) tab.setAttribute('aria-selected', 'false');
+    } else {
+      this.setTab(this.collapsed ? null : this.tab, false);
+    }
+    for (const b of this.harvestTools.querySelectorAll('[data-harvest-mode]')) b.setAttribute('aria-pressed', String(b.dataset.harvestMode === h.mode));
+    this.harvestHint.innerHTML =
+      h.mode === 'mark'
+        ? `Arrastra sobre el terreno para marcar un área (o haz clic en un recurso). ${n ? `<strong>${n} marcados</strong>: los colonos disponibles irán a recogerlos.` : 'Los colonos disponibles irán a recolectar árboles, bayas, setas y piedras marcados.'}`
+        : `Arrastra sobre un área marcada para quitar las marcas. ${n ? `<strong>${n} marcados</strong>.` : ''}`;
+  }
+
+  showZoneHint(problem, hide = false) {
+    let el = this.zoneHint;
+    if (!el) {
+      el = this.zoneHint = document.createElement('p');
+      el.className = 'zone-hint';
+      this.list.after(el);
+    }
+    el.hidden = hide;
+    if (hide) return;
+    const hours = Math.round((FOOD_SPOIL_SECONDS / DAY_SECONDS) * 24);
+    el.innerHTML = problem
+      ? `<strong style="color:var(--bad)">${problem}.</strong> Prueba en otro lugar.`
+      : `<strong>Arrastra sobre el terreno</strong> para dibujar la zona (de ${ZONE_RADIUS[0]} a ${ZONE_RADIUS[1]} m de radio). Lo que no quepa en el almacén se amontonará ahí; la comida al aire libre se pudre en ${hours} h. Esc para cancelar.`;
+  }
+
   // Elige la categoría visible (null = barra plegada).
-  setTab(id) {
+  setTab(id, closeTool = true) {
+    if (closeTool && this.harvest?.active) this.harvest.setActive(false);
     this.collapsed = !id;
     if (id) this.tab = id;
     for (const tab of this.tabs.children) tab.setAttribute('aria-selected', String(!this.collapsed && tab.dataset.cat === this.tab));
@@ -142,8 +220,9 @@ export class BuildUI {
       const cap = this.colony.capacity(li.dataset.stock);
       li.lastChild.textContent = String(v);
       li.classList.toggle('is-empty', v <= 0);
-      li.classList.toggle('is-full', v >= cap);
-      li.title = `${STOCK_NAMES[li.dataset.stock]}: ${v} de ${cap}${v >= cap ? ' (lleno)' : ''}`;
+      const out = Math.floor(this.colony.outdoor[li.dataset.stock] ?? 0);
+      li.classList.toggle('is-full', this.colony.isFull(li.dataset.stock));
+      li.title = `${STOCK_NAMES[li.dataset.stock]}: ${v - out} de ${cap} en el almacén${out ? ` + ${out} al aire libre` : ''}`;
     }
     for (const button of this.list.querySelectorAll('[data-build]')) {
       const def = BUILDING_TYPES.find((d) => d.id === button.dataset.build);
@@ -167,7 +246,8 @@ export class BuildUI {
   stockRowsHtml() {
     const colony = this.colony;
     return STOCK.map((r) => {
-      const have = Math.floor(colony.stock[r.id] ?? 0);
+      const have = Math.max(0, Math.floor(colony.indoor(r.id)));
+      const out = Math.floor(colony.outdoor[r.id] ?? 0);
       const cap = colony.capacity(r.id);
       const fill = Math.min(1, have / cap);
       const tone = fill >= 1 ? 'var(--bad)' : fill > 0.85 ? 'var(--warn)' : r.color;
@@ -175,9 +255,38 @@ export class BuildUI {
         <div class="store-row">
           <span class="store-name" style="--res:${r.color}">${icon(r.icon)}${STOCK_NAMES[r.id]}</span>
           <span class="bar" style="--bar:${tone}"><i style="width:${Math.round(fill * 100)}%"></i></span>
-          <strong>${have}<small> / ${cap}</small></strong>
+          <strong>${have}<small> / ${cap}${out ? ` · +${out} afuera` : ''}</small></strong>
         </div>`;
     }).join('');
+  }
+
+  // Lo guardado al aire libre, las zonas y cuándo se pudre la comida.
+  outdoorHtml() {
+    const colony = this.colony;
+    const cap = colony.outdoorCapacity();
+    const used = colony.outdoorUsed();
+    const next = colony.foodBatches[0];
+    const hoursLeft = next ? Math.max(0, ((next.expires - colony.gameTime) / DAY_SECONDS) * 24) : 0;
+    const items = STOCK.filter((r) => (colony.outdoor[r.id] ?? 0) >= 1)
+      .map((r) => `<span style="--res:${r.color}">${icon(r.icon)}${Math.floor(colony.outdoor[r.id])}</span>`)
+      .join('');
+    return `<section class="cp-section">
+        <h3>Al aire libre</h3>
+        ${
+          colony.zones.length
+            ? `<div class="stat-line"><span>Ocupado</span><strong>${Math.floor(used)} / ${cap}</strong></div>
+               ${items ? `<div class="store-adds">${items}</div>` : '<p class="reason">Todavía no hay nada amontonado: se usa cuando el almacén se llena.</p>'}
+               ${next ? `<p class="reason" style="color:var(--warn)">${Math.ceil(next.amount)} de comida se pudre en ${hoursLeft < 1 ? 'menos de 1 h' : `${Math.round(hoursLeft)} h`}. Se come primero lo que está afuera.</p>` : ''}
+               <ul class="zone-list">
+                 ${colony.zones
+                   .map((z, i) => `<li><span>Zona ${i + 1} · ${Math.round(z.r)} m · cabe ${zoneCapacity(z)}</span><button type="button" class="btn" data-remove-zone="${i}">Quitar</button></li>`)
+                   .join('')}
+               </ul>`
+            : '<p class="reason">No hay zonas. Dibuja una para que lo que no cabe en el almacén se amontone al aire libre en vez de que los colonos dejen de trabajar.</p>'
+        }
+        ${colony.spoiled >= 1 ? `<p class="reason">Comida perdida por pudrirse: ${Math.floor(colony.spoiled)}</p>` : ''}
+        <button type="button" class="btn" data-new-zone>${icon('stone')}Dibujar zona al aire libre</button>
+      </section>`;
   }
 
   // Lo que suma un almacén construido (y lo que sumará mejorado).
@@ -197,7 +306,7 @@ export class BuildUI {
   renderStore(b) {
     const colony = this.colony;
     const piles = this.buildings.list.filter((o) => o.def.id === 'stockpile' && (o.done || o.upgrading)).length;
-    const key = ['store', piles, JSON.stringify(STOCK.map((r) => [Math.floor(colony.stock[r.id] ?? 0), colony.capacity(r.id)]))].join('|');
+    const key = ['store', piles, JSON.stringify(STOCK.map((r) => [Math.floor(colony.stock[r.id] ?? 0), colony.capacity(r.id), Math.floor(colony.outdoor[r.id] ?? 0)])), JSON.stringify(colony.zones), Math.floor(colony.spoiled), Math.floor(((colony.foodBatches[0]?.expires ?? 0) - colony.gameTime) / 15)].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
     this.panel.innerHTML = `
@@ -221,8 +330,16 @@ export class BuildUI {
           <p class="reason">Cuando algo se llena, quien lo trae espera sin trabajar. Construye almacenes en la pestaña <strong>Almacenes</strong> de la barra de construcción (y mejóralos a granero) para guardar más.</p>
           <button type="button" class="btn btn--primary" data-open-storage>${icon('wood')}Construir un almacén</button>
         </section>
+        ${this.outdoorHtml()}
       </div>`;
     this.panel.querySelector('[data-close]').addEventListener('click', () => this.buildings.select(null));
+    for (const button of this.panel.querySelectorAll('[data-remove-zone]')) {
+      button.addEventListener('click', () => this.colony.removeZone(Number(button.dataset.removeZone)));
+    }
+    this.panel.querySelector('[data-new-zone]')?.addEventListener('click', () => {
+      this.buildings.select(null);
+      this.harvest.setActive(true, 'zone');
+    });
     this.panel.querySelector('[data-open-storage]').addEventListener('click', () => {
       this.setTab('storage');
       this.buildings.select(null);

@@ -496,6 +496,7 @@ export class BuildingSystem {
   startPlacing(id) {
     if (!this.colony.camp) return;
     this.select(null);
+    this.onPlacingStart?.();
     this.placing = BUILDINGS[id];
     this.ghost.clear();
     const model = buildMesh(this.placing.levels[0].model);
@@ -542,6 +543,9 @@ export class BuildingSystem {
     for (const o of colony.obstacles) {
       if (Math.hypot(x - o.x, z - o.z) < o.r + r + 0.8) return 'Choca con otra construcción';
     }
+    for (const zone of colony.zones) {
+      if (Math.hypot(x - zone.x, z - zone.z) < zone.r + r + 0.5) return 'Choca con una zona de acopio';
+    }
     const h = colony.heightAt(x, z);
     if (h <= 0.8) return 'No se puede construir en el agua';
     let lo = h;
@@ -559,7 +563,7 @@ export class BuildingSystem {
 
   place({ x, z }) {
     const def = this.placing;
-    for (const [k, n] of Object.entries(def.cost)) this.colony.stock[k] -= n;
+    for (const [k, n] of Object.entries(def.cost)) this.colony.takeStock(k, n);
     const b = this.create(def, x, z, Math.atan2(-x, -z), 0, 0);
     this.stopPlacing();
     this.select(b);
@@ -680,7 +684,7 @@ export class BuildingSystem {
   // Lo más lleno del almacén (0–1), para la etiqueta.
   storeFill() {
     let fill = 0;
-    for (const k of Object.keys(STOCK_NAMES)) fill = Math.max(fill, this.colony.stock[k] / this.colony.capacity(k));
+    for (const k of Object.keys(STOCK_NAMES)) fill = Math.max(fill, Math.min(1, this.colony.indoor(k) / this.colony.capacity(k)));
     return fill;
   }
 
@@ -745,7 +749,7 @@ export class BuildingSystem {
   upgrade(b) {
     if (this.upgradeProblem(b)) return false;
     const next = levelOf(b, 1);
-    for (const [k, n] of Object.entries(next.upgradeCost)) this.colony.stock[k] -= n;
+    for (const [k, n] of Object.entries(next.upgradeCost)) this.colony.takeStock(k, n);
     b.upgrading = true;
     b.done = false;
     b.progress = 0;

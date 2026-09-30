@@ -288,6 +288,8 @@ export class PlanetControls {
       return;
     }
 
+    // Mientras se marca un área con la herramienta, el botón izquierdo no mueve la cámara.
+    if (p.button === 0 && !p.shift && this.blockLeftDrag?.()) return;
     if (p.button === 2 || p.shift) {
       this.cancelFlight();
       this.target.heading -= dx * 0.005; // botón derecho: girar la vista

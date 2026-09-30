@@ -77,6 +77,12 @@ Si se acaban los árboles o las piedras grandes cerca, el leñador junta ramas c
 
 Lo que recoge la colonia se guarda en el **almacén del campamento** (las vasijas, cestas y sacos junto a la fogata). Tiene etiqueta en el mundo y, al hacerle clic (o en la fila de recursos de la tarjeta de la colonia), se abre su ficha con lo guardado y la capacidad. Cada recurso tiene un límite: cuando algo se llena, quien lo trae espera sin trabajar. Para guardar más se construyen almacenes (pestaña Almacenes): la **pila de troncos y cestas** de la Edad Primitiva, que se mejora a **granero** en la Tribal.
 
+### Recolectar y zonas al aire libre
+
+El botón **Recolectar** de la barra de construcción activa una herramienta: se arrastra sobre el terreno para marcar un área (o se hace clic en un recurso) y todo lo recolectable queda marcado con un rombo. Los colonos disponibles, sobre todo los que no tienen trabajo fijo, van a talar, picar o recoger lo marcado y lo llevan al almacén. También se puede desmarcar o quitar todas las marcas.
+
+En la pestaña Almacenes se puede dibujar una **zona al aire libre** (de 4 a 14 m de radio). Lo que no cabe en el almacén se amontona ahí (se ven los montones de troncos, piedras y cestas) en vez de que los colonos dejen de trabajar. La **comida al aire libre se pudre** en día y medio y desaparece; por eso se come primero la de afuera. La ficha del almacén muestra lo que hay afuera, cuándo se pudre la comida y permite quitar zonas.
+
 ### Guardado
 
 Todo se guarda en el navegador (`localStorage`) cada pocos segundos y al cerrar la pestaña: edificios, trabajadores, almacén, las necesidades, salud, posición y registro de cada colono, los recursos talados o que están volviendo a crecer, los brotes de la lluvia, la hora, la fase de la Luna y el clima. Al volver se restaura todo en lugar de empezar de cero.

@@ -15,6 +15,7 @@ import { BuildingSystem } from './buildings.js';
 import { BuildUI } from './buildUI.js';
 import { WeatherSystem } from './weather.js';
 import { AgeUI } from './ageUI.js';
+import { HarvestTool } from './harvest.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
@@ -109,7 +110,8 @@ const buildings = new BuildingSystem({
   terrain: planet.terrain,
   labelsRoot: document.getElementById('labels'),
 });
-buildings.blockSelection = () => !!camps.placing;
+const harvest = new HarvestTool({ scene, camera, canvas, colony, controls });
+buildings.blockSelection = () => !!camps.placing || harvest.active;
 
 // Clima: se decide en el campamento (o donde se mire si aún no hay uno).
 const weather = new WeatherSystem(scene);
@@ -141,9 +143,9 @@ const colonyUI = new ColonyUI({
   controls,
   camera,
   canvas,
-  isBlocked: () => !!camps.placing || !!buildings.placing,
+  isBlocked: () => !!camps.placing || !!buildings.placing || harvest.active,
 });
-const buildUI = new BuildUI({ buildings, colony, onFocusColonist: (c) => colonyUI.focusColonist(c) });
+const buildUI = new BuildUI({ buildings, colony, harvest, onFocusColonist: (c) => colonyUI.focusColonist(c) });
 // Sólo una ficha abierta a la vez.
 colonyUI.onOpen = () => buildings.select(null);
 buildUI.onOpen = () => colony.select(null);
@@ -363,6 +365,7 @@ renderer.setAnimationLoop(() => {
   colonyUI.update(delta);
   buildUI.update(delta);
   ageUI.update(delta);
+  harvest.update(waterUniforms.uTime.value, delta);
   updateSky(altitude);
 
   labelTimer -= delta;

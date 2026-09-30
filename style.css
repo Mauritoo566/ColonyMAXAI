@@ -1438,6 +1438,153 @@ summary:focus-visible {
   min-width: 0;
 }
 
+.build-head-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.build-head-row .build-tabs {
+  flex: 1;
+  min-width: 0;
+}
+
+.build-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(242, 178, 76, 0.45);
+  border-radius: 9px;
+  background: rgba(242, 178, 76, 0.1);
+  color: var(--accent);
+  font: 700 13px/1 var(--font-display);
+  cursor: pointer;
+}
+
+.build-tool:hover {
+  background: rgba(242, 178, 76, 0.18);
+}
+
+.build-tool[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-ink);
+}
+
+.build-tool-count {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 11px;
+}
+
+.zone-hint {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px dashed rgba(143, 208, 255, 0.5);
+  border-radius: 9px;
+  color: var(--ui-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.zone-hint strong {
+  color: var(--ui-text);
+}
+
+.zone-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.zone-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 10px;
+  border-radius: 8px;
+  background: var(--ui-bg-raised);
+  font-size: 13px;
+}
+
+.zone-list .btn {
+  padding: 5px 10px;
+}
+
+.build-item--zone .build-icon {
+  background: rgba(143, 208, 255, 0.14);
+  color: #8fd0ff;
+}
+
+.harvest-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 84px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(242, 178, 76, 0.5);
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+.harvest-tools[hidden] {
+  display: none;
+}
+
+.harvest-modes {
+  display: grid;
+  gap: 4px;
+  flex: none;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--ui-bg-raised);
+}
+
+.harvest-modes button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--ui-muted);
+  font: 700 13px/1 var(--font-display);
+  cursor: pointer;
+}
+
+.harvest-modes button[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.harvest-modes button[data-harvest-mode='unmark'][aria-pressed='true'] {
+  background: var(--bad);
+  color: #2a0c08;
+}
+
+.harvest-hint {
+  flex: 1;
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.harvest-hint strong {
+  color: var(--ui-text);
+}
+
+canvas.is-harvesting {
+  cursor: crosshair;
+}
+
 .build-tabs {
   display: flex;
   gap: 4px;

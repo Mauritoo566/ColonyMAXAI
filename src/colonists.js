@@ -27,6 +27,12 @@ export const START_STOCK = { food: 12, water: 12, wood: 45, stone: 20, fiber: 10
 // Lo que cabe en el almacén del campamento (las vasijas y cestas junto a la fogata).
 // Cada almacén construido suma su capacidad.
 export const CAMP_CAPACITY = { food: 40, water: 30, wood: 60, stone: 40, fiber: 30 };
+// Zonas de acopio al aire libre: guardan lo que no cabe bajo techo. Cabe más cuanto más
+// grande es la zona (unidades por m²), pero la comida al aire libre se pudre.
+export const ZONE_PER_M2 = 1.5;
+export const ZONE_RADIUS = [4, 14];
+export const FOOD_SPOIL_SECONDS = 1.5 * 360; // día y medio de juego
+const ZONE_MAX_DISTANCE = 75;
 
 const WALK_SPEED = 1.4; // m/s
 const COLONIST_RADIUS = 0.45;
@@ -143,6 +149,10 @@ export class ColonySystem {
     this.totem = null;
     this.weather = null; // WeatherSystem: la lluvia acelera lo que crece y enfría
     this.sprouts = []; // brotes de la lluvia (se guardan)
+    this.zones = []; // zonas de acopio al aire libre { x, z, r }
+    this.outdoor = {}; // lo guardado al aire libre (parte de stock)
+    this.foodBatches = []; // comida al aire libre: [{ amount, expires }]
+    this.spoiled = 0; // comida perdida por pudrirse
     this.sproutTimer = 0;
     this.layout = campLayout();
     this.campTemperature = 0.5;
@@ -184,6 +194,7 @@ export class ColonySystem {
       const rain = this.weather?.rain ?? 0;
       const ambient = Math.min(1, Math.max(0, (this.campTemperature - (isNight ? 0.3 : 0) - 0.12 - rain * 0.12) * 1.6));
       this.updateRain(gameDt, rain);
+      this.updateSpoilage();
       let simTime = gameDt;
       let steps = 0;
       while (simTime > 1e-4 && steps++ < MAX_STEPS_PER_FRAME) {
@@ -224,6 +235,11 @@ export class ColonySystem {
     this.water = undefined;
     this.camp = camp;
     this.stock = { ...START_STOCK };
+    this.zones = [];
+    this.outdoor = {};
+    this.foodBatches = [];
+    this.spoiled = 0;
+    this.onZonesChange?.();
     this.setAge(1);
     this.sprouts = [];
     this.resources?.setExtraTile(SPROUT_KEY, null);
@@ -668,16 +684,120 @@ export class ColonySystem {
     return cap;
   }
 
-  isFull(kind) {
-    return this.stock[kind] >= this.capacity(kind);
+  // Lo que hay bajo techo (el resto del stock está al aire libre).
+  indoor(kind) {
+    return (this.stock[kind] ?? 0) - (this.outdoor[kind] ?? 0);
   }
 
-  // Guarda lo que quepa y devuelve cuánto entró.
+  outdoorCapacity() {
+    return this.zones.reduce((sum, z) => sum + zoneCapacity(z), 0);
+  }
+
+  outdoorUsed() {
+    return Object.values(this.outdoor).reduce((a, b) => a + b, 0);
+  }
+
+  isFull(kind) {
+    return this.indoor(kind) >= this.capacity(kind) && this.outdoorUsed() >= this.outdoorCapacity();
+  }
+
+  // ¿Lo siguiente de este recurso irá al aire libre? (para llevarlo a la zona)
+  goesOutdoor(kind) {
+    return this.indoor(kind) >= this.capacity(kind) && this.outdoorUsed() < this.outdoorCapacity();
+  }
+
+  // Guarda lo que quepa (primero bajo techo, lo que sobra en las zonas al aire libre)
+  // y devuelve cuánto entró.
   addStock(kind, amount) {
-    const room = Math.max(0, this.capacity(kind) - (this.stock[kind] ?? 0));
-    const added = Math.min(amount, room);
-    this.stock[kind] = (this.stock[kind] ?? 0) + added;
-    return added;
+    const inside = Math.min(amount, Math.max(0, this.capacity(kind) - this.indoor(kind)));
+    const outside = Math.min(amount - inside, Math.max(0, this.outdoorCapacity() - this.outdoorUsed()));
+    this.stock[kind] = (this.stock[kind] ?? 0) + inside + outside;
+    if (outside > 0) {
+      this.outdoor[kind] = (this.outdoor[kind] ?? 0) + outside;
+      if (kind === 'food') this.foodBatches.push({ amount: outside, expires: this.gameTime + FOOD_SPOIL_SECONDS });
+    }
+    return inside + outside;
+  }
+
+  // Saca del almacén: primero lo que está al aire libre (y la comida más vieja).
+  takeStock(kind, amount) {
+    const n = Math.min(amount, this.stock[kind] ?? 0);
+    this.stock[kind] -= n;
+    this.removeOutdoor(kind, Math.min(n, this.outdoor[kind] ?? 0));
+    return n;
+  }
+
+  removeOutdoor(kind, n) {
+    if (n <= 0) return;
+    this.outdoor[kind] = Math.max(0, (this.outdoor[kind] ?? 0) - n);
+    if (kind !== 'food') return;
+    let left = n;
+    while (left > 1e-6 && this.foodBatches.length) {
+      const b = this.foodBatches[0];
+      const t = Math.min(b.amount, left);
+      b.amount -= t;
+      left -= t;
+      if (b.amount <= 1e-6) this.foodBatches.shift();
+    }
+  }
+
+  // La comida al aire libre que venció desaparece.
+  updateSpoilage() {
+    while (this.foodBatches.length && this.foodBatches[0].expires <= this.gameTime) {
+      const b = this.foodBatches.shift();
+      const lost = Math.min(b.amount, this.outdoor.food ?? 0);
+      this.outdoor.food = (this.outdoor.food ?? 0) - lost;
+      this.stock.food = Math.max(0, this.stock.food - lost);
+      this.spoiled += lost;
+      if (lost >= 1) this.onSpoil?.(lost);
+    }
+  }
+
+  // ---- Zonas de acopio al aire libre ------------------------------------------
+
+  zoneProblem(x, z, r) {
+    if (Math.hypot(x, z) > ZONE_MAX_DISTANCE) return 'Demasiado lejos del campamento';
+    for (const o of this.obstacles) {
+      if (Math.hypot(x - o.x, z - o.z) < o.r + r) return 'Choca con el campamento o un edificio';
+    }
+    for (const zone of this.zones) {
+      if (Math.hypot(x - zone.x, z - zone.z) < zone.r + r) return 'Choca con otra zona de acopio';
+    }
+    if (this.heightAt(x, z) <= 0.8) return 'No se puede en el agua';
+    return null;
+  }
+
+  addZone(x, z, r) {
+    r = Math.min(ZONE_RADIUS[1], Math.max(ZONE_RADIUS[0], r));
+    const problem = this.zoneProblem(x, z, r);
+    if (problem) return problem;
+    this.zones.push({ x, z, r });
+    this.onZonesChange?.();
+    return null;
+  }
+
+  // Al quitar una zona, lo que ya no cabe al aire libre se pierde.
+  removeZone(index) {
+    this.zones.splice(index, 1);
+    let excess = this.outdoorUsed() - this.outdoorCapacity();
+    const kinds = Object.keys(this.outdoor).sort((a, b) => this.outdoor[b] - this.outdoor[a]);
+    for (const k of kinds) {
+      if (excess <= 0) break;
+      const n = Math.min(excess, this.outdoor[k]);
+      this.stock[k] -= n;
+      this.removeOutdoor(k, n);
+      excess -= n;
+    }
+    this.onZonesChange?.();
+  }
+
+  // Punto donde dejar un recurso: la zona al aire libre si ya no cabe bajo techo.
+  dropPoint(kind) {
+    if (this.goesOutdoor(kind) && this.zones.length) {
+      const zone = this.zones.find((z) => zoneCapacity(z) > 0);
+      return { x: zone.x, z: zone.z, r: zone.r };
+    }
+    return this.layout.storage;
   }
 
   // ---- Edades ------------------------------------------------------------
@@ -687,7 +807,7 @@ export class ColonySystem {
   advanceAge(timeLabel = '') {
     const status = nextAgeStatus(this);
     if (!status.ready) return false;
-    for (const [k, n] of Object.entries(status.next.requires.cost)) this.stock[k] -= n;
+    for (const [k, n] of Object.entries(status.next.requires.cost)) this.takeStock(k, n);
     this.setAge(status.next.n);
     for (const c of this.colonists) {
       addLog(c, timeLabel, `Celebró la llegada de la ${status.next.name}`);
@@ -791,9 +911,55 @@ export class ColonySystem {
     return false;
   }
 
+  // Recursos marcados para recolectar (herramienta de recolección).
+  nearestMarked(x, z, gameTime) {
+    if (!this.markedCount) return null;
+    let best = null;
+    let bestD = Infinity;
+    for (const s of this.spots) {
+      if (!s.marked || s.gone || s.taken || s.readyAt > gameTime) continue;
+      if (this.isFull(s.kind) || this.blockedByBuilding(s.x, s.z)) continue;
+      const d = Math.hypot(s.x - x, s.z - z);
+      if (d < bestD) {
+        best = s;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  get markedCount() {
+    let n = 0;
+    for (const s of this.spots) if (s.marked && !s.gone) n++;
+    return n;
+  }
+
+  // Marcar o desmarcar los recursos dentro de un círculo (coordenadas del campamento).
+  markArea(x, z, radius, marked) {
+    let changed = 0;
+    for (const s of this.spots) {
+      if (s.gone || Math.hypot(s.x - x, s.z - z) > radius) continue;
+      if (!!s.marked !== marked) {
+        s.marked = marked;
+        changed++;
+      }
+    }
+    if (changed) this.onMarksChange?.();
+    return changed;
+  }
+
+  clearMarks() {
+    for (const s of this.spots) s.marked = false;
+    this.onMarksChange?.();
+  }
+
   // Un recurso usado: los árboles y las piedras desaparecen; las bayas vuelven a crecer.
   consumeSpot(spot, gameTime) {
     spot.taken = null;
+    if (spot.marked) {
+      spot.marked = false;
+      this.onMarksChange?.();
+    }
     if (spot.kind === 'food') {
       spot.readyAt = gameTime + REGROW_SECONDS;
     } else {
@@ -824,12 +990,22 @@ export class ColonySystem {
       regrowing: this.spots.filter((s) => s.readyAt > this.gameTime).map((s) => [s.key, s.index, s.readyAt]),
       removed: this.resources ? this.resources.serializeRemoved() : [],
       sprouts: this.sprouts,
+      marked: this.spots.filter((s) => s.marked && !s.gone).map((s) => [s.key, s.index]),
+      zones: this.zones,
+      outdoor: this.outdoor,
+      foodBatches: this.foodBatches,
+      spoiled: this.spoiled,
     };
   }
 
   restore(data) {
     if (!data) return;
     this.gameTime = data.gameTime || 0;
+    this.zones = Array.isArray(data.zones) ? data.zones.filter((z) => Number.isFinite(z.x) && Number.isFinite(z.r)) : [];
+    this.outdoor = data.outdoor && typeof data.outdoor === 'object' ? { ...data.outdoor } : {};
+    this.foodBatches = Array.isArray(data.foodBatches) ? data.foodBatches.filter((b) => b.amount > 0) : [];
+    this.spoiled = data.spoiled || 0;
+    this.onZonesChange?.();
     this.setAge(Math.min(AGES.length, Math.max(1, data.age || 1)));
     for (const saved of data.colonists || []) {
       const c = this.colonists.find((o) => o.id === saved.id);
@@ -856,6 +1032,11 @@ export class ColonySystem {
       const s = byKey.get(`${key}:${index}`);
       if (s) s.readyAt = readyAt;
     }
+    for (const [key, index] of data.marked || []) {
+      const s = byKey.get(`${key}:${index}`);
+      if (s) s.marked = true;
+    }
+    this.onMarksChange?.();
     if (this.resources) this.resources.restoreRemoved(data.removed);
     for (const [key, indices] of data.removed || []) {
       for (const index of indices) {
@@ -965,4 +1146,8 @@ function totemMesh() {
   const mesh = p.mesh(totemMaterial);
   mesh.rotation.y = -4.6 + Math.PI / 2; // la cara mira a la fogata
   return mesh;
+}
+
+export function zoneCapacity(zone) {
+  return Math.round(Math.PI * zone.r * zone.r * ZONE_PER_M2);
 }

@@ -97,6 +97,9 @@ export function chooseTask(colony, c, env) {
     }
     const job = c.job;
     if (job && job.done) add(0.34 * diligence * fine, { type: 'work', building: job, phase: 'start' });
+    // Recolectar lo que el jugador marcó: sobre todo quien no tiene trabajo fijo.
+    const marked = colony.nearestMarked(c.x, c.z, env.gameTime);
+    if (marked) add((job ? 0.3 : 0.38) * diligence * fine * distanceFactor(dist(c, marked)), { type: 'harvest', spot: marked, phase: 'going' });
   }
 
   // Pasear: lo que hace cuando no necesita nada.
@@ -177,7 +180,7 @@ export function runTask(colony, c, task, dt, env) {
       if (stock.food < 1) return 'failed';
       if (!go(colony, c, task, colony.layout.storage, dt, 1.6)) return 'running';
       if (!busy(task, dt, 5)) return 'running';
-      stock.food -= 1;
+      colony.takeStock('food', 1);
       n.food = Math.min(100, n.food + 55);
       return 'done';
     }
@@ -188,7 +191,7 @@ export function runTask(colony, c, task, dt, env) {
       if (!busy(task, dt, 4)) return 'running';
       if (task.source === 'stock') {
         if (stock.water < 1) return 'failed';
-        stock.water -= 1;
+        colony.takeStock('water', 1);
         n.water = Math.min(100, n.water + 60);
       } else if (task.source === 'well' && levelOf(task.building).rainOnly) {
         if (task.building.store < 1) return 'failed';
@@ -249,6 +252,9 @@ export function runTask(colony, c, task, dt, env) {
 
     case 'work':
       return runWork(colony, c, task, dt, env);
+
+    case 'harvest':
+      return runHarvest(colony, c, task, dt, env);
 
     case 'wander': {
       if (!task.target) {
@@ -356,12 +362,56 @@ function runWork(colony, c, task, dt, env) {
     task.phase = 'returning';
   }
   if (task.phase === 'returning') {
-    if (!go(colony, c, task, edgeOf(b, c), dt, 0.9)) return 'running';
+    // Si en el almacén ya no cabe, lo lleva a la zona de acopio al aire libre.
+    task.drop ??= colony.goesOutdoor(def.stock) && colony.zones.length ? colony.dropPoint(def.stock) : edgeOf(b, c);
+    if (!go(colony, c, task, task.drop, dt, task.drop.r ? task.drop.r * 0.6 : 0.9)) return 'running';
     const amount = task.spot.scavenge ? def.scavenge.yield : level.yield;
     const added = colony.addStock(def.stock, amount);
     for (const [k, n] of Object.entries(def.extra || {})) colony.addStock(k, n);
     b.produced += added;
     if (!task.spot.scavenge) b.status = null;
+    return 'done';
+  }
+  return 'running';
+}
+
+// Lo que da cada recurso natural recolectado a mano y cuánto se tarda.
+const HARVEST = {
+  food: { skill: 'gathering', time: 9, verb: 'Recogiendo', noun: 'comida' },
+  wood: { skill: 'woodcutting', time: 16, verb: 'Talando', noun: 'madera' },
+  stone: { skill: 'mining', time: 16, verb: 'Picando piedra', noun: 'piedra' },
+};
+const HARVEST_YIELD = { berryBush: { food: 3, fiber: 1 }, mushrooms: { food: 2 }, stone: { stone: 3 }, flint: { stone: 2 } };
+
+function harvestYield(spot) {
+  return HARVEST_YIELD[spot.type] ?? (spot.kind === 'wood' ? { wood: 4, fiber: 1 } : { [spot.kind]: 1 });
+}
+
+// Recolectar un recurso marcado: ir, recogerlo y llevarlo al almacén.
+function runHarvest(colony, c, task, dt, env) {
+  const spot = task.spot;
+  const info = HARVEST[spot.kind];
+  if (task.phase === 'going') {
+    if (spot.gone || !spot.marked || (spot.taken && spot.taken !== c) || spot.readyAt > env.gameTime) return 'done';
+    spot.taken = c;
+    if (!go(colony, c, task, spot, dt, 1.5)) return task.failed ? release(spot) : 'running';
+    task.phase = 'gathering';
+    task.timer = 0;
+  }
+  if (task.phase === 'gathering') {
+    c.working = true;
+    colony.faceTowards(c, spot.x, spot.z, dt);
+    const skill = c.skills[info.skill] / 10;
+    if (!busy(task, dt, info.time * (1.4 - skill * 0.7))) return 'running';
+    task.load = harvestYield(spot);
+    colony.consumeSpot(spot, env.gameTime);
+    task.phase = 'returning';
+  }
+  if (task.phase === 'returning') {
+    // Si bajo techo ya no cabe, lo deja en la zona de acopio al aire libre.
+    task.drop ??= colony.dropPoint(spot.kind);
+    if (!go(colony, c, task, task.drop, dt, task.drop.r ? task.drop.r * 0.6 : 1.6)) return 'running';
+    for (const [k, n] of Object.entries(task.load)) colony.addStock(k, n);
     return 'done';
   }
   return 'running';
@@ -396,6 +446,12 @@ export function taskActivity(colony, c, task) {
     case 'build':
       if (task.building.upgrading) return walking ? `Va a mejorar: ${task.building.name}` : `Mejorando: ${task.building.name}`;
       return walking ? `Va a construir: ${task.building.name}` : `Construyendo: ${task.building.name}`;
+    case 'harvest': {
+      const info = HARVEST[task.spot.kind];
+      if (task.phase === 'going') return `Va a recolectar ${info.noun} marcada`;
+      if (task.phase === 'gathering') return info.verb;
+      return task.drop?.r ? `Lleva ${info.noun} a la zona al aire libre` : `Lleva ${info.noun} al almacén`;
+    }
     case 'work': {
       const def = task.building.def;
       if (task.storeFull) return 'Espera: el almacén está lleno';
@@ -407,6 +463,7 @@ export function taskActivity(colony, c, task) {
       if (task.spot?.scavenge && task.phase !== 'returning') return def.scavenge.text;
       if (task.phase === 'going') return def.goingText;
       if (task.phase === 'gathering') return def.workingText;
+      if (task.drop?.r) return `Lleva ${STOCK_NAMES[def.stock]} a la zona al aire libre`;
       return def.returningText;
     }
     case 'wander':
@@ -430,6 +487,8 @@ export function taskLog(c, task) {
       return `Ayudó a ${task.building.upgrading ? 'mejorar' : 'construir'}: ${task.building.name}`;
     case 'work':
       return `Trabajó en: ${task.building.name}`;
+    case 'harvest':
+      return `Recolectó ${HARVEST[task.spot.kind].noun} en una zona marcada`;
   }
   return null;
 }
