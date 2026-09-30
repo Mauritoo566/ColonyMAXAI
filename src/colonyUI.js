@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { NEEDS, wellbeing, needStatus } from './needs.js';
+import { NEEDS, SKILLS, wellbeing, needStatus } from './needs.js';
 import { GENES, gene, genomeCode, lifeExpectancy } from './genes.js';
 
 // Interfaz de la colonia: tarjeta con el bienestar general, lista de colonos y la
@@ -192,6 +192,7 @@ export class ColonyUI {
       this.setFollowing(false);
       return;
     }
+    this.onOpen?.();
     if (this.following) this.startFollowing();
     this.panel.hidden = false;
     this.panel.innerHTML = `
@@ -235,6 +236,18 @@ export class ColonyUI {
         <section class="cp-section">
           <h3>Ahora</h3>
           <p class="activity-now" data-activity></p>
+        </section>
+        <section class="cp-section">
+          <h3>Trabajo</h3>
+          <p class="activity-now" data-job></p>
+        </section>
+        <section class="cp-section">
+          <h3>Habilidades</h3>
+          <ul class="skill-list">
+            ${SKILLS.map(
+              (sk) => `<li class="skill-row"><span>${sk.name}</span><span class="bar"><i style="width:${c.skills[sk.id] * 10}%"></i></span><span>${c.skills[sk.id]}/10</span></li>`,
+            ).join('')}
+          </ul>
         </section>
       </div>
       <div class="cp-body" data-page="genes" hidden>
@@ -298,6 +311,9 @@ export class ColonyUI {
   updatePanel(c) {
     if (this.panel.hidden) return;
     for (const el of this.panel.querySelectorAll('[data-activity]')) el.textContent = c.activity;
+    const job = this.panel.querySelector('[data-job]');
+    const jobText = c.job ? `${c.job.def.job} en ${c.job.def.name}` : 'Sin trabajo asignado';
+    if (job.textContent !== jobText) job.textContent = jobText;
 
     const health = this.panel.querySelector('[data-health]');
     health.querySelector('[data-value]').textContent = `${Math.round(c.health)}%`;

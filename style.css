@@ -957,6 +957,294 @@ summary:focus-visible {
   }
 }
 
+/* ---- Almacén de la colonia ------------------------------------------------ */
+
+.stock {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stock li {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  background: var(--ui-bg-raised);
+  font: 700 15px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.stock .icon {
+  color: var(--res);
+  font-size: 15px;
+}
+
+.stock li.is-empty {
+  color: var(--bad);
+}
+
+/* ---- Barra de construcción (abajo al centro) ----------------------------- */
+
+.build-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--gap) + var(--safe-bottom));
+  transform: translateX(-50%);
+  display: grid;
+  gap: 8px;
+  max-width: calc(100vw - 2 * var(--gap) - 600px);
+  min-width: 0;
+  padding: 10px 12px 12px;
+  box-sizing: border-box;
+}
+
+.build-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.build-item {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  flex: none;
+  width: 112px;
+  padding: 9px 6px 8px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-bg-raised);
+  color: var(--ui-text);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+}
+
+.build-item:hover {
+  border-color: var(--ui-line-strong);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.build-item[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: rgba(242, 178, 76, 0.12);
+}
+
+.build-item[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.build-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: rgba(242, 178, 76, 0.14);
+  color: var(--accent);
+  font-size: 19px;
+}
+
+.build-name {
+  font: 700 13px/1.15 var(--font-display);
+  text-wrap: balance;
+}
+
+.build-cost {
+  display: flex;
+  gap: 8px;
+  color: var(--ui-muted);
+  font: 600 12px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.build-cost span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.build-cost span.is-short {
+  color: var(--bad);
+}
+
+/* ---- Ficha del edificio -------------------------------------------------- */
+
+.bp-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(242, 178, 76, 0.14);
+  color: var(--accent);
+  font-size: 28px;
+}
+
+.worker-card {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--ui-bg-raised);
+}
+
+.worker-card .avatar {
+  width: 40px;
+  height: 40px;
+}
+
+.worker-name {
+  font: 700 16px/1.1 var(--font-display);
+}
+
+.reason {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.candidate-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.candidate {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 70px auto;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+}
+
+.candidate .avatar {
+  width: 26px;
+  height: 26px;
+}
+
+.candidate .bar {
+  --bar: var(--accent);
+}
+
+.candidate button {
+  padding: 5px 9px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 7px;
+  background: none;
+  color: var(--ui-text);
+  font: 600 12px/1 var(--font-ui);
+  cursor: pointer;
+}
+
+.candidate button:disabled {
+  border-color: transparent;
+  color: var(--accent);
+  cursor: default;
+}
+
+.stat-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: var(--ui-bg-raised);
+  font-size: 13px;
+}
+
+.stat-line strong {
+  font: 700 15px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.skill-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skill-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.skill-row .bar {
+  --bar: var(--accent);
+}
+
+.skill-row span:last-child {
+  justify-self: end;
+  color: var(--ui-muted);
+  font: 600 12px/1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.building-label {
+  position: fixed;
+  left: 0;
+  top: 0;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 4px 8px 5px;
+  border: 1px solid rgba(242, 178, 76, 0.35);
+  border-radius: 7px;
+  background: rgba(12, 16, 23, 0.78);
+  color: var(--ui-text);
+  font: 600 12px/1.1 var(--font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.building-label.is-selected {
+  border-color: var(--accent);
+}
+
+.building-label-name {
+  font: 700 12px/1.1 var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+.building-label-sub {
+  color: var(--ui-muted);
+  font-size: 11px;
+}
+
+.building-label-bar {
+  display: block;
+  width: 64px;
+  height: 3px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+.building-label-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
 /* ---- Pantallas chicas ---------------------------------------------------- */
 
 @media (max-width: 720px) {
@@ -993,5 +1281,32 @@ summary:focus-visible {
 
   .help {
     bottom: calc(var(--gap) + var(--safe-bottom) + 108px);
+  }
+
+  .build-bar {
+    left: var(--gap);
+    right: var(--gap);
+    bottom: calc(var(--gap) + var(--safe-bottom) + 96px);
+    transform: none;
+    max-width: none;
+    padding: 8px;
+  }
+
+  .build-title {
+    display: none;
+  }
+
+  .help {
+    bottom: calc(var(--gap) + var(--safe-bottom) + 244px);
+  }
+}
+
+@media (min-width: 721px) and (max-width: 1100px) {
+  .build-bar {
+    left: auto;
+    right: var(--gap);
+    bottom: calc(var(--gap) + var(--safe-bottom) + 52px);
+    transform: none;
+    max-width: calc(100vw - 2 * var(--gap) - 300px);
   }
 }

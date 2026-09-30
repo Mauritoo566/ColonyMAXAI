@@ -39,6 +39,11 @@
     <symbol id="i-follow" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
     <symbol id="i-altitude" viewBox="0 0 24 24"><path fill="currentColor" d="M2.5 19.5 9 8.5l3.6 6 2.4-3.6 6.5 8.6Z"/></symbol>
     <symbol id="i-leaf" viewBox="0 0 24 24"><path fill="currentColor" d="M19.5 4.5C9 4.5 4.5 9 4.5 15.2c0 1.5.4 2.8 1 3.8 1.8-4.6 5-7.3 9-8.7-3.6 2-6.2 5-7.4 9 1 .5 2.1.7 3.3.7 6.3 0 9.1-5.6 9.1-15.5Z"/></symbol>
+    <symbol id="i-axe" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M9 11 19.5 21.5"/><path fill="currentColor" d="M3.5 7.5c2.5-4 7-5 10-3.5L9.4 11.7C7 12.2 4.6 10.8 3.5 7.5Z"/></symbol>
+    <symbol id="i-pick" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M12 9 4 21"/><path fill="currentColor" d="M3.5 7.2C8 3 15 2.2 20.5 5.5c-5-.8-9.5.4-13.2 3.6Z"/></symbol>
+    <symbol id="i-wood" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="10" rx="5" fill="currentColor" opacity=".55"/><circle cx="16" cy="12" r="5" fill="currentColor"/><circle cx="16" cy="12" r="2.2" fill="none" stroke="#0c1017" stroke-width="1.3" opacity=".6"/></symbol>
+    <symbol id="i-stone" viewBox="0 0 24 24"><path fill="currentColor" d="M4 17.5 6.5 9l6-3.5 6.3 3 1.7 8.5-6.5 3Z"/><path fill="none" stroke="#0c1017" stroke-width="1.2" opacity=".45" d="m6.5 9 6 3.3 6.3-3.3M12.5 12.3V20"/></symbol>
+    <symbol id="i-hammer" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M12.5 9.5 4 18"/><path fill="currentColor" d="m10.5 4.5 3-1.5 7 7-2.5 2.5-2-2-2 2-3.5-3.5 2-2Z"/></symbol>
     <symbol id="i-dna" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M7 3c0 6 10 6 10 12s-10 6-10 6M17 3c0 6-10 6-10 12s10 6 10 6M8.5 7h7M8.5 17h7"/></symbol>
   </svg>
 
@@ -62,6 +67,7 @@
         <div class="bar bar--thick"><i id="colony-wellbeing-bar"></i></div>
       </div>
       <ul class="need-summary" id="need-summary"></ul>
+      <ul class="stock" id="stock" aria-label="Almacén de la colonia"></ul>
       <details class="roster-wrap" id="roster-wrap" open>
         <summary>Colonos</summary>
         <ul class="roster" id="roster"></ul>
@@ -69,6 +75,12 @@
     </section>
 
     <aside id="colonist-panel" class="panel colonist-panel" hidden aria-label="Ficha del colono"></aside>
+    <aside id="building-panel" class="panel colonist-panel" hidden aria-label="Ficha del edificio"></aside>
+
+    <section id="build-bar" class="panel build-bar" hidden aria-label="Construir">
+      <p class="eyebrow build-title">Construir</p>
+      <div class="build-list" id="build-list"></div>
+    </section>
 
     <div class="camp-panel">
       <button type="button" id="found-camp" class="btn btn--primary">Fundar campamento</button>
@@ -108,6 +120,7 @@
           <dt>Rueda o pellizcar</dt><dd>Acercar y alejar</dd>
           <dt>Botón derecho o Shift</dt><dd>Girar y mirar arriba</dd>
           <dt>Clic en un colono</dt><dd>Ver su ficha</dd>
+          <dt>Barra de construcción</dt><dd>Elegir un edificio y hacer clic donde va</dd>
           <dt>Esc</dt><dd>Cerrar o cancelar</dd>
         </dl>
       </div>

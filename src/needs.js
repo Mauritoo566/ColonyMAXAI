@@ -40,16 +40,44 @@ const ORIGINS = [
   'Creció entre los bosques del norte',
   'Nació en una isla pequeña',
 ];
+// Oficio anterior: da experiencia en alguna habilidad.
 const PASTS = [
-  'se dedicaba a la caza',
-  'trabajaba la madera',
-  'cuidaba cabras',
-  'recolectaba plantas medicinales',
-  'hacía vasijas de barro',
-  'pescaba en el río',
-  'era aprendiz en una herrería',
-  'contaba historias junto al fuego',
+  { text: 'se dedicaba a la caza', skills: { gathering: 1, hauling: 1 } },
+  { text: 'trabajaba la madera', skills: { woodcutting: 3, building: 2 } },
+  { text: 'cuidaba cabras', skills: { gathering: 2, hauling: 1 } },
+  { text: 'recolectaba plantas medicinales', skills: { gathering: 3 } },
+  { text: 'hacía vasijas de barro', skills: { building: 1, hauling: 1 } },
+  { text: 'pescaba en el río', skills: { hauling: 3 } },
+  { text: 'era aprendiz en una herrería', skills: { mining: 3, building: 1 } },
+  { text: 'levantaba muros de piedra', skills: { building: 3, mining: 1 } },
+  { text: 'contaba historias junto al fuego', skills: {} },
 ];
+
+// Habilidades (0–10): deciden quién es el más capacitado para cada trabajo.
+export const SKILLS = [
+  { id: 'gathering', name: 'Recolección' },
+  { id: 'woodcutting', name: 'Tala' },
+  { id: 'mining', name: 'Cantería' },
+  { id: 'hauling', name: 'Acarreo de agua' },
+  { id: 'building', name: 'Construcción' },
+];
+
+function createSkills(genome, past, rand) {
+  const g = (id) => gene(genome, id);
+  const base = {
+    gathering: g('agility') * 4 + g('stamina') * 1,
+    woodcutting: g('vigor') * 3 + g('stamina') * 2,
+    mining: g('vigor') * 4 + g('stamina') * 1,
+    hauling: g('stamina') * 4 + g('agility') * 1,
+    building: g('vigor') * 2 + g('agility') * 2 + g('stamina') * 1,
+  };
+  const skills = {};
+  for (const s of SKILLS) {
+    const value = base[s.id] + (past.skills[s.id] || 0) + rand() * 3;
+    skills[s.id] = Math.max(1, Math.min(10, Math.round(value)));
+  }
+  return skills;
+}
 const DREAMS = [
   'Sueña con ver crecer la colonia.',
   'Quiere construir una casa de piedra.',
@@ -72,11 +100,15 @@ export function createProfile(rand) {
   }
   const needs = {};
   for (const n of NEEDS) needs[n.id] = 70 + rand() * 25;
+  const genome = createGenome(rand);
+  const past = pick(PASTS, rand);
   return {
-    genome: createGenome(rand),
+    genome,
     age: 18 + Math.floor(rand() * 38),
     traits,
-    bio: `${pick(ORIGINS, rand)}. Antes de unirse a la colonia ${pick(PASTS, rand)}. ${pick(DREAMS, rand)}`,
+    skills: createSkills(genome, past, rand),
+    job: null, // edificio donde trabaja (lo asigna la colonia)
+    bio: `${pick(ORIGINS, rand)}. Antes de unirse a la colonia ${past.text}. ${pick(DREAMS, rand)}`,
     needs,
     health: 100,
     log: [],
@@ -127,6 +159,7 @@ export function updateNeeds(c, env) {
   // Calor: tiende al calor del ambiente (más o menos según la resistencia al frío);
   // junto a la fogata sube rápido.
   let target = env.ambient * 100 + (gene(g, 'cold') - 0.5) * 36;
+  if (env.sheltered) target = Math.max(target, 80); // dentro de la tienda
   if (env.nearFire) target = 100;
   target = clamp(target);
   const warmRate = target > n.warmth ? (env.nearFire ? 100 / 60 : 100 / (0.3 * DAY)) : 100 / (0.4 * DAY);

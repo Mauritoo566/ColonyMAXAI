@@ -5,9 +5,14 @@ import { seededRandom } from './modelKit.js';
 import { temperature } from './biomes.js';
 import { createProfile, updateNeeds, hasTrait, wellbeing, addLog } from './needs.js';
 import { appearanceFromGenes, gene } from './genes.js';
+import { campLayout } from './camp.js';
+import { RESOURCE_TYPES } from './resourceTypes.js';
+import { TILE_ANGLE, generateTile } from './resourceGen.js';
+import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, taskKey } from './ai.js';
 
-// Colonos: caminan por el campamento y tienen necesidades, salud, genes, rasgos e
-// historia (needs.js, genes.js). Todavía no tienen IA: pasean al azar.
+// Colonos: tienen necesidades, salud, genes, rasgos, habilidades e historia
+// (needs.js, genes.js) y una IA propia (ai.js) que decide qué hacer: comer, beber,
+// dormir, calentarse, charlar, construir o trabajar en su edificio.
 //
 // Cada colono se mueve en el plano local del campamento (x, z en metros, la fogata en
 // el origen). La altura sale del terreno real, con una caché en rejilla para no
@@ -15,6 +20,8 @@ import { appearanceFromGenes, gene } from './genes.js';
 // entran al agua ni a pendientes fuertes, y no se atraviesan entre ellos.
 
 export const START_COLONISTS = 5;
+// Provisiones con las que llega la colonia (comidas, jarras de agua, madera, piedra).
+export const START_STOCK = { food: 12, water: 12, wood: 45, stone: 20 };
 
 const WALK_SPEED = 1.4; // m/s
 const COLONIST_RADIUS = 0.45;
@@ -25,6 +32,16 @@ const LABEL_DISTANCE = 170; // metros: más lejos no se muestra el nombre
 const FIRE_WARMTH_RADIUS = 7; // metros: la fogata calienta a quien esté más cerca
 const COMPANY_RADIUS = 5; // metros: a esta distancia se hacen compañía
 const PICK_RADIUS_PX = 26; // tolerancia al hacer clic sobre un colono
+const MAX_STEPS_PER_FRAME = 80; // tope de pasos de simulación por fotograma (a ×60)
+const SPOT_RADIUS = 230; // metros: recursos que los colonos conocen alrededor del campamento
+const CAMP_CLEAR = 90; // alrededor del campamento no hay recursos (resources.js)
+const REGROW_SECONDS = 1.5 * 360; // las bayas y setas vuelven a crecer en día y medio
+// Qué recursos naturales sirven para qué.
+const SPOT_KINDS = {
+  food: ['berryBush', 'mushrooms'],
+  wood: ['broadleaf', 'pine', 'jungleTree', 'acacia', 'palm'],
+  stone: ['stone', 'flint'],
+};
 
 const NAMES = [
   'Ana', 'Bruno', 'Carla', 'Diego', 'Elena', 'Facundo', 'Gala', 'Hugo', 'Inés', 'Joaquín',
@@ -110,6 +127,12 @@ export class ColonySystem {
     this.colonists = [];
     this.selected = null;
     this.camp = null;
+    this.buildings = []; // edificios de la colonia (los gestiona BuildingSystem)
+    this.spots = []; // recursos naturales cercanos
+    this.resources = null; // ResourceSystem, para quitar lo que se tala
+    this.stock = { food: 0, water: 0, wood: 0, stone: 0 }; // almacén de la colonia
+    this.gameTime = 0;
+    this.layout = campLayout();
     this.campTemperature = 0.5;
     this.obstacles = campObstacles();
     this.onSelect = null; // lo asigna la interfaz
@@ -141,25 +164,34 @@ export class ColonySystem {
     if (camp !== this.camp) this.setCamp(camp);
     if (!this.camp) return;
 
-    // Necesidades: corren con el tiempo de juego completo (también a ×60).
+    // Todo sigue la velocidad del tiempo (pausa = quietos), en pasos cortos.
     const gameDt = delta * timeScale;
+    const time = timeLabel();
+    const env = { isNight, time, gameTime: this.gameTime };
     if (gameDt > 0) {
       const ambient = Math.min(1, Math.max(0, (this.campTemperature - (isNight ? 0.3 : 0) - 0.12) * 1.6));
-      const time = timeLabel();
-      for (const c of this.colonists) {
-        const companion = this.nearestColonist(c, COMPANY_RADIUS);
-        c.companion = companion;
-        c.nearFire = Math.hypot(c.x, c.z) < FIRE_WARMTH_RADIUS;
-        updateNeeds(c, { dt: gameDt, ambient, nearFire: c.nearFire, companion, walking: c.state === 'walk', time });
+      let simTime = gameDt;
+      let steps = 0;
+      while (simTime > 1e-4 && steps++ < MAX_STEPS_PER_FRAME) {
+        const dt = Math.min(MAX_STEP, simTime);
+        simTime -= dt;
+        this.gameTime += dt;
+        env.gameTime = this.gameTime;
+        for (const c of this.colonists) {
+          c.companion = c.sleeping ? null : this.nearestColonist(c, COMPANY_RADIUS);
+          c.nearFire = Math.hypot(c.x, c.z) < FIRE_WARMTH_RADIUS;
+          updateNeeds(c, {
+            dt,
+            ambient,
+            nearFire: c.nearFire,
+            sheltered: c.sleeping,
+            companion: c.companion,
+            walking: c.walking,
+            time,
+          });
+          this.step(c, dt, env);
+        }
       }
-    }
-
-    // La simulación sigue la velocidad del tiempo (pausa = quietos), en pasos cortos.
-    let simTime = delta * Math.min(timeScale, 8);
-    while (simTime > 1e-4) {
-      const dt = Math.min(MAX_STEP, simTime);
-      simTime -= dt;
-      for (const c of this.colonists) this.step(c, dt);
     }
     for (const c of this.colonists) this.place(c, delta * Math.min(timeScale, 8));
     this.updateLabels();
@@ -175,8 +207,14 @@ export class ColonySystem {
     this.colonists = [];
     this.select(null);
     this.heights.clear();
+    this.water = undefined;
     this.camp = camp;
-    if (!camp) return;
+    this.stock = { ...START_STOCK };
+    if (!camp) {
+      this.onCampChange?.(null);
+      return;
+    }
+    this.loadResourceSpots();
     this.campTemperature = temperature(camp.dir.x, camp.dir.y, camp.dir.z, elevation(camp.dir.x, camp.dir.y, camp.dir.z));
 
     // Colonos siempre iguales para un mismo campamento (misma semilla).
@@ -218,9 +256,11 @@ export class ColonySystem {
         x: spot.x,
         z: spot.z,
         facing: Math.atan2(-spot.x, -spot.z),
-        state: 'idle',
-        timer: 1 + rand() * 4,
-        target: null,
+        task: null,
+        thinkTimer: rand() * 2,
+        walking: false,
+        working: false,
+        sleeping: false,
         phase: rand() * 10,
         moving: 0, // 0 quieto, 1 caminando (suavizado para la animación)
         stuckTimer: 0,
@@ -232,6 +272,7 @@ export class ColonySystem {
       addLog(colonist, 'Día 1', 'Llegó al campamento');
       this.colonists.push(colonist);
     }
+    this.onCampChange?.(camp); // los edificios se cargan cuando ya hay colonos
   }
 
   // ---- Selección ---------------------------------------------------------
@@ -319,6 +360,14 @@ export class ColonySystem {
     return out.normalize();
   }
 
+  // Punto del mundo -> coordenadas locales del campamento (x, z en metros).
+  toLocal(point, out = new THREE.Vector3()) {
+    const { object } = this.camp;
+    this.tmp.inv ??= new THREE.Quaternion();
+    this.tmp.inv.copy(object.quaternion).invert();
+    return out.copy(point).sub(object.position).applyQuaternion(this.tmp.inv);
+  }
+
   // Altura del terreno con caché en rejilla e interpolación bilineal.
   heightAt(x, z) {
     const gx = x / HEIGHT_CELL;
@@ -370,8 +419,10 @@ export class ColonySystem {
     return { x, z };
   }
 
+  // ---- Movimiento ---------------------------------------------------------
+
   // Un destino al azar para pasear: tierra firme y con camino recto sin agua.
-  pickTarget(c) {
+  pickWanderTarget(c) {
     const [minR, baseMax] = WANDER;
     const maxR = baseMax * (hasTrait(c, 'curious') ? 1.6 : hasTrait(c, 'homebody') ? 0.45 : 1);
     for (let attempt = 0; attempt < 12; attempt++) {
@@ -380,45 +431,32 @@ export class ColonySystem {
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
       if (!this.walkable(x, z, COLONIST_RADIUS + 0.6)) continue;
-      const len = Math.hypot(x - c.x, z - c.z);
-      let ok = true;
-      for (let s = 4; s < len && ok; s += 4) {
-        const t = s / len;
-        const h = this.heightAt(c.x + (x - c.x) * t, c.z + (z - c.z) * t);
-        if (h <= 0.6) ok = false;
-      }
-      if (ok) return { x, z };
+      if (this.pathIsDry(c.x, c.z, x, z)) return { x, z };
     }
     return null;
   }
 
-  // ---- Comportamiento ---------------------------------------------------
-
-  step(c, dt) {
-    if (c.state === 'idle') {
-      c.timer -= dt;
-      if (c.timer <= 0) {
-        c.target = this.pickTarget(c);
-        if (c.target) {
-          c.state = 'walk';
-          c.stuckTimer = 0;
-          c.lastProgress = Math.hypot(c.target.x - c.x, c.target.z - c.z);
-        } else {
-          c.timer = 2;
-        }
-      }
-      return;
+  pathIsDry(x0, z0, x1, z1) {
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    for (let s = 4; s < len; s += 4) {
+      const t = s / len;
+      if (this.heightAt(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t) <= 0.6) return false;
     }
+    return true;
+  }
 
-    // Caminar hacia el destino esquivando obstáculos y a los demás colonos.
-    const tx = c.target.x - c.x;
-    const tz = c.target.z - c.z;
+  // Camina hacia (tx, tz) esquivando obstáculos y a los demás colonos.
+  // Devuelve 'arrived', 'moving' o 'stuck'.
+  walk(c, tx0, tz0, dt, stopDistance = 0.6) {
+    const tx = tx0 - c.x;
+    const tz = tz0 - c.z;
     const dist = Math.hypot(tx, tz);
-    if (dist < 0.6) {
-      c.state = 'idle';
-      c.timer = 2 + c.rand() * 7;
-      c.target = null;
-      return;
+    c.walking = true;
+    if (dist < stopDistance) {
+      c.walking = false;
+      c.stuckTimer = 0;
+      c.lastProgress = Infinity;
+      return 'arrived';
     }
     let dx = tx / dist;
     let dz = tz / dist;
@@ -439,15 +477,15 @@ export class ColonySystem {
     };
     for (const o of this.obstacles) steer(o.x, o.z, o.r, 1.6);
     for (const other of this.colonists) {
-      if (other !== c) steer(other.x, other.z, COLONIST_RADIUS, 1.2);
+      if (other !== c && !other.sleeping) steer(other.x, other.z, COLONIST_RADIUS, 1.2);
     }
     const len = Math.hypot(dx, dz) || 1;
     dx /= len;
     dz /= len;
 
     const speed = WALK_SPEED * (0.85 + gene(c.genome, 'agility') * 0.3);
-    let nx = c.x + dx * speed * dt;
-    let nz = c.z + dz * speed * dt;
+    let nx = c.x + dx * Math.min(speed * dt, dist);
+    let nz = c.z + dz * Math.min(speed * dt, dist);
     // Nunca dentro de un obstáculo: se empuja hasta su borde.
     for (const o of this.obstacles) {
       const px = nx - o.x;
@@ -463,36 +501,180 @@ export class ColonySystem {
       c.x = nx;
       c.z = nz;
     }
-    // Girar hacia donde camina, con suavidad.
-    const want = Math.atan2(dx, dz);
-    let diff = want - c.facing;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    c.facing += diff * Math.min(1, dt * 8);
+    this.face(c, Math.atan2(dx, dz), dt);
 
-    // Si no avanza (atascado), elige otro destino.
+    // Si no avanza, está atascado.
     c.stuckTimer += dt;
     if (c.stuckTimer > 3) {
-      if (c.lastProgress - dist < 1) {
-        c.state = 'idle';
-        c.timer = 0.5;
-      }
+      const stuck = c.lastProgress - dist < 1;
       c.lastProgress = dist;
       c.stuckTimer = 0;
+      if (stuck) return 'stuck';
+    }
+    return 'moving';
+  }
+
+  face(c, angle, dt) {
+    let diff = angle - c.facing;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    c.facing += diff * Math.min(1, dt * 8);
+  }
+
+  faceTowards(c, x, z, dt) {
+    this.face(c, Math.atan2(x - c.x, z - c.z), dt);
+  }
+
+  // ---- Comportamiento ---------------------------------------------------
+
+  // Cada colono piensa cada ~1,5 s: puntúa las acciones posibles (ai.js) y cambia de
+  // tarea si encuentra una bastante mejor que la actual.
+  step(c, dt, env) {
+    c.walking = false;
+    c.working = false;
+    c.thinkTimer -= dt;
+    if (c.thinkTimer <= 0 || !c.task) {
+      c.thinkTimer = 1.5 + c.rand() * 0.5;
+      const best = chooseTask(this, c, env);
+      if (best && (!c.task || shouldSwitch(c.task, best))) this.startTask(c, best, env);
+    }
+    if (c.task) {
+      const result = runTask(this, c, c.task, dt, env);
+      if (result === 'done' || result === 'failed') {
+        if (result === 'failed') c.avoid = { key: taskKey(c.task), until: env.gameTime + 40 };
+        endTask(this, c, c.task);
+        c.task = null;
+        c.thinkTimer = result === 'failed' ? 0.5 : 0;
+      }
+    }
+    c.activity = c.task ? taskActivity(this, c, c.task) : 'Descansando un momento';
+  }
+
+  startTask(c, task, env) {
+    if (c.task) endTask(this, c, c.task);
+    c.task = task;
+    c.stuckTimer = 0;
+    c.lastProgress = Infinity;
+    const note = taskLog(c, task);
+    if (note && note !== c.lastLogNote) {
+      c.lastLogNote = note;
+      addLog(c, env.time, note);
     }
   }
 
-  // Coloca el modelo en el mundo y anima brazos y piernas.
-  activityOf(c) {
-    if (c.state === 'walk') return 'Paseando';
-    if (c.nearFire && c.needs.warmth < 95) return 'Calentándose junto al fuego';
-    if (c.companion) return `Charlando con ${c.companion.name}`;
-    return 'Descansando un momento';
+  // ---- Conocimiento del entorno (para la IA) ------------------------------
+
+  // Punto de tierra firme junto al agua más cercana al campamento (o null).
+  waterSpot() {
+    if (this.water !== undefined) return this.water;
+    this.water = null;
+    for (let r = 12; r <= 420 && !this.water; r += 8) {
+      let best = null;
+      const steps = Math.max(24, Math.round(r / 4));
+      for (let k = 0; k < steps; k++) {
+        const a = (k / steps) * Math.PI * 2;
+        const x = Math.cos(a) * r;
+        const z = Math.sin(a) * r;
+        if (this.heightAt(x, z) > 0.6) continue;
+        // Retroceder hacia el campamento hasta pisar tierra firme.
+        for (let back = 2; back < 20; back += 2) {
+          const bx = Math.cos(a) * (r - back);
+          const bz = Math.sin(a) * (r - back);
+          if (this.heightAt(bx, bz) > 0.8) {
+            best = { x: bx, z: bz };
+            break;
+          }
+        }
+        if (best) break;
+      }
+      this.water = best;
+    }
+    return this.water;
+  }
+
+  // Recursos naturales alrededor del campamento en coordenadas locales. Salen de la
+  // misma generación que el mundo, así que coinciden con lo que se ve.
+  loadResourceSpots() {
+    this.spots = [];
+    const dir = this.camp.dir;
+    const lat0 = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
+    const lon0 = Math.atan2(dir.x, dir.z);
+    const lonNorm = lon0 < 0 ? lon0 + Math.PI * 2 : lon0;
+    const span = SPOT_RADIUS / RADIUS;
+    const kinds = {};
+    for (const [kind, ids] of Object.entries(SPOT_KINDS)) for (const id of ids) kinds[id] = kind;
+    const typeIndex = RESOURCE_TYPES.map((t) => kinds[t.id] || null);
+    const inv = this.camp.object.quaternion.clone().invert();
+    const origin = this.camp.object.position;
+    const p = new THREE.Vector3();
+    for (let i = Math.floor((lat0 - span) / TILE_ANGLE); i <= Math.floor((lat0 + span) / TILE_ANGLE); i++) {
+      const lat = (i + 0.5) * TILE_ANGLE;
+      const cols = Math.max(1, Math.floor((Math.PI * 2 * Math.cos(lat)) / TILE_ANGLE));
+      const colAngle = (Math.PI * 2) / cols;
+      const lonSpan = span / Math.max(0.01, Math.cos(lat));
+      const j0 = Math.floor((lonNorm - lonSpan) / colAngle);
+      const j1 = Math.floor((lonNorm + lonSpan) / colAngle);
+      for (let j = j0; j <= j1 && j < j0 + cols; j++) {
+        const jw = ((j % cols) + cols) % cols;
+        const key = i * 1_000_000 + jw;
+        const tile = generateTile(i, jw, cols);
+        for (let k = 0; k < tile.count; k++) {
+          const kind = typeIndex[tile.type[k]];
+          if (!kind) continue;
+          p.set(tile.pos[k * 3], tile.pos[k * 3 + 1], tile.pos[k * 3 + 2]).sub(origin).applyQuaternion(inv);
+          const d = Math.hypot(p.x, p.z);
+          if (d > SPOT_RADIUS || d < CAMP_CLEAR + 2) continue;
+          this.spots.push({ key, index: k, kind, type: RESOURCE_TYPES[tile.type[k]].id, x: p.x, z: p.z, readyAt: 0, taken: null });
+        }
+      }
+    }
+  }
+
+  // El recurso libre de un tipo más cercano a un punto (o null).
+  nearestSpot(kind, x, z, maxDistance = Infinity, gameTime = 0) {
+    let best = null;
+    let bestD = maxDistance;
+    for (const s of this.spots) {
+      if (s.kind !== kind || s.gone || s.taken || s.readyAt > gameTime) continue;
+      if (this.blockedByBuilding(s.x, s.z)) continue;
+      const d = Math.hypot(s.x - x, s.z - z);
+      if (d < bestD) {
+        best = s;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  blockedByBuilding(x, z) {
+    for (const b of this.buildings) {
+      if (Math.hypot(x - b.x, z - b.z) < b.def.footprint + 3) return true;
+    }
+    return false;
+  }
+
+  // Un recurso usado: los árboles y las piedras desaparecen; las bayas vuelven a crecer.
+  consumeSpot(spot, gameTime) {
+    spot.taken = null;
+    if (spot.kind === 'food') {
+      spot.readyAt = gameTime + REGROW_SECONDS;
+    } else {
+      spot.gone = true;
+      this.resources?.removeResource(spot.key, spot.index);
+    }
+  }
+
+  refreshObstacles() {
+    this.obstacles = [
+      ...campObstacles(),
+      ...this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint, kind: 'building' })),
+    ];
   }
 
   place(c, animDelta) {
-    c.activity = this.activityOf(c);
+    // Durmiendo está dentro de la tienda: no se ve.
+    c.object.visible = !c.sleeping;
     const { world, yaw } = this.tmp;
-    const walking = c.state === 'walk' ? 1 : 0;
+    const walking = c.walking ? 1 : 0;
     c.moving += (walking - c.moving) * Math.min(1, animDelta * 6);
     c.phase += animDelta * WALK_SPEED * 5.2 * c.moving;
 
@@ -506,8 +688,16 @@ export class ColonySystem {
     const swing = Math.sin(c.phase) * 0.65 * c.moving;
     legL.rotation.x = swing;
     legR.rotation.x = -swing;
-    armL.rotation.x = -swing * 0.8;
-    armR.rotation.x = swing * 0.8;
+    if (c.working) {
+      // Trabajando: los dos brazos golpean hacia delante (talar, picar, recoger).
+      c.workPhase = (c.workPhase || 0) + animDelta * 7;
+      const hit = -1.2 - Math.sin(c.workPhase) * 0.9;
+      armL.rotation.x = hit;
+      armR.rotation.x = hit;
+    } else {
+      armL.rotation.x = -swing * 0.8;
+      armR.rotation.x = swing * 0.8;
+    }
     const breathe = Math.sin(performance.now() * 0.0018 + c.phase) * 0.01 * (1 - c.moving);
     body.position.y = Math.abs(Math.cos(c.phase)) * 0.05 * c.moving + breathe;
   }
@@ -523,7 +713,7 @@ export class ColonySystem {
       p.add(this.tmp.local.copy(p).normalize().multiplyScalar(2.3 * c.look.height));
       const dist = cam.position.distanceTo(p);
       p.project(cam);
-      const visible = dist < LABEL_DISTANCE && p.z < 1 && Math.abs(p.x) < 1.05 && Math.abs(p.y) < 1.05;
+      const visible = !c.sleeping && dist < LABEL_DISTANCE && p.z < 1 && Math.abs(p.x) < 1.05 && Math.abs(p.y) < 1.05;
       c.label.hidden = !visible;
       if (visible) {
         const hp = c.label.lastChild.firstChild;

@@ -243,8 +243,10 @@ export class ResourceSystem {
     this.lastCamera = new THREE.Vector3(Infinity, 0, 0);
     this.origin = new THREE.Vector3();
     this.zonesSignature = '';
+    this.removed = new Map(); // baldosa -> índices de recursos que ya no están
     this.workers = new ResourceWorkers((key, data) => {
       if (this.cache.get(key) === 'pending') {
+        data.key = key;
         this.cache.set(key, data);
         this.pending--;
         this.dirty = true;
@@ -325,7 +327,9 @@ export class ResourceSystem {
         this.workers.request(m.key, m.i, m.jw, m.cols);
       } else {
         // Sin workers: una baldosa por fotograma en el hilo principal.
-        this.cache.set(m.key, generateTile(m.i, m.jw, m.cols));
+        const data = generateTile(m.i, m.jw, m.cols);
+        data.key = m.key;
+        this.cache.set(m.key, data);
         this.dirty = true;
         break;
       }
@@ -341,6 +345,14 @@ export class ResourceSystem {
     }
   }
 
+  // Quita un recurso del mundo (un árbol talado, una piedra picada).
+  removeResource(tileKey, index) {
+    let set = this.removed.get(tileKey);
+    if (!set) this.removed.set(tileKey, (set = new Set()));
+    set.add(index);
+    this.dirty = true;
+  }
+
   // Copia los ejemplares visibles a los InstancedMesh.
   rebuild(tiles, cameraPos, center, radius) {
     // Posiciones relativas a un origen cercano: así caben en float32 sin temblar.
@@ -350,11 +362,13 @@ export class ResourceSystem {
     const cx = cameraPos.x, cy = cameraPos.y, cz = cameraPos.z;
     const radius2 = radius * radius;
     const lod2 = LOD_DISTANCE * LOD_DISTANCE;
+    // Cada zona despeja recursos a su alrededor (el campamento 90 m, un edificio poco).
     const zones = terrainZones().map((z) => {
       const r = RADIUS + (z.height || 0);
-      return [z.dir.x * r, z.dir.y * r, z.dir.z * r];
+      const clear = z.resourceClear ?? CAMP_CLEAR_RADIUS;
+      return [z.dir.x * r, z.dir.y * r, z.dir.z * r, clear * clear];
     });
-    const clear2 = CAMP_CLEAR_RADIUS * CAMP_CLEAR_RADIUS;
+    const removed = this.removed;
     const maxDist2 = RESOURCE_TYPES.map((t) => (t.maxDistance ?? Infinity) ** 2);
 
     const nearCount = new Int32Array(RESOURCE_TYPES.length);
@@ -366,7 +380,9 @@ export class ResourceSystem {
 
     for (const t of tiles) {
       const { count, type, pos, basis, tint, rank } = t;
+      const gone = removed.get(t.key);
       for (let k = 0; k < count; k++) {
+        if (gone && gone.has(k)) continue; // talado o agotado
         const px = pos[k * 3], py = pos[k * 3 + 1], pz = pos[k * 3 + 2];
         // Distancia al punto que se mira, a la misma altura que el recurso.
         const plen = Math.sqrt(px * px + py * py + pz * pz);
@@ -384,7 +400,7 @@ export class ResourceSystem {
         let blocked = false;
         for (const z of zones) {
           const zx = px - z[0], zy = py - z[1], zz = pz - z[2];
-          if (zx * zx + zy * zy + zz * zz < clear2) blocked = true;
+          if (zx * zx + zy * zy + zz * zz < z[3]) blocked = true;
         }
         if (blocked) continue;
 

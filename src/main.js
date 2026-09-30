@@ -11,6 +11,8 @@ import { ResourceSystem } from './resources.js';
 import { createSky } from './sky.js';
 import { ColonySystem } from './colonists.js';
 import { ColonyUI } from './colonyUI.js';
+import { BuildingSystem } from './buildings.js';
+import { BuildUI } from './buildUI.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
@@ -93,7 +95,27 @@ const camps = new CampSystem({
   },
 });
 
-const colonyUI = new ColonyUI({ colony, controls, camera, canvas, isBlocked: () => camps.placing });
+colony.resources = resources; // para quitar del mundo lo que se tala
+const buildings = new BuildingSystem({
+  scene,
+  camera,
+  canvas,
+  colony,
+  terrain: planet.terrain,
+  labelsRoot: document.getElementById('labels'),
+});
+buildings.blockSelection = () => !!camps.placing;
+const colonyUI = new ColonyUI({
+  colony,
+  controls,
+  camera,
+  canvas,
+  isBlocked: () => !!camps.placing || !!buildings.placing,
+});
+const buildUI = new BuildUI({ buildings, colony, onFocusColonist: (c) => colonyUI.focusColonist(c) });
+// Sólo una ficha abierta a la vez.
+colonyUI.onOpen = () => buildings.select(null);
+buildUI.onOpen = () => colony.select(null);
 
 // Estrellas pegadas a la cámara: siempre están "en el infinito".
 function createStars(count) {
@@ -270,13 +292,16 @@ renderer.setAnimationLoop(() => {
   resources.update(camera, resourceFocus, clearance, delta);
   camps.update(delta);
   const campDir = camps.camp?.dir;
+  const campTime = () => `Día ${dayNight.day} · ${formatHour(dayNight.localHour(Math.atan2(campDir.x, campDir.z)))}`;
   colony.update(delta, camps.camp, {
     timeScale: dayNight.speed,
-    // De noche hace más frío (el calor que siente cada colono depende de esto).
+    // De noche hace más frío y los colonos tienden a dormir.
     isNight: campDir ? campDir.dot(dayNight.sunDirection) < -0.05 : false,
-    timeLabel: () => `Día ${dayNight.day} · ${formatHour(dayNight.localHour(Math.atan2(campDir.x, campDir.z)))}`,
+    timeLabel: campTime,
   });
+  if (camps.camp) buildings.update(delta, { timeLabel: campTime });
   colonyUI.update(delta);
+  buildUI.update(delta);
   updateSky(altitude);
 
   labelTimer -= delta;

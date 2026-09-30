@@ -57,7 +57,15 @@ Cada colono tiene:
 - **Personalidad**: dos rasgos (sociable, curioso, optimista, trabajador...) y una biografía.
 - **Registro** de lo que le pasa ("Tiene frío", "Charló un rato con Ana"...).
 
-La interfaz (`src/colonyUI.js`) muestra arriba a la izquierda el **bienestar de la colonia**, la media de cada necesidad y la lista de colonos. Al hacer clic en un colono (en el mundo, en su nombre o en la lista) se abre su **ficha** con tres pestañas: Estado, Genes e Historia, y un botón para seguirlo con la cámara.
+La interfaz (`src/colonyUI.js`) muestra arriba a la izquierda el **bienestar de la colonia**, la media de cada necesidad, el **almacén** (comida, agua, madera, piedra) y la lista de colonos. Al hacer clic en un colono (en el mundo, en su nombre o en la lista) se abre su **ficha** con tres pestañas: Estado (necesidades, trabajo y habilidades), Genes e Historia, y un botón para seguirlo con la cámara.
+
+### IA de los colonos
+
+Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s puntúa las acciones posibles según sus necesidades, rasgos, la hora y la distancia, y cambia de tarea sólo si hay una bastante mejor. Acciones: comer (bayas y setas cercanas, que vuelven a crecer, o provisiones del almacén), beber (agua cercana, un pozo o las vasijas), dormir en su tienda (sobre todo de noche), calentarse junto a la fogata cuando tiene frío, charlar si está desanimado, construir obras, trabajar en su edificio o pasear. No hay rutina fija: sale de las necesidades.
+
+### Construcción y trabajo
+
+La **barra de construcción** (abajo) permite encargar edificios (`src/buildings.js`): choza de recolección (comida), cabaña del leñador (madera), cantera (piedra) y pozo (agua). Se elige dónde (hasta 75 m de la fogata; no sobre agua, pendientes fuertes ni encima de otra cosa) y los materiales se pagan al encargarlo. Los colonos construyen de día; los más hábiles en construcción avanzan más rápido. Al terminar, la colonia asigna el trabajo al **colono libre más capacitado** según sus habilidades (que salen de sus genes, su oficio anterior y su actitud). La ficha del edificio explica por qué lo eligió, muestra el ranking de candidatos y permite cambiarlo. Los árboles talados y las piedras picadas desaparecen del mundo. Los edificios y el almacén se guardan en el navegador.
 
 ## Recursos naturales
 
@@ -120,6 +128,9 @@ El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: ca
 - `src/needs.js` – necesidades, salud, personalidad e historia
 - `src/genes.js` – genética: alelos, herencia y aspecto
 - `src/colonyUI.js` – interfaz de la colonia y ficha de cada colono
+- `src/ai.js` – IA de los colonos: elegir y ejecutar tareas
+- `src/buildings.js` – edificios: tipos, modelos, obras, trabajadores y guardado
+- `src/buildUI.js` – barra de construcción, almacén y ficha de cada edificio
 - `src/camp.js` – campamento inicial: modelo, colocación y guardado
 - `src/resources.js` – recursos naturales: tipos, modelos y generación por baldosas
 - `src/modelKit.js` – herramientas para modelar objetos low poly

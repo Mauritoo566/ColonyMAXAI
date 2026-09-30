@@ -305,6 +305,24 @@ function polar({ angle, dist }) {
   return [Math.cos(angle) * dist, Math.sin(angle) * dist];
 }
 
+// Lugares útiles del campamento para los colonos (coordenadas locales).
+export function campLayout() {
+  const tents = TIPIS.map((t) => {
+    const [x, z] = polar(t);
+    const r = 3.5 * t.size;
+    const d = Math.hypot(x, z);
+    // La puerta mira a la fogata.
+    return { x, z, r, door: { x: x - (x / d) * (r + 0.9), z: z - (z / d) * (r + 0.9) } };
+  });
+  const [sx, sz] = polar(STORAGE);
+  const sd = Math.hypot(sx, sz);
+  return {
+    fire: { x: 0, z: 0 },
+    tents,
+    storage: { x: sx + (sx / sd) * 3.4, z: sz + (sz / sd) * 3.4 }, // junto a las vasijas, del lado de fuera
+  };
+}
+
 // Obstáculos del campamento como círculos { x, z, r } en coordenadas locales.
 export function campObstacles() {
   const list = [{ x: 0, z: 0, r: 2.3, kind: 'fire' }];
