@@ -13,6 +13,7 @@ import {
   zoneGround,
 } from './elevation.js';
 import { createNoise3D } from './noise.js';
+import { BIOMES, classifyBiome } from './biomes.js';
 
 export const RESOLUTION = 32; // celdas por lado en cada trozo
 
@@ -26,7 +27,14 @@ export const FACES = [
 ];
 
 // Colores en espacio lineal (igual que THREE.Color con gestión de color activada).
+const linearCache = new Map();
 function linear(hex) {
+  let c = linearCache.get(hex);
+  if (!c) linearCache.set(hex, (c = toLinear(hex)));
+  return c;
+}
+
+function toLinear(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => {
     const s = c / 255;
@@ -35,19 +43,10 @@ function linear(hex) {
 }
 
 const COLORS = {
-  sand: linear('#d8c68f'),
-  grass: linear('#4f8f3a'),
-  forest: linear('#2f6b2c'),
-  desert: linear('#c9a15e'),
-  rock: linear('#7a6a58'),
-  snow: linear('#f2f5f7'),
   oceanDeep: linear('#123f75'),
   oceanShallow: linear('#2f7fbf'),
-  ice: linear('#e8f2f8'),
   grassDry: linear('#8fa64a'),
   grassDark: linear('#2e5f2a'),
-  dirt: linear('#8a6a45'),
-  trampled: linear('#6f8c40'),
 };
 
 // Ruido para las manchas de color del pasto (de cerca el verde uniforme se ve plano).
@@ -94,30 +93,33 @@ function hash3(x, y, z) {
 function faceColor(e, dir, slope, out) {
   const lat = Math.abs(dir[1]);
   if (e <= 0) {
-    if (lat > 0.93) return copy(out, COLORS.ice);
+    if (lat > 0.93) return copy(out, linear(BIOMES.ice.ground));
     const depth = Math.min(1, Math.max(0, -e * 3));
     return lerp(copy(out, COLORS.oceanShallow), COLORS.oceanDeep, depth);
   }
-  if (lat > 0.9 || e > 0.62) return copy(out, COLORS.snow);
-  if (slope > 0.3 || e > 0.45) copy(out, COLORS.rock);
-  else if (e < 0.02) copy(out, COLORS.sand);
-  else {
-    const m = moisture(dir[0], dir[1], dir[2]);
-    if (m < -0.12 && lat < 0.55) copy(out, COLORS.desert);
-    else {
-      copy(out, m > 0.08 ? COLORS.forest : COLORS.grass);
-      // Manchas de pasto más seco o más oscuro, de ~300 m y de ~40 m.
-      const [x, y, z] = dir;
-      const p =
-        patchNoise(x * 21_000, y * 21_000, z * 21_000) * 0.65 + patchNoise(x * 160_000, y * 160_000, z * 160_000) * 0.35;
-      lerp(out, p > 0 ? COLORS.grassDry : COLORS.grassDark, Math.min(1, Math.abs(p) * 0.9) * 0.45);
-    }
+  // La humedad sólo hace falta para distinguir pradera, bosque y desierto.
+  const needsMoisture = lat <= 0.9 && e <= 0.45 && slope <= 0.3 && e >= 0.02;
+  const biome = classifyBiome(e, lat, slope, needsMoisture ? moisture(dir[0], dir[1], dir[2]) : 0);
+  copy(out, linear(biome.ground));
+  if (biome === BIOMES.grassland || biome === BIOMES.forest) {
+    // Manchas de pasto más seco o más oscuro, de ~300 m y de ~40 m.
+    const [x, y, z] = dir;
+    const p =
+      patchNoise(x * 21_000, y * 21_000, z * 21_000) * 0.65 + patchNoise(x * 160_000, y * 160_000, z * 160_000) * 0.35;
+    lerp(out, p > 0 ? COLORS.grassDry : COLORS.grassDark, Math.min(1, Math.abs(p) * 0.9) * 0.45);
   }
-  // Claro del campamento: tierra pisada en el centro y pasto pisado alrededor.
+  // Claro de un campamento: suelo pisado del color de su bioma en el centro, y
+  // alrededor el suelo que haya, un poco más oscuro y apagado.
   if (terrainZones().length) {
     const g = zoneGround(dir[0], dir[1], dir[2]);
-    if (g.trampled > 0) lerp(out, COLORS.trampled, g.trampled * 0.35);
-    if (g.dirt > 0) lerp(out, COLORS.dirt, g.dirt);
+    if (g.trampled > 0 && g.dirtColor) {
+      const k = 1 - 0.15 * g.trampled;
+      out[0] *= k;
+      out[1] *= k;
+      out[2] *= k;
+      lerp(out, linear(g.dirtColor), 0.25 * g.trampled);
+    }
+    if (g.dirt > 0 && g.dirtColor) lerp(out, linear(g.dirtColor), g.dirt);
   }
   return out;
 }

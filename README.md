@@ -23,7 +23,7 @@ Luego abre <http://localhost:8000>. (Abrir `index.html` directamente con doble c
 
 ## Campamento inicial
 
-Con el botón **Fundar campamento** entras en modo colocación: al mover el ratón aparece una vista previa del campamento con un anillo verde (se puede) o rojo con el motivo (agua, hielo o nieve, pendiente de más de ~27°, o cámara a más de 60 km). Un clic lo funda y la cámara vuela hasta él. Después aparecen **Ir al campamento** y **Reubicar**, y una etiqueta marca dónde está cuando lo miras desde lejos. El campamento se guarda en el navegador (`localStorage`), así que sigue ahí al volver a abrir el juego. Al fundarlo, el terreno se nivela en un círculo de 30 m (con una pendiente suave de otros 32 m hasta el terreno natural), se pinta un claro de tierra pisada con borde irregular. Cerca del campamento el terreno usa triángulos más finos (hasta ~3 m). El código está en `src/camp.js`.
+Con el botón **Fundar campamento** entras en modo colocación: al mover el ratón aparece una vista previa del campamento con un anillo verde (se puede) o rojo con el motivo (agua, hielo o nieve, pendiente de más de ~27°, o cámara a más de 60 km). Un clic lo funda y la cámara vuela hasta él. Después aparecen **Ir al campamento** y **Reubicar**, y una etiqueta marca dónde está cuando lo miras desde lejos. El campamento se guarda en el navegador (`localStorage`), así que sigue ahí al volver a abrir el juego. Al fundarlo, el terreno se nivela en un círculo de 30 m (con una pendiente suave de otros 32 m hasta el terreno natural), se pinta un claro de tierra pisada con borde irregular. Cerca del campamento el terreno usa triángulos más finos (hasta ~3 m). El claro y los adornos del campamento se adaptan al bioma (`src/biomes.js`): tierra en la pradera, grava en la montaña, arena en el desierto y la playa; matas de pasto sólo donde hay pasto. El código está en `src/camp.js`.
 
 ## Día, noche y nubes
 
@@ -55,6 +55,7 @@ El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: ca
 - `src/daynight.js` – ciclo de día y noche
 - `src/water.js` – efecto del agua
 - `src/camp.js` – campamento inicial: modelo, colocación y guardado
+- `src/biomes.js` – biomas: qué hay en cada punto y con qué colores y adornos se dibuja
 - `src/terrain.js` – terreno con nivel de detalle (LOD) y reparto del trabajo a los workers
 - `src/chunkBuilder.js` – cálculo de la geometría de cada trozo (sin Three.js)
 - `src/terrainWorker.js` – worker que genera trozos en segundo plano

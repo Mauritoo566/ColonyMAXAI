@@ -8,6 +8,7 @@ import {
   addTerrainZone,
   removeTerrainZone,
 } from './elevation.js';
+import { biomeAt, BIOMES } from './biomes.js';
 
 // Campamento inicial de la civilización: el jugador elige dónde fundarlo haciendo clic
 // en el terreno. Al fundarlo el terreno se nivela en un círculo y se pinta un claro de
@@ -276,24 +277,26 @@ function addStorage(parts, x, z, rand) {
   }
 }
 
-function addGroundDetails(parts, rand) {
-  // Matas de pasto y piedritas en el borde del claro.
+// Adornos del borde del claro según el bioma: matas de pasto (o de hierba seca) y
+// piedras del color del lugar. Si el bioma no tiene pasto, sólo piedras.
+function addGroundDetails(parts, rand, biome) {
+  const { tuft, stone, stoneChance } = biome.details;
   for (let i = 0; i < 40; i++) {
     const a = rand() * Math.PI * 2;
     const r = 17 + rand() * 14;
     const x = Math.cos(a) * r;
     const z = Math.sin(a) * r;
-    if (rand() < 0.75) {
+    if (tuft && rand() >= stoneChance) {
       for (let k = 0; k < 3; k++) {
         parts.add(
           new THREE.ConeGeometry(0.12, 0.7 + rand() * 0.4, 3),
-          vary('#5d8f36', rand, 0.15),
+          vary(tuft, rand, 0.15),
           mat(x + (rand() - 0.5) * 0.4, 0.3, z + (rand() - 0.5) * 0.4, (rand() - 0.5) * 0.5, 0, (rand() - 0.5) * 0.5),
         );
       }
     } else {
       const s = 0.2 + rand() * 0.3;
-      parts.add(new THREE.DodecahedronGeometry(1, 0), vary(STONE, rand, 0.15), mat(x, s * 0.3, z, rand(), rand(), 0, s));
+      parts.add(new THREE.DodecahedronGeometry(1, 0), vary(stone, rand, 0.15), mat(x, s * 0.3, z, rand(), rand(), 0, s));
     }
   }
 }
@@ -369,8 +372,9 @@ function createFlag() {
   return flag;
 }
 
-// Modelo completo del campamento, centrado en la fogata.
-export function createCampModel(seed = 1) {
+// Modelo completo del campamento, centrado en la fogata. "biome" (de biomes.js) adapta
+// los adornos del suelo al lugar; sin bioma (la vista previa) no se ponen.
+export function createCampModel(seed = 1, biome = null) {
   const rand = seededRandom(seed);
   const camp = new THREE.Group();
   camp.name = 'camp';
@@ -392,7 +396,7 @@ export function createCampModel(seed = 1) {
   addDryingRack(parts, Math.cos(2.6) * 9, Math.sin(2.6) * 9, 2.6 + Math.PI / 2, rand);
   addWoodPile(parts, Math.cos(5.8) * 9.5, Math.sin(5.8) * 9.5, 5.8, rand);
   addStorage(parts, Math.cos(1.0) * 8, Math.sin(1.0) * 8, rand);
-  addGroundDetails(parts, rand);
+  if (biome?.details) addGroundDetails(parts, rand, biome);
 
   const bannerX = Math.cos(4.1) * 6.5;
   const bannerZ = Math.sin(4.1) * 6.5;
@@ -676,6 +680,9 @@ export class CampSystem {
 
   setCamp(dir, height, yaw) {
     this.removeCamp();
+    // El bioma del lugar decide el color del suelo pisado y los adornos del campamento.
+    const biome = biomeAt(dir.x, dir.y, dir.z);
+    const ground = biome.details ? biome : BIOMES.grassland;
     // Nivelar el terreno y pintar el claro; los trozos de terreno afectados se regeneran.
     const zone = addTerrainZone({
       dir: dir.clone(),
@@ -684,11 +691,12 @@ export class CampSystem {
       blendRadius: BLEND_RADIUS,
       clearRadius: CLEAR_RADIUS,
       detailRadius: DETAIL_RADIUS,
+      dirtColor: ground.dirt,
     });
     this.terrain.invalidateZone(zone);
 
     const seed = seedFromDir(dir);
-    const object = createCampModel(seed);
+    const object = createCampModel(seed, ground);
     orientOnSurface(object, dir, height, yaw);
     this.scene.add(object);
     this.camp = { object, zone, dir: dir.clone(), height, yaw };
