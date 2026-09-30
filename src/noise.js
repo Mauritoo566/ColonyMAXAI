@@ -1,10 +1,11 @@
 // Ruido simplex 3D con semilla, basado en la implementación de Stefan Gustavson.
+// Escrito sin crear objetos en el bucle interno porque se llama cientos de miles de veces.
 
-const GRAD3 = [
-  [1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0],
-  [1, 0, 1], [-1, 0, 1], [1, 0, -1], [-1, 0, -1],
-  [0, 1, 1], [0, -1, 1], [0, 1, -1], [0, -1, -1],
-];
+const GRAD3 = new Float64Array([
+  1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1, 0,
+  1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, -1,
+  0, 1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1,
+]);
 
 function mulberry32(seed) {
   return () => {
@@ -25,10 +26,22 @@ export function createNoise3D(seed = 1) {
     [p[i], p[j]] = [p[j], p[i]];
   }
   const perm = new Uint8Array(512);
-  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+  const permMod12 = new Uint8Array(512);
+  for (let i = 0; i < 512; i++) {
+    perm[i] = p[i & 255];
+    permMod12[i] = perm[i] % 12;
+  }
 
   const F3 = 1 / 3;
   const G3 = 1 / 6;
+
+  function corner(gi, x, y, z) {
+    let t = 0.6 - x * x - y * y - z * z;
+    if (t < 0) return 0;
+    t *= t;
+    const g = gi * 3;
+    return t * t * (GRAD3[g] * x + GRAD3[g + 1] * y + GRAD3[g + 2] * z);
+  }
 
   return function noise3D(x, y, z) {
     const s = (x + y + z) * F3;
@@ -51,26 +64,24 @@ export function createNoise3D(seed = 1) {
       else { i1 = 0; j1 = 1; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
     }
 
-    const corners = [
-      [x0, y0, z0, 0, 0, 0],
-      [x0 - i1 + G3, y0 - j1 + G3, z0 - k1 + G3, i1, j1, k1],
-      [x0 - i2 + 2 * G3, y0 - j2 + 2 * G3, z0 - k2 + 2 * G3, i2, j2, k2],
-      [x0 - 1 + 3 * G3, y0 - 1 + 3 * G3, z0 - 1 + 3 * G3, 1, 1, 1],
-    ];
-
     const ii = i & 255;
     const jj = j & 255;
     const kk = k & 255;
-    let n = 0;
-    for (const [cx, cy, cz, oi, oj, ok] of corners) {
-      let t0 = 0.6 - cx * cx - cy * cy - cz * cz;
-      if (t0 > 0) {
-        const g = GRAD3[perm[ii + oi + perm[jj + oj + perm[kk + ok]]] % 12];
-        t0 *= t0;
-        n += t0 * t0 * (g[0] * cx + g[1] * cy + g[2] * cz);
-      }
-    }
-    return 32 * n;
+
+    const n0 = corner(permMod12[ii + perm[jj + perm[kk]]], x0, y0, z0);
+    const n1 = corner(
+      permMod12[ii + i1 + perm[jj + j1 + perm[kk + k1]]],
+      x0 - i1 + G3, y0 - j1 + G3, z0 - k1 + G3,
+    );
+    const n2 = corner(
+      permMod12[ii + i2 + perm[jj + j2 + perm[kk + k2]]],
+      x0 - i2 + 2 * G3, y0 - j2 + 2 * G3, z0 - k2 + 2 * G3,
+    );
+    const n3 = corner(
+      permMod12[ii + 1 + perm[jj + 1 + perm[kk + 1]]],
+      x0 - 1 + 3 * G3, y0 - 1 + 3 * G3, z0 - 1 + 3 * G3,
+    );
+    return 32 * (n0 + n1 + n2 + n3);
   };
 }
 
