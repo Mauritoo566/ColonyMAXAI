@@ -1,10 +1,11 @@
-import { BUILDING_TYPES, STOCK_NAMES } from './buildings.js';
+import { BUILDING_TYPES, BUILD_CATEGORIES, STOCK_NAMES } from './buildings.js';
 import { SKILLS } from './needs.js';
 
 // Interfaz de construcción: barra para elegir qué construir, el almacén de la colonia
 // y la ficha de cada edificio (obra, trabajador asignado y candidatos).
 
 const REFRESH_SECONDS = 0.25;
+const TAB_KEY = 'colonymaxai.buildTab';
 const STOCK = [
   { id: 'food', icon: 'food', color: 'var(--food)' },
   { id: 'water', icon: 'water', color: 'var(--water)' },
@@ -48,13 +49,30 @@ export class BuildUI {
       (s) => `<li data-stock="${s.id}" style="--res:${s.color}" title="${STOCK_NAMES[s.id]}">${icon(s.icon)}<span>0</span></li>`,
     ).join('');
 
+    // Pestañas por categoría; la lista muestra sólo los edificios de la elegida.
+    this.tabs = $('build-tabs');
+    this.tabs.innerHTML = BUILD_CATEGORIES.map((cat) => {
+      const count = BUILDING_TYPES.filter((d) => d.category === cat.id).length;
+      const soon = count === 0;
+      return `
+      <button type="button" class="build-tab" role="tab" data-cat="${cat.id}" aria-selected="false"
+        title="${cat.name}${soon ? ' · próximamente' : ''}" ${soon ? 'data-soon="true"' : ''}>
+        ${icon(cat.icon)}<span class="build-tab-name">${cat.name}</span>${soon ? '' : `<span class="build-tab-count">${count}</span>`}
+      </button>`;
+    }).join('');
     this.list.innerHTML = BUILDING_TYPES.map(
       (def) => `
-      <button type="button" class="build-item" data-build="${def.id}" aria-pressed="false">
+      <button type="button" class="build-item" data-build="${def.id}" data-cat="${def.category}" aria-pressed="false">
         <span class="build-icon">${icon(def.icon)}</span>
         <span class="build-name">${def.name}</span>
         <span class="build-cost"></span>
       </button>`,
+    ).join('') + BUILD_CATEGORIES.filter((cat) => !BUILDING_TYPES.some((d) => d.category === cat.id)).map(
+      (cat) => `
+      <div class="build-soon" data-cat="${cat.id}">
+        <span class="build-icon">${icon(cat.icon)}</span>
+        <span><strong>Próximamente</strong>${cat.soon}</span>
+      </div>`,
     ).join('');
     for (const button of this.list.querySelectorAll('[data-build]')) {
       button.addEventListener('click', () => {
@@ -63,11 +81,41 @@ export class BuildUI {
         else if (buildings.canAfford(def)) buildings.startPlacing(def.id);
       });
     }
+    for (const tab of this.tabs.children) {
+      tab.addEventListener('click', () => {
+        // Volver a pulsar la pestaña abierta pliega la barra.
+        this.setTab(this.tab === tab.dataset.cat && !this.collapsed ? null : tab.dataset.cat);
+      });
+    }
+    let saved = null;
+    try {
+      saved = localStorage.getItem(TAB_KEY);
+    } catch {
+      saved = null;
+    }
+    const first = BUILD_CATEGORIES.find((c) => BUILDING_TYPES.some((d) => d.category === c.id));
+    this.tab = first.id;
+    this.setTab(saved === 'none' ? null : BUILD_CATEGORIES.some((c) => c.id === saved) ? saved : first.id);
 
     buildings.onSelect = (b) => this.show(b);
     buildings.onChange = () => {
       this.timer = 0;
     };
+  }
+
+  // Elige la categoría visible (null = barra plegada).
+  setTab(id) {
+    this.collapsed = !id;
+    if (id) this.tab = id;
+    for (const tab of this.tabs.children) tab.setAttribute('aria-selected', String(!this.collapsed && tab.dataset.cat === this.tab));
+    for (const item of this.list.children) item.hidden = item.dataset.cat !== this.tab;
+    this.list.hidden = this.collapsed;
+    this.bar.classList.toggle('is-collapsed', this.collapsed);
+    try {
+      localStorage.setItem(TAB_KEY, id ?? 'none');
+    } catch {
+      // Sin almacenamiento: se recuerda sólo en esta sesión.
+    }
   }
 
   update(delta) {
@@ -87,7 +135,7 @@ export class BuildUI {
       li.classList.toggle('is-empty', v <= 0);
       li.title = `${STOCK_NAMES[li.dataset.stock]}: ${v}`;
     }
-    for (const button of this.list.children) {
+    for (const button of this.list.querySelectorAll('[data-build]')) {
       const def = BUILDING_TYPES.find((d) => d.id === button.dataset.build);
       const affordable = this.buildings.canAfford(def);
       button.setAttribute('aria-disabled', String(!affordable));

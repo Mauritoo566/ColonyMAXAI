@@ -23,6 +23,7 @@ const Y_AXIS = new THREE.Vector3(0, 1, 0);
 export const BUILDING_TYPES = [
   {
     id: 'gatherer',
+    category: 'production',
     name: 'Choza de recolección',
     job: 'Recolección',
     skill: 'gathering',
@@ -44,6 +45,7 @@ export const BUILDING_TYPES = [
   },
   {
     id: 'woodcutter',
+    category: 'production',
     name: 'Cabaña del leñador',
     job: 'Tala',
     skill: 'woodcutting',
@@ -65,6 +67,7 @@ export const BUILDING_TYPES = [
   },
   {
     id: 'quarry',
+    category: 'production',
     name: 'Cantera',
     job: 'Cantería',
     skill: 'mining',
@@ -86,6 +89,7 @@ export const BUILDING_TYPES = [
   },
   {
     id: 'well',
+    category: 'production',
     name: 'Pozo',
     job: 'Acarreo de agua',
     skill: 'hauling',
@@ -98,6 +102,15 @@ export const BUILDING_TYPES = [
     yield: 2,
     model: wellModel,
   },
+];
+
+// Categorías de la barra de construcción (las vacías se muestran como "próximamente").
+export const BUILD_CATEGORIES = [
+  { id: 'production', name: 'Producción', icon: 'hammer', soon: 'Edificios que consiguen comida, agua y materiales.' },
+  { id: 'housing', name: 'Vivienda', icon: 'people', soon: 'Chozas y casas para que los colonos duerman mejor.' },
+  { id: 'storage', name: 'Almacenes', icon: 'wood', soon: 'Graneros y depósitos para guardar más recursos.' },
+  { id: 'decoration', name: 'Decoración', icon: 'leaf', soon: 'Jardines, estatuas y caminos que alegran a la colonia.' },
+  { id: 'defense', name: 'Defensa', icon: 'shield', soon: 'Empalizadas y torres de vigilancia.' },
 ];
 
 export const BUILDINGS = Object.fromEntries(BUILDING_TYPES.map((t) => [t.id, t]));
