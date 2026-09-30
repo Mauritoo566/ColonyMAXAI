@@ -21,6 +21,7 @@ export class PlanetControls {
     this.heading = 0;
     this.target = { lat: this.lat, lon: this.lon, altitude: this.altitude, heading: this.heading };
     this.groundHeight = 0;
+    this.lowness = 0; // 0 = mirando desde el espacio, 1 = a ras de suelo
 
     this.pointers = new Map();
     this.pinch = null;
@@ -140,6 +141,7 @@ export class PlanetControls {
     const clearance = Math.max(1, this.altitude - this.groundHeight);
     const lowness = 1 - THREE.MathUtils.smoothstep(Math.log10(clearance), Math.log10(1_500), Math.log10(600_000));
     const tilt = THREE.MathUtils.degToRad(78) * lowness;
+    this.lowness = lowness;
 
     camera.position.copy(dir).multiplyScalar(RADIUS + this.altitude);
     look.copy(dir).multiplyScalar(-Math.cos(tilt)).addScaledVector(forward, Math.sin(tilt));

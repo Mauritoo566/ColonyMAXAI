@@ -284,6 +284,7 @@ class Node {
 
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.copy(this.center);
+    mesh.receiveShadow = true; // recibe la sombra de las nubes
     mesh.visible = false;
     this.mesh = mesh;
     return mesh;

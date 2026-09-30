@@ -17,7 +17,16 @@
 <body>
   <canvas id="scene"></canvas>
   <div class="hud">
-    <div class="hud-altitude"><span class="hud-label">Altura</span> <span id="altitude">–</span></div>
+    <div class="hud-row">
+      <div class="hud-stat"><span class="hud-label">Altura</span> <span id="altitude">–</span></div>
+      <div class="hud-stat"><span class="hud-label">Hora</span> <span id="time">–</span></div>
+    </div>
+    <div class="hud-speed" role="group" aria-label="Velocidad del tiempo">
+      <button type="button" data-speed="0" aria-pressed="false">Pausa</button>
+      <button type="button" data-speed="1" aria-pressed="true">×1</button>
+      <button type="button" data-speed="10" aria-pressed="false">×10</button>
+      <button type="button" data-speed="60" aria-pressed="false">×60</button>
+    </div>
     <div class="hud-help">Arrastrar: mover · Rueda o pellizcar: zoom · Botón derecho o Shift: girar</div>
   </div>
   <script type="module" src="src/main.js"></script>

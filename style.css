@@ -26,9 +26,42 @@ body {
   user-select: none;
 }
 
-.hud-altitude {
+.hud-row {
+  display: flex;
+  gap: 20px;
+}
+
+.hud-stat {
   font-size: 20px;
   font-variant-numeric: tabular-nums;
+}
+
+.hud-speed {
+  display: flex;
+  gap: 4px;
+  margin-block: 4px;
+  pointer-events: auto;
+}
+
+.hud-speed button {
+  font: inherit;
+  font-size: 12px;
+  color: #e8f0ff;
+  background: rgba(10, 20, 40, 0.55);
+  border: 1px solid rgba(160, 190, 255, 0.35);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.hud-speed button[aria-pressed='true'] {
+  background: rgba(90, 169, 255, 0.45);
+  border-color: rgba(160, 200, 255, 0.8);
+}
+
+.hud-speed button:focus-visible {
+  outline: 2px solid #9cc8ff;
+  outline-offset: 1px;
 }
 
 .hud-label {
