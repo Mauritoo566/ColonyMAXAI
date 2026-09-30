@@ -16,6 +16,23 @@ import { BuildUI } from './buildUI.js';
 import { WeatherSystem } from './weather.js';
 import { AgeUI } from './ageUI.js';
 import { HarvestTool } from './harvest.js';
+import { requireLogin, logout } from './auth.js';
+import { setStorageUser, storageKey } from './storage.js';
+import { connectWorld, OtherCamps } from './world.js';
+
+// Antes de nada: iniciar sesión (o registrarse). En la página publicada el planeta es
+// un mundo compartido (world.js); si no, las cuentas son de este navegador.
+const player = await requireLogin(connectWorld());
+setStorageUser(player.storageId);
+// El campamento guardado en el servidor manda (por ejemplo, al jugar desde otro equipo).
+if (player.me?.camp && [player.me.camp.x, player.me.camp.y, player.me.camp.z].every(Number.isFinite)) {
+  const c = player.me.camp;
+  try {
+    localStorage.setItem(storageKey('camp'), JSON.stringify({ version: 1, position: { x: c.x, y: c.y, z: c.z }, yaw: c.yaw || 0, height: c.height }));
+  } catch {
+    // Sin almacenamiento: se usa sólo en esta sesión.
+  }
+}
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
@@ -93,7 +110,6 @@ const camps = new CampSystem({
   ui: {
     foundButton: document.getElementById('found-camp'),
     goButton: document.getElementById('go-camp'),
-    relocateButton: document.getElementById('relocate-camp'),
     cancelButton: document.getElementById('cancel-camp'),
     banner: document.getElementById('place-banner'),
     tooltip: document.getElementById('place-tooltip'),
@@ -161,6 +177,77 @@ ageUI.onOpen = () => {
   buildings.select(null);
 };
 colony.onAgeChange = () => buildings.save();
+
+// ---- Mundo compartido: los campamentos de los demás, en vivo ----------------------
+const world = player.world;
+const others = world
+  ? new OtherCamps({ scene, terrain: planet.terrain, camera, canvas, labelsRoot: document.getElementById('labels'), myId: world.uid })
+  : null;
+const worldButton = document.getElementById('world-button');
+const worldPanel = document.getElementById('world-panel');
+if (world) {
+  camps.getOthers = () => others.campList(); // no fundar pegado a otro jugador
+  others.onPlayers = renderPlayers;
+  world.subscribe((docs) => others.sync(docs));
+  worldButton.hidden = false;
+  worldButton.addEventListener('click', () => {
+    worldPanel.hidden = !worldPanel.hidden;
+    worldButton.setAttribute('aria-expanded', String(!worldPanel.hidden));
+  });
+  camps.onFound = () => publishWorld();
+}
+
+function renderPlayers(players) {
+  document.getElementById('world-count').textContent = String(players.length);
+  const list = document.getElementById('world-list');
+  list.textContent = '';
+  const sorted = [...players].sort((a, b) => (b.isMe - a.isMe) || a.name.localeCompare(b.name));
+  for (const p of sorted) {
+    const li = document.createElement('li');
+    li.classList.toggle('is-me', p.isMe);
+    const info = document.createElement('div');
+    info.className = 'world-player';
+    const name = document.createElement('strong');
+    name.textContent = p.isMe ? `${p.name} (tú)` : p.name;
+    const detail = document.createElement('span');
+    detail.textContent = p.camp ? `Edad ${['I', 'II', 'III', 'IV', 'V'][p.age - 1] ?? p.age} · ${p.population} colonos` : 'Todavía sin campamento';
+    info.append(name, detail);
+    li.append(info);
+    if (p.camp) {
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'btn';
+      go.textContent = 'Ir';
+      go.addEventListener('click', () => controls.flyTo(p.camp.dir.clone(), 90));
+      li.append(go);
+    }
+    list.append(li);
+  }
+  document.getElementById('world-note').textContent = world.readOnly
+    ? 'Sólo puedes mirar: para jugar en este mundo pide acceso de Colaborador o Editor al dueño.'
+    : 'Los campamentos de todos aparecen en el planeta en tiempo real.';
+}
+
+// Lo que ven los demás de mi colonia: dónde está, su edad y sus edificios. Sólo se
+// escribe cuando cambia algo.
+const round = (v, k = 10) => Math.round(v * k) / k;
+function publishWorld() {
+  if (!world) return;
+  const camp = camps.camp;
+  world.publish({
+    camp: camp ? { x: camp.dir.x, y: camp.dir.y, z: camp.dir.z, yaw: round(camp.yaw, 1000), height: round(camp.height) } : null,
+    age: colony.age,
+    population: colony.count,
+    buildings: buildings.list.map((b) => ({ t: b.def.id, l: b.level, x: round(b.x), z: round(b.z), yaw: round(b.yaw, 100), d: b.done || b.upgrading })),
+  });
+}
+let publishTimer = 2;
+
+// Sesión: en el mundo compartido la cuenta es la de Claude; en local se puede salir.
+document.getElementById('player-name').textContent = player.name;
+const logoutButton = document.getElementById('logout');
+if (world) logoutButton.hidden = true;
+else logoutButton.addEventListener('click', logout);
 
 // Estrellas pegadas a la cámara: siempre están "en el infinito".
 function createStars(count) {
@@ -370,6 +457,12 @@ renderer.setAnimationLoop(() => {
   buildUI.update(delta);
   ageUI.update(delta);
   harvest.update(waterUniforms.uTime.value, delta);
+  others?.update();
+  publishTimer -= delta;
+  if (publishTimer <= 0) {
+    publishTimer = 3;
+    publishWorld();
+  }
   updateSky(altitude);
 
   labelTimer -= delta;

@@ -105,6 +105,13 @@
       <div class="build-list" id="build-list"></div>
     </section>
 
+    <!-- Jugadores del mundo compartido -->
+    <section id="world-panel" class="panel world-panel" hidden aria-label="Jugadores">
+      <p class="eyebrow">Mundo compartido</p>
+      <ul class="world-list" id="world-list"></ul>
+      <p class="reason world-note" id="world-note"></p>
+    </section>
+
     <!-- Órdenes para los colonos (aparte de la construcción) -->
     <section class="orders" id="orders" hidden aria-label="Órdenes">
       <div class="panel harvest-tools" id="harvest-tools" hidden>
@@ -122,9 +129,11 @@
     </section>
 
     <div class="camp-panel">
+      <button type="button" id="world-button" class="btn" hidden aria-expanded="false" aria-controls="world-panel" title="Jugadores de este mundo">
+        <svg class="icon"><use href="#i-people" /></svg>Mundo <span class="world-count" id="world-count">1</span>
+      </button>
       <button type="button" id="found-camp" class="btn btn--primary">Fundar campamento</button>
       <button type="button" id="go-camp" class="btn" hidden>Ir al campamento</button>
-      <button type="button" id="relocate-camp" class="btn" hidden>Reubicar</button>
       <button type="button" id="cancel-camp" class="btn" hidden>Cancelar</button>
     </div>
     <div id="place-banner" class="panel place-banner" hidden>
@@ -163,10 +172,44 @@
           <dt>Barra de construcción</dt><dd>Elegir un edificio y hacer clic donde va</dd>
           <dt>Esc</dt><dd>Cerrar o cancelar</dd>
         </dl>
+        <div class="help-account">
+          <span>Jugando como <strong id="player-name">–</strong></span>
+          <button type="button" class="btn" id="logout">Cerrar sesión</button>
+        </div>
       </div>
       <button type="button" id="help-toggle" class="panel icon-button" aria-expanded="false" aria-controls="help-card" title="Controles">?</button>
     </div>
   </div>
+
+  <!-- Acceso: iniciar sesión o crear una cuenta antes de jugar -->
+  <section id="auth" class="auth" hidden aria-label="Acceso">
+    <div class="auth-planet" aria-hidden="true"></div>
+    <div class="auth-card">
+      <p class="auth-kicker">Una colonia en un planeta entero</p>
+      <h1 class="auth-title">ColonyMAXAI</h1>
+      <p class="auth-status" data-status>Conectando con el mundo…</p>
+      <p class="auth-welcome" data-welcome hidden></p>
+      <div class="auth-tabs" role="tablist" data-local>
+        <button type="button" role="tab" data-mode="login" aria-selected="true">Iniciar sesión</button>
+        <button type="button" role="tab" data-mode="register" aria-selected="false">Crear cuenta</button>
+      </div>
+      <form class="auth-form" novalidate hidden>
+        <label data-name-field>Nombre de jugador
+          <input name="name" type="text" autocomplete="username" maxlength="20" required spellcheck="false" />
+        </label>
+        <label data-local>Contraseña
+          <input name="password" type="password" autocomplete="current-password" minlength="6" required />
+        </label>
+        <label data-confirm hidden>Repetir contraseña
+          <input name="confirm" type="password" autocomplete="new-password" minlength="6" />
+        </label>
+        <label class="auth-check" data-local><input name="remember" type="checkbox" checked /> Mantener la sesión iniciada</label>
+        <p class="auth-error" data-error role="alert" hidden></p>
+        <button type="submit" class="btn btn--primary auth-submit">Entrar</button>
+      </form>
+      <p class="auth-note" data-note></p>
+    </div>
+  </section>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>

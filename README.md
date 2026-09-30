@@ -21,7 +21,14 @@ Luego abre <http://localhost:8000>. (Abrir `index.html` directamente con doble c
 - Botón derecho, Shift + arrastrar o girar con dos dedos: rotar la vista (en horizontal) y levantar la mirada hacia el cielo (en vertical)
 - Botones Pausa / ×1 / ×10 / ×60: velocidad del paso del tiempo (a ×1 un día dura 6 minutos)
 
-## Campamento inicial
+## Cuentas y mundo compartido
+
+Al abrir el juego hay que **iniciar sesión o crear una cuenta** (`src/auth.js`).
+
+- **Mundo compartido (página publicada en claude.ai):** el planeta es el servidor. La página usa la base de datos compartida del artifact (`src/world.js`): cada jugador tiene un documento `world/<id>` con su nombre, su campamento, su edad, su población y sus edificios. Todos se suscriben a la colección y ven aparecer en tiempo real los campamentos de los demás, con su nombre encima y sus edificios. El jugador es la cuenta de Claude con la que se abre la página; registrarse es elegir un nombre de jugador (único). El botón **Mundo** lista a los jugadores y permite volar a sus campamentos. No se puede fundar a menos de 2 km de otro campamento. Para escribir en el mundo hace falta acceso de Colaborador o Editor; con acceso de sólo lectura se mira pero no se juega.
+- **Sin servidor (GitHub, servidor local):** cuentas locales de este navegador con nombre y contraseña (guardada como huella PBKDF2, nunca en claro). Cada cuenta tiene su propia partida.
+
+
 
 Con el botón **Fundar campamento** entras en modo colocación: al mover el ratón aparece una vista previa del campamento con un anillo verde (se puede) o rojo con el motivo (agua, hielo o nieve, pendiente de más de ~27°, o cámara a más de 60 km). Un clic lo funda y la cámara vuela hasta él. Después aparecen **Ir al campamento** y **Reubicar**, y una etiqueta marca dónde está cuando lo miras desde lejos. El campamento se guarda en el navegador (`localStorage`), así que sigue ahí al volver a abrir el juego. Al fundarlo, el terreno se nivela en un círculo de 30 m (con una pendiente suave de otros 32 m hasta el terreno natural), se pinta un claro de tierra pisada con borde irregular. Cerca del campamento el terreno usa triángulos más finos (hasta ~3 m). El claro y los adornos del campamento se adaptan al bioma (`src/biomes.js`): tierra en la pradera, grava en la montaña, arena en el desierto y la playa; matas de pasto sólo donde hay pasto. El código está en `src/camp.js`.
 

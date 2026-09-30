@@ -6,12 +6,12 @@ import { Parts, mat, stick, v } from './modelKit.js';
 import { hasTrait, addLog, SKILLS } from './needs.js';
 import { ageInfo } from './ages.js';
 import { rectDistance } from './rect.js';
+import { storageKey } from './storage.js';
 
 // Edificios de la colonia. El jugador elige qué construir en la barra de construcción y
 // dónde; los colonos lo construyen (los más hábiles, más rápido) y, al terminarlo, la
 // colonia asigna como trabajador al colono libre más capacitado para ese oficio.
 
-const STORAGE_KEY = 'colonymaxai.colony';
 const SAVE_VERSION = 2; // 2: además guarda colonos, recursos agotados y el reloj
 const MAX_DISTANCE = 75; // metros desde la fogata donde se puede construir
 const CLICK_TOLERANCE = 6;
@@ -393,6 +393,15 @@ function buildMesh(fn, ...args) {
   mesh.castShadow = false;
   mesh.receiveShadow = true;
   return mesh;
+}
+
+// Modelo de un edificio de otro jugador (mundo compartido): el del nivel que tenga o, si
+// está en obra, sólo los andamios.
+export function buildingModel(type, level = 1, done = true) {
+  const def = BUILDINGS[type];
+  if (!def) return null;
+  const lv = def.levels[Math.min(def.levels.length, Math.max(1, level)) - 1];
+  return done ? buildMesh(lv.model) : buildMesh(frameModel, def.footprint);
 }
 
 // ---------------------------------------------------------------------------
@@ -938,7 +947,7 @@ export class BuildingSystem {
       })),
     };
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      localStorage.setItem(storageKey('colony'), JSON.stringify(data));
     } catch {
       // Sin almacenamiento: la colonia dura sólo esta sesión.
     }
@@ -951,7 +960,7 @@ export class BuildingSystem {
     if (!camp) return;
     let data = null;
     try {
-      data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      data = JSON.parse(localStorage.getItem(storageKey('colony')));
     } catch {
       data = null;
     }

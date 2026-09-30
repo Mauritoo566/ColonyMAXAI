@@ -9,13 +9,14 @@ import {
 } from './elevation.js';
 import { biomeAt, BIOMES } from './biomes.js';
 import { Parts, mat, stick, v, triangle, seededRandom, vary } from './modelKit.js';
+import { storageKey } from './storage.js';
 
 // Campamento inicial de la civilización: el jugador elige dónde fundarlo haciendo clic
 // en el terreno. Al fundarlo el terreno se nivela en un círculo y se pinta un claro de
 // tierra pisada.
-// Se guarda en el navegador para recuperarlo al volver a abrir el juego.
+// Se funda una sola vez: después ya no se puede mover. Se guarda en el navegador (y, en
+// el mundo compartido, también en el servidor) para recuperarlo al volver.
 
-const STORAGE_KEY = 'colonymaxai.camp';
 const MAX_PICK_CLEARANCE = 60_000; // hay que acercarse a menos de 60 km para elegir el sitio
 const MAX_SLOPE = 0.4; // desnivel máximo (por metro) alrededor del sitio, unos 22°
 const CLICK_TOLERANCE = 6; // píxeles que se puede mover el puntero y seguir contando como clic
@@ -506,7 +507,31 @@ export function campProblem(dir, otherCamps = []) {
 
 const yawQuat = new THREE.Quaternion();
 
-function orientOnSurface(object, dir, height, yaw) {
+// Crea el modelo de un campamento en su sitio y nivela el terreno debajo (también para
+// los campamentos de otros jugadores). No lo añade a la escena.
+export function buildCamp(dir, height, yaw, terrain, zoneExtra = {}) {
+  // El bioma del lugar decide el color del suelo pisado y los adornos del campamento.
+  const biome = biomeAt(dir.x, dir.y, dir.z);
+  const ground = biome.details ? biome : BIOMES.grassland;
+  // Nivelar el terreno y pintar el claro; los trozos de terreno afectados se regeneran.
+  const zone = addTerrainZone({
+    dir: dir.clone(),
+    height,
+    flatRadius: FLAT_RADIUS,
+    blendRadius: BLEND_RADIUS,
+    clearRadius: CLEAR_RADIUS,
+    detailRadius: DETAIL_RADIUS,
+    dirtColor: ground.dirt,
+    ...zoneExtra,
+  });
+  terrain.invalidateZone(zone);
+  const seed = seedFromDir(dir);
+  const object = createCampModel(seed, ground);
+  orientOnSurface(object, dir, height, yaw);
+  return { object, zone, seed };
+}
+
+export function orientOnSurface(object, dir, height, yaw) {
   object.position.copy(dir).multiplyScalar(RADIUS + height);
   object.quaternion.setFromUnitVectors(Y_AXIS, dir);
   if (yaw) object.quaternion.multiply(yawQuat.setFromAxisAngle(Y_AXIS, yaw));
@@ -528,7 +553,7 @@ function parseSave(data) {
   };
 }
 
-function seedFromDir(dir) {
+export function seedFromDir(dir) {
   return Math.floor(Math.abs(Math.sin(dir.x * 91.7 + dir.y * 47.3 + dir.z * 13.9)) * 4294967295) >>> 0;
 }
 
@@ -574,7 +599,6 @@ export class CampSystem {
     this.lastPick = { x: NaN, y: NaN, position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
 
     ui.foundButton.addEventListener('click', () => this.startPlacing());
-    ui.relocateButton.addEventListener('click', () => this.startPlacing());
     ui.goButton.addEventListener('click', () => this.flyToCamp());
     ui.cancelButton.addEventListener('click', () => this.stopPlacing());
     window.addEventListener('keydown', (e) => {
@@ -613,6 +637,7 @@ export class CampSystem {
   }
 
   startPlacing() {
+    if (this.camp) return; // el campamento se funda una sola vez
     this.placing = true;
     this.candidate = null;
     this.lastPick.x = NaN; // forzar un cálculo nuevo
@@ -628,12 +653,14 @@ export class CampSystem {
   }
 
   found({ dir }) {
+    if (this.camp) return;
     const yaw = Math.random() * Math.PI * 2;
     const at = dir.clone(); // "dir" es un objeto temporal que se reutiliza
     this.setCamp(at, naturalSurfaceHeight(at), yaw);
     this.save();
     this.stopPlacing();
     this.flyToCamp();
+    this.onFound?.(this.camp);
   }
 
   removeCamp() {
@@ -647,24 +674,7 @@ export class CampSystem {
 
   setCamp(dir, height, yaw) {
     this.removeCamp();
-    // El bioma del lugar decide el color del suelo pisado y los adornos del campamento.
-    const biome = biomeAt(dir.x, dir.y, dir.z);
-    const ground = biome.details ? biome : BIOMES.grassland;
-    // Nivelar el terreno y pintar el claro; los trozos de terreno afectados se regeneran.
-    const zone = addTerrainZone({
-      dir: dir.clone(),
-      height,
-      flatRadius: FLAT_RADIUS,
-      blendRadius: BLEND_RADIUS,
-      clearRadius: CLEAR_RADIUS,
-      detailRadius: DETAIL_RADIUS,
-      dirtColor: ground.dirt,
-    });
-    this.terrain.invalidateZone(zone);
-
-    const seed = seedFromDir(dir);
-    const object = createCampModel(seed, ground);
-    orientOnSurface(object, dir, height, yaw);
+    const { object, zone, seed } = buildCamp(dir, height, yaw, this.terrain);
     this.scene.add(object);
     this.camp = { object, zone, dir: dir.clone(), height, yaw, seed };
   }
@@ -678,7 +688,7 @@ export class CampSystem {
     const { dir, yaw, height } = this.camp;
     const data = { version: SAVE_VERSION, position: { x: dir.x, y: dir.y, z: dir.z }, yaw, height };
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      localStorage.setItem(storageKey('camp'), JSON.stringify(data));
     } catch {
       // Sin almacenamiento (ventana privada, etc.): el campamento dura sólo esta sesión.
     }
@@ -687,7 +697,7 @@ export class CampSystem {
   load() {
     let data = null;
     try {
-      data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      data = JSON.parse(localStorage.getItem(storageKey('camp')));
     } catch {
       data = null;
     }
@@ -701,7 +711,6 @@ export class CampSystem {
     const { ui } = this;
     ui.foundButton.hidden = this.placing || !!this.camp;
     ui.goButton.hidden = this.placing || !this.camp;
-    ui.relocateButton.hidden = this.placing || !this.camp;
     ui.cancelButton.hidden = !this.placing;
     ui.banner.hidden = !this.placing;
     this.canvas.classList.toggle('is-placing', this.placing);
@@ -711,10 +720,10 @@ export class CampSystem {
     return this.camera.position.length() - RADIUS - Math.max(0, this.controls.groundHeight);
   }
 
-  // Campamentos que el sitio elegido debe respetar por distancia. Hoy sólo hay uno y
-  // "Reubicar" lo reemplaza, así que no cuenta; con varios campamentos se listarían aquí.
+  // Campamentos de los demás jugadores ({ dir }), que el sitio elegido debe respetar
+  // por distancia. Lo asigna main.js en el mundo compartido.
   otherCamps() {
-    return [];
+    return this.getOthers?.() ?? [];
   }
 
   updateCandidate() {

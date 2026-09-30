@@ -1,6 +1,7 @@
 import { BUILDING_TYPES, BUILD_CATEGORIES, STOCK_NAMES, levelOf } from './buildings.js';
 import { AGES, ageInfo } from './ages.js';
 import { FOOD_SPOIL_SECONDS, zoneCapacity } from './colonists.js';
+import { storageKey } from './storage.js';
 
 const DAY_SECONDS = 360;
 import { SKILLS } from './needs.js';
@@ -9,7 +10,6 @@ import { SKILLS } from './needs.js';
 // y la ficha de cada edificio (obra, trabajador asignado y candidatos).
 
 const REFRESH_SECONDS = 0.25;
-const TAB_KEY = 'colonymaxai.buildTab';
 const STOCK = [
   { id: 'food', icon: 'food', color: 'var(--food)' },
   { id: 'water', icon: 'water', color: 'var(--water)' },
@@ -106,7 +106,7 @@ export class BuildUI {
     }
     let saved = null;
     try {
-      saved = localStorage.getItem(TAB_KEY);
+      saved = localStorage.getItem(storageKey('buildTab'));
     } catch {
       saved = null;
     }
@@ -193,7 +193,7 @@ export class BuildUI {
     this.list.hidden = this.collapsed;
     this.bar.classList.toggle('is-collapsed', this.collapsed);
     try {
-      localStorage.setItem(TAB_KEY, id ?? 'none');
+      localStorage.setItem(storageKey('buildTab'), id ?? 'none');
     } catch {
       // Sin almacenamiento: se recuerda sólo en esta sesión.
     }

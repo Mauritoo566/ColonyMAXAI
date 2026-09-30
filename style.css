@@ -2024,3 +2024,283 @@ canvas.is-harvesting {
     max-width: calc(100vw - 2 * var(--gap) - 300px);
   }
 }
+
+/* ---- Acceso (iniciar sesión / crear cuenta) ---------------------------------- */
+
+.auth {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  overflow: hidden;
+  background:
+    radial-gradient(1px 1px at 12% 22%, #fff8 50%, transparent 51%),
+    radial-gradient(1px 1px at 68% 14%, #fff9 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 84% 62%, #fffa 50%, transparent 51%),
+    radial-gradient(1px 1px at 32% 78%, #fff7 50%, transparent 51%),
+    radial-gradient(1px 1px at 52% 40%, #fff6 50%, transparent 51%),
+    radial-gradient(1px 1px at 22% 58%, #fff8 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 92% 30%, #fff9 50%, transparent 51%),
+    radial-gradient(ellipse at 50% 120%, #10233f 0%, #050814 60%);
+  transition: opacity 0.4s ease;
+}
+
+.auth.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Un planeta grande asomando por abajo, como en el juego. */
+.auth-planet {
+  position: absolute;
+  left: 50%;
+  bottom: -118vmax;
+  width: 150vmax;
+  height: 150vmax;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 42% 8%, #7fb6ea55 0%, transparent 18%),
+    radial-gradient(circle at 60% 6%, #5f8a3a 0%, #3f6a2a 7%, transparent 14%),
+    radial-gradient(circle at 30% 10%, #c8a86a 0%, #8a6a3a 5%, transparent 10%),
+    radial-gradient(circle at 50% 50%, #1f5a8a 0%, #123a66 45%, #0a1f3a 70%);
+  box-shadow: 0 0 80px 20px #4a8fd455, inset 0 30px 60px #9fd0ff33;
+}
+
+.auth-card {
+  position: relative;
+  width: min(380px, 100%);
+  padding: 28px 26px 22px;
+  border: 1px solid rgba(233, 196, 106, 0.35);
+  border-radius: 16px;
+  background: rgba(12, 16, 23, 0.86);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-sizing: border-box;
+}
+
+.auth-kicker {
+  margin: 0;
+  color: var(--ui-muted);
+  font: 600 12px/1.2 var(--font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.auth-title {
+  margin: 6px 0 20px;
+  color: #fbe7b5;
+  font: 700 34px/1 Georgia, 'Times New Roman', serif;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-shadow: 0 2px 12px rgba(242, 178, 76, 0.35);
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--ui-bg-raised);
+}
+
+.auth-tabs button {
+  flex: 1;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ui-muted);
+  font: 700 14px/1 var(--font-display);
+  cursor: pointer;
+}
+
+.auth-tabs button[aria-selected='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--ui-muted);
+  font: 600 13px/1.2 var(--font-display);
+}
+
+.auth-form input[type='text'],
+.auth-form input[type='password'] {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ui-text);
+  font: 500 15px/1 inherit;
+}
+
+.auth-form input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(242, 178, 76, 0.2);
+}
+
+.auth-form .auth-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.auth-check input {
+  accent-color: var(--accent);
+}
+
+.auth-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(239, 100, 87, 0.12);
+  color: #ffb1a9;
+  font-size: 13px;
+}
+
+.auth-submit {
+  justify-content: center;
+  height: 44px;
+  font-size: 16px;
+}
+
+.auth-submit[disabled] {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.auth-note {
+  margin: 14px 0 0;
+  color: var(--ui-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.help-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ui-line);
+  font-size: 13px;
+}
+
+.help-account .btn {
+  padding: 6px 10px;
+}
+
+.auth-status,
+.auth-welcome {
+  margin: 0 0 14px;
+  color: var(--ui-muted);
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.auth-welcome strong {
+  color: var(--ui-text);
+}
+
+.camp-marker--other .camp-marker-label {
+  background: rgba(20, 40, 70, 0.8);
+}
+
+.camp-marker--other .camp-marker-pin {
+  background: #8fd0ff;
+  box-shadow: 0 0 8px rgba(143, 208, 255, 0.9);
+}
+
+.camp-marker--other small {
+  opacity: 0.8;
+  font-weight: 500;
+}
+
+.world-count {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(143, 208, 255, 0.2);
+  color: #bfe3ff;
+  font-size: 12px;
+}
+
+.world-panel {
+  position: fixed;
+  top: calc(var(--gap) + var(--safe-top) + 52px);
+  right: var(--gap);
+  z-index: 6;
+  width: min(300px, calc(100vw - 2 * var(--gap)));
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.world-list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.world-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 10px;
+  border-radius: 9px;
+  background: var(--ui-bg-raised);
+  font-size: 13px;
+}
+
+.world-list li.is-me {
+  box-shadow: inset 0 0 0 1px rgba(242, 178, 76, 0.5);
+}
+
+.world-player {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.world-player strong {
+  overflow: hidden;
+  font: 700 14px/1.2 var(--font-display);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.world-player span {
+  color: var(--ui-muted);
+  font-size: 12px;
+}
+
+.world-list .btn {
+  padding: 5px 10px;
+}
+
+.world-note {
+  margin: 10px 0 0;
+}
