@@ -2,11 +2,16 @@
   "name": "colonymaxai",
   "private": true,
   "type": "module",
-  "description": "Juego de colonias en un planeta entero (Three.js). src/ es el juego del navegador; src/sim/ es la simulación, que también corre en el servidor (Node).",
+  "description": "Juego de colonias en un planeta entero (Three.js). src/ es el juego del navegador; src/sim/ es la simulación, que corre en el servidor (server/game).",
   "engines": {
     "node": ">=22"
   },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/game/index.js",
+    "test": "node --disable-warning=ExperimentalWarning server/game/test/protocol.test.js"
+  },
   "dependencies": {
-    "three": "0.170.0"
+    "three": "0.170.0",
+    "ws": "^8.22.0"
   }
 }

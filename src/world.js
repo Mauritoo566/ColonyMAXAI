@@ -3,106 +3,28 @@ import { RADIUS, surfaceHeight, naturalSurfaceHeight, removeTerrainZone } from '
 import { buildCamp } from './camp.js';
 import { buildingModel } from './buildings.js';
 import { ageInfo } from './ages.js';
+import { ColonySim } from './sim/colony.js';
+import { ColonyView } from './colonists.js';
 
-// Mundo compartido. Cuando el juego se abre como página publicada en claude.ai, la
-// página tiene una base de datos compartida (capacidad "db"): ese es el servidor del
-// planeta. Cada jugador tiene un documento world/<su id> con su nombre, su campamento,
-// su edad y sus edificios; todos se suscriben a la colección "world" y ven aparecer los
-// campamentos de los demás en tiempo real. Sin esa base de datos (la página abierta
-// desde GitHub o un servidor local) el juego funciona igual, pero solo.
+// Los demás jugadores del mundo: sus campamentos, sus edificios y sus colonos, en vivo.
+// El servidor manda la lista de jugadores (con campamento, edad, población y edificios) y,
+// de las colonias que están cerca de lo que mira la cámara, dónde está cada colono varias
+// veces por segundo. Los colonos de cada colonia ajena salen de una copia de su
+// simulación (misma semilla: mismos nombres y aspecto) que sólo refleja lo que llega.
 
-const CONNECT_TIMEOUT_MS = 12_000;
 const LABEL_MAX_DISTANCE = 400_000; // metros: más lejos no se muestra el nombre
-const MODEL_MAX_DISTANCE = 30_000; // metros: más lejos no se dibujan sus edificios
-
-// Conecta con el servidor del mundo, o null si esta página no tiene uno.
-export async function connectWorld() {
-  if (!window.claude?.use) return null;
-  const timeout = new Promise((resolve) => setTimeout(() => resolve([null, null]), CONNECT_TIMEOUT_MS));
-  const [db, user] = await Promise.race([Promise.all([window.claude.use('db'), window.claude.use('user')]), timeout]);
-  if (!db || !user) return null;
-  const uid = await user.id();
-  if (!uid) return null;
-  return new WorldClient(db, uid);
-}
-
-export class WorldClient {
-  constructor(db, uid) {
-    this.db = db;
-    this.uid = uid;
-    this.readOnly = false; // sin permiso de escritura: sólo se mira
-    this.lastJson = null;
-    this.writing = null;
-  }
-
-  get myRef() {
-    return this.db.doc(`world/${this.uid}`);
-  }
-
-  async me() {
-    const snap = await this.myRef.get();
-    return snap.exists ? snap.data() : null;
-  }
-
-  // Registro: nombre de jugador único en el mundo.
-  async register(name) {
-    name = name.trim();
-    if (!/^[\p{L}\p{N}_ .-]{3,20}$/u.test(name)) throw new Error('El nombre debe tener de 3 a 20 letras, números, espacios, puntos o guiones.');
-    const nameLc = name.toLowerCase();
-    const taken = await this.db.collection('world').where('nameLc', '==', nameLc).limit(1).get();
-    if (!taken.empty && taken.docs[0].id !== this.uid) throw new Error('Ese nombre ya lo usa otro jugador.');
-    const data = { name, nameLc, joinedAt: Date.now(), camp: null, age: 1, population: 0, buildings: [] };
-    try {
-      await this.myRef.set(data);
-    } catch (e) {
-      if (e?.code === 'invalid_argument') {
-        throw new Error('Puedes ver este mundo pero no unirte: pide al dueño que te invite por email con permiso de edición (Editor).');
-      }
-      throw new Error('No se pudo conectar con el mundo. Prueba de nuevo.');
-    }
-    this.lastJson = JSON.stringify(data);
-    return name;
-  }
-
-  // Publica el estado de este jugador, sólo si cambió (una escritura a la vez).
-  async publish(state) {
-    if (this.readOnly) return;
-    const json = JSON.stringify(state);
-    if (json === this.lastJson || this.writing) return;
-    this.writing = this.myRef.update({ ...state, updatedAt: Date.now() });
-    try {
-      await this.writing;
-      this.lastJson = json;
-    } catch (e) {
-      if (e?.code === 'invalid_argument' || e?.code === 'revoked') this.readOnly = true;
-    } finally {
-      this.writing = null;
-    }
-  }
-
-  // Todos los jugadores, en vivo. onChange recibe [{ id, data }] cada vez que algo cambia.
-  subscribe(onChange) {
-    return this.db.collection('world').onSnapshot(
-      (snap) => onChange(snap.docs.map((d) => ({ id: d.id, data: d.data() }))),
-      () => onChange(null),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Campamentos de los demás jugadores
-// ---------------------------------------------------------------------------
+const MODEL_MAX_DISTANCE = 30_000; // metros: más lejos no se dibujan sus edificios ni colonos
 
 export class OtherCamps {
-  constructor({ scene, terrain, camera, canvas, labelsRoot, myId }) {
+  constructor({ scene, terrain, camera, canvas, labelsRoot }) {
     this.scene = scene;
     this.terrain = terrain;
     this.camera = camera;
     this.canvas = canvas;
     this.labelsRoot = labelsRoot;
-    this.myId = myId;
-    this.camps = new Map(); // id -> { key, object, zone, dir, label, buildingsKey, buildings }
-    this.players = []; // [{ id, name, camp, age, population }] para la lista del mundo
+    this.myId = null;
+    this.camps = new Map(); // id del jugador -> { key, object, zone, dir, label, buildings, sim, view }
+    this.players = []; // [{ id, name, online, camp, age, population, isMe }] para la lista del mundo
     this.tmp = new THREE.Vector3();
     this.onPlayers = null;
   }
@@ -112,27 +34,28 @@ export class OtherCamps {
     return [...this.camps.values()].map((c) => ({ dir: c.dir }));
   }
 
-  sync(docs) {
-    if (!docs) return;
+  // list: jugadores tal como los manda el servidor.
+  sync(list) {
     const seen = new Set();
     this.players = [];
-    for (const { id, data } of docs) {
-      if (!data || typeof data.name !== 'string') continue;
-      const camp = parseCamp(data.camp);
-      this.players.push({ id, name: data.name.slice(0, 20), camp, age: data.age | 0 || 1, population: data.population | 0, isMe: id === this.myId });
-      if (id === this.myId || !camp) continue;
-      seen.add(id);
-      this.upsert(id, data, camp);
+    for (const p of list) {
+      if (typeof p?.name !== 'string') continue;
+      const camp = parseCamp(p.camp);
+      const isMe = p.id === this.myId;
+      this.players.push({ id: p.id, name: p.name.slice(0, 20), online: !!p.online, camp, age: p.age | 0 || 1, population: p.population | 0, isMe });
+      if (isMe || !camp) continue;
+      seen.add(p.id);
+      this.upsert(p, camp);
     }
     for (const id of [...this.camps.keys()]) if (!seen.has(id)) this.remove(id);
     this.onPlayers?.(this.players);
   }
 
-  upsert(id, data, camp) {
+  upsert(p, camp) {
     const key = `${camp.dir.x},${camp.dir.y},${camp.dir.z},${camp.yaw}`;
-    let entry = this.camps.get(id);
+    let entry = this.camps.get(p.id);
     if (entry && entry.key !== key) {
-      this.remove(id);
+      this.remove(p.id);
       entry = null;
     }
     if (!entry) {
@@ -143,19 +66,28 @@ export class OtherCamps {
       label.innerHTML = '<span class="camp-marker-label"><strong></strong><small></small></span><span class="camp-marker-pin"></span>';
       label.hidden = true;
       this.labelsRoot.appendChild(label);
-      entry = { key, object, zone, dir: camp.dir, height: camp.height, label, buildingsKey: '', buildings: new THREE.Group() };
+      // Copia de su simulación (sólo para sus colonos) y su vista; nadie los puede elegir.
+      const sim = new ColonySim();
+      const view = new ColonyView({ scene: this.scene, camera: this.camera, canvas: this.canvas, labelsRoot: this.labelsRoot, sim, campObject: () => object, selectable: false });
+      sim.setCamp(camp);
+      entry = { key, object, zone, dir: camp.dir, height: camp.height, label, buildingsKey: '', buildings: new THREE.Group(), sim, view };
       object.add(entry.buildings);
-      this.camps.set(id, entry);
+      this.camps.set(p.id, entry);
     }
-    entry.label.querySelector('strong').textContent = data.name.slice(0, 20);
-    entry.label.querySelector('small').textContent = ` · ${ageInfo(data.age | 0 || 1).name} · ${data.population | 0} colonos`;
+    entry.label.querySelector('strong').textContent = p.name.slice(0, 20);
+    entry.label.querySelector('small').textContent = ` · ${ageInfo(p.age | 0 || 1).name} · ${p.population | 0} colonos${p.online ? '' : ' · desconectado'}`;
     // Edificios (en coordenadas de su campamento).
-    const list = Array.isArray(data.buildings) ? data.buildings.slice(0, 80) : [];
+    const list = Array.isArray(p.buildings) ? p.buildings.slice(0, 80) : [];
     const buildingsKey = JSON.stringify(list);
     if (buildingsKey !== entry.buildingsKey) {
       entry.buildingsKey = buildingsKey;
       this.buildBuildings(entry, list);
     }
+  }
+
+  // Dónde están ahora los colonos de otro jugador (mensaje "other" del servidor).
+  applyColonists(id, msg) {
+    this.camps.get(id)?.sim.applySnapshot(msg, 'fast');
   }
 
   buildBuildings(entry, list) {
@@ -181,6 +113,7 @@ export class OtherCamps {
   remove(id) {
     const entry = this.camps.get(id);
     if (!entry) return;
+    entry.view.dispose();
     this.scene.remove(entry.object);
     entry.object.traverse((o) => o.geometry?.dispose());
     removeTerrainZone(entry.zone);
@@ -189,8 +122,8 @@ export class OtherCamps {
     this.camps.delete(id);
   }
 
-  // Cada fotograma: nombres sobre los campamentos y edificios sólo si están cerca.
-  update() {
+  // Cada fotograma: nombres sobre los campamentos; edificios y colonos sólo si están cerca.
+  update(delta) {
     const cam = this.camera.position;
     const camR = cam.length();
     const rect = this.canvas.getBoundingClientRect();
@@ -198,7 +131,11 @@ export class OtherCamps {
       const markerR = RADIUS + entry.height + 14;
       const pos = this.tmp.copy(entry.dir).multiplyScalar(markerR);
       const dist = cam.distanceTo(pos);
-      entry.buildings.visible = dist < MODEL_MAX_DISTANCE;
+      const near = dist < MODEL_MAX_DISTANCE;
+      entry.buildings.visible = near;
+      entry.view.group.visible = near;
+      if (near) entry.view.update(delta, delta);
+      else entry.view.hideLabels();
       const horizon = Math.acos(Math.min(1, RADIUS / camR)) + Math.acos(Math.min(1, RADIUS / markerR));
       const behind = cam.clone().divideScalar(camR).angleTo(entry.dir) > horizon;
       pos.project(this.camera);
@@ -213,11 +150,11 @@ export class OtherCamps {
 }
 
 function parseCamp(c) {
-  if (!c || ![c.x, c.y, c.z].every(Number.isFinite)) return null;
-  const dir = new THREE.Vector3(c.x, c.y, c.z);
+  if (!c?.dir || ![c.dir.x, c.dir.y, c.dir.z].every(Number.isFinite)) return null;
+  const dir = new THREE.Vector3(c.dir.x, c.dir.y, c.dir.z);
   if (dir.lengthSq() < 1e-6) return null;
   dir.normalize();
   // La altura se calcula aquí (el terreno es el mismo para todos) en lugar de confiar en
-  // la guardada: así el campamento nunca queda enterrado ni flotando.
-  return { dir, yaw: Number.isFinite(c.yaw) ? c.yaw : 0, height: naturalSurfaceHeight(dir) };
+  // la recibida: así el campamento nunca queda enterrado ni flotando.
+  return { dir, yaw: Number.isFinite(c.yaw) ? c.yaw : 0, height: naturalSurfaceHeight(dir), seed: c.seed ?? 1 };
 }

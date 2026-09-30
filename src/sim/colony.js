@@ -11,6 +11,7 @@ import { TILE_ANGLE, generateTile, generateCampGrove, GROVE_KEY, SPROUT_KEY, spr
 import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, taskKey } from '../ai.js';
 import { campLayout, campObstacles, campZone } from './campLayout.js';
 import { BUILDINGS, levelOf, STOCK_NAMES } from './buildingTypes.js';
+import { WeatherState } from './weather.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
 // de acopio, recursos del entorno, edades y guardado. No dibuja nada ni toca la página:
@@ -117,6 +118,9 @@ export class ColonySim {
     this.obstacles = campObstacles();
     this.heights = new Map();
     this.timeLabel = () => '';
+    // En el navegador conectado al servidor, las órdenes del jugador (construir, mejorar,
+    // marcar...) no se aplican aquí sino que se mandan: remote(nombre, [argumentos]).
+    this.remote = null;
     this.tmp = {
       world: new THREE.Vector3(),
       inv: new THREE.Quaternion(),
@@ -756,6 +760,7 @@ export class ColonySim {
   setZone(rect) {
     const problem = this.zoneProblem(rect);
     if (problem) return problem;
+    this.remote?.('setZone', [rect]);
     this.zones = [{ cx: rect.cx, cz: rect.cz, hw: rect.hw, hd: rect.hd, angle: rect.angle }];
     this.trimOutdoor();
     this.emit('zones');
@@ -765,6 +770,7 @@ export class ColonySim {
 
   // Al quitar la zona, lo guardado al aire libre se pierde.
   removeZone() {
+    this.remote?.('removeZone', []);
     this.zones = [];
     this.trimOutdoor();
     this.emit('zones');
@@ -797,6 +803,10 @@ export class ColonySim {
   advanceAge() {
     const status = nextAgeStatus(this);
     if (!status.ready) return false;
+    if (this.remote) {
+      this.remote('advanceAge', []);
+      return true;
+    }
     const time = this.timeLabel();
     for (const [k, n] of Object.entries(status.next.requires.cost)) this.takeStock(k, n);
     this.setAge(status.next.n);
@@ -920,6 +930,7 @@ export class ColonySim {
 
   // Marcar o desmarcar los recursos dentro de un rectángulo (coordenadas del campamento).
   markRect(rect, marked) {
+    this.remote?.('markRect', [rect, marked]);
     let changed = 0;
     for (const s of this.spots) {
       if (s.gone || !insideRect(rect, s.x, s.z)) continue;
@@ -934,6 +945,7 @@ export class ColonySim {
 
   // Marcar o desmarcar los recursos dentro de un círculo (coordenadas del campamento).
   markArea(x, z, radius, marked) {
+    this.remote?.('markArea', [x, z, radius, marked]);
     let changed = 0;
     for (const s of this.spots) {
       if (s.gone || Math.hypot(s.x - x, s.z - z) > radius) continue;
@@ -947,6 +959,7 @@ export class ColonySim {
   }
 
   clearMarks() {
+    this.remote?.('clearMarks', []);
     for (const s of this.spots) s.marked = false;
     this.marksChanged();
   }
@@ -1008,13 +1021,17 @@ export class ColonySim {
     if (!def || !this.camp) return { problem: 'No se puede construir eso' };
     const problem = this.buildProblem(def, x, z);
     if (problem) return { problem };
+    if (this.remote) {
+      this.remote('build', [typeId, x, z]);
+      return { pending: true };
+    }
     for (const [k, n] of Object.entries(def.cost)) this.takeStock(k, n);
     const b = this.createBuilding(def, x, z, Math.atan2(-x, -z), 0, 0);
     this.emit('changed');
     return { building: b };
   }
 
-  createBuilding(def, x, z, yaw, progress, produced, level = 1) {
+  createBuilding(def, x, z, yaw, progress, produced, level = 1, id = null) {
     const height = this.heightAt(x, z);
     const dir = this.toDirection(x, z, new THREE.Vector3());
     const ground = biomeAt(dir.x, dir.y, dir.z);
@@ -1032,8 +1049,10 @@ export class ColonySim {
     });
     this.heights.clear();
 
+    if (!Number.isInteger(id) || this.building(id)) id = this.nextBuildingId;
+    this.nextBuildingId = Math.max(this.nextBuildingId, id + 1);
     const b = {
-      id: this.nextBuildingId++,
+      id,
       def,
       x,
       z,
@@ -1108,6 +1127,10 @@ export class ColonySim {
   // se queda asignado y vuelve a trabajar cuando termina.
   upgrade(b) {
     if (this.upgradeProblem(b)) return false;
+    if (this.remote) {
+      this.remote('upgrade', [b.id]);
+      return true;
+    }
     const next = levelOf(b, 1);
     for (const [k, n] of Object.entries(next.upgradeCost)) this.takeStock(k, n);
     b.upgrading = true;
@@ -1131,7 +1154,8 @@ export class ColonySim {
 
   // La colonia elige al colono libre más capacitado.
   assignWorker(b) {
-    if (!b.done || b.worker || !b.def.skill) return;
+    // En la copia del navegador conectada al servidor, los trabajadores los elige el servidor.
+    if (this.remote || !b.done || b.worker || !b.def.skill) return;
     const free = this.ranking(b).filter((c) => !c.job);
     if (!free.length) {
       b.reason = 'No hay colonos libres. Puedes elegir a uno de la lista.';
@@ -1145,6 +1169,10 @@ export class ColonySim {
 
   // Asignar a mano (desde la ficha del edificio).
   setWorker(b, c, reason = 'Elegido por ti.') {
+    if (this.remote) {
+      this.remote('setWorker', [b.id, c.id]);
+      return;
+    }
     if (c.job && c.job !== b) {
       const old = c.job;
       old.worker = null;
@@ -1216,7 +1244,9 @@ export class ColonySim {
         foodBatches: this.foodBatches,
         spoiled: this.spoiled,
       },
+      weather: this.weather?.save?.() ?? null,
       buildings: this.buildings.map((b) => ({
+        id: b.id,
         type: b.def.id,
         x: b.x,
         z: b.z,
@@ -1239,7 +1269,7 @@ export class ColonySim {
       const def = BUILDINGS[s.type];
       if (!def) continue;
       const level = Math.min(def.levels.length, Math.max(1, s.level || 1));
-      const b = this.createBuilding(def, s.x, s.z, s.yaw, s.upgrading ? 1 : s.progress, s.produced || 0, level);
+      const b = this.createBuilding(def, s.x, s.z, s.yaw, s.upgrading ? 1 : s.progress, s.produced || 0, level, s.id);
       b.store = s.store || 0;
       if (s.upgrading && levelOf(b, 1)) {
         b.upgrading = true;
@@ -1256,8 +1286,226 @@ export class ColonySim {
       }
     }
     this.restoreColony(data.colony);
+    if (data.weather && this.weather?.load) this.weather.load(data.weather);
     this.emit('buildings');
     return true;
+  }
+
+  // ---- Red: órdenes y estado ---------------------------------------------------------------
+
+  // Aplica una orden que llegó de un jugador (en el servidor). Todo lo que viene de afuera
+  // se valida: nombres, números y rectángulos.
+  applyCommand(name, args = []) {
+    const num = (v, lim = 1e4) => (Number.isFinite(v) && Math.abs(v) <= lim ? v : null);
+    const rect = (r) => {
+      if (!r || typeof r !== 'object') return null;
+      const out = { cx: num(r.cx, 500), cz: num(r.cz, 500), hw: num(r.hw, 500), hd: num(r.hd, 500), angle: num(r.angle, 10) };
+      return Object.values(out).every((v) => v !== null) && out.hw > 0 && out.hd > 0 ? out : null;
+    };
+    switch (name) {
+      case 'build': {
+        const [type, x, z] = args;
+        if (typeof type !== 'string' || num(x, 500) === null || num(z, 500) === null) return false;
+        return !!this.build(type, x, z).building;
+      }
+      case 'upgrade': {
+        const b = this.building(args[0]);
+        return !!b && this.upgrade(b);
+      }
+      case 'setWorker': {
+        const b = this.building(args[0]);
+        const c = this.colonist(args[1]);
+        if (!b || !c || !b.def.skill || !b.done) return false;
+        this.setWorker(b, c);
+        return true;
+      }
+      case 'advanceAge':
+        return this.advanceAge();
+      case 'setZone': {
+        const r = rect(args[0]);
+        return !!r && this.setZone(r) === null;
+      }
+      case 'removeZone':
+        this.removeZone();
+        return true;
+      case 'markRect': {
+        const r = rect(args[0]);
+        return !!r && this.markRect(r, !!args[1]) >= 0;
+      }
+      case 'markArea': {
+        const [x, z, radius, marked] = args;
+        if (num(x, 1000) === null || num(z, 1000) === null || num(radius, 50) === null) return false;
+        return this.markArea(x, z, radius, !!marked) >= 0;
+      }
+      case 'clearMarks':
+        this.clearMarks();
+        return true;
+    }
+    return false;
+  }
+
+  // Estado para mandar por la red. "fast": sólo dónde está cada colono y qué hace con el
+  // cuerpo (varias veces por segundo); "full": todo lo que muestra la interfaz.
+  snapshot(part = 'full') {
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0);
+    if (part === 'fast') return { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]) };
+    const camp = this.camp;
+    return {
+      camp: camp && { dir: { x: camp.dir.x, y: camp.dir.y, z: camp.dir.z }, height: camp.height, yaw: camp.yaw, seed: camp.seed },
+      gameTime: this.gameTime,
+      age: this.age,
+      clothesLeft: this.clothesLeft,
+      stock: this.stock,
+      outdoor: this.outdoor,
+      zones: this.zones,
+      foodBatches: this.foodBatches.slice(0, 1),
+      spoiled: this.spoiled,
+      weather: this.weather?.save?.() ?? null,
+      colonists: this.colonists.map((c) => ({
+        id: c.id,
+        needs: c.needs,
+        health: r2(c.health),
+        log: c.log,
+        clothed: c.clothed,
+        activity: c.activity,
+        job: c.job?.id ?? null,
+        x: r2(c.x),
+        z: r2(c.z),
+        facing: r2(c.facing),
+        flags: flags(c),
+      })),
+      buildings: this.buildings.map((b) => ({
+        id: b.id,
+        type: b.def.id,
+        x: b.x,
+        z: b.z,
+        yaw: b.yaw,
+        progress: r2(b.progress),
+        done: b.done,
+        level: b.level,
+        upgrading: b.upgrading,
+        buildTime: b.buildTime ?? null,
+        store: r2(b.store),
+        produced: Math.floor(b.produced),
+        worker: b.worker?.id ?? null,
+        reason: b.reason,
+        status: b.status,
+      })),
+      marked: this.spots.filter((sp) => sp.marked && !sp.gone).map((sp) => [sp.key, sp.index]),
+      removed: this.serializeRemoved(),
+      sprouts: this.sprouts,
+    };
+  }
+
+  // Aplica en el navegador el estado que manda el servidor (esta copia no se simula: sólo
+  // refleja la del servidor). Avisa con eventos sólo lo que cambió.
+  applySnapshot(s, part = 'full') {
+    for (const row of s.colonists ?? []) {
+      const fast = Array.isArray(row);
+      const c = this.colonist(fast ? row[0] : row.id);
+      if (!c) continue;
+      const [x, z, facing, f] = fast ? row.slice(1) : [row.x, row.z, row.facing, row.flags];
+      c.x = x;
+      c.z = z;
+      c.facing = facing;
+      c.walking = !!(f & 1);
+      c.working = !!(f & 2);
+      c.sleeping = !!(f & 4);
+      if (c.clothed !== !!(f & 8)) {
+        c.clothed = !!(f & 8);
+        this.emit('clothes');
+      }
+      if (fast) continue;
+      Object.assign(c.needs, row.needs);
+      c.health = row.health;
+      c.log = row.log;
+      c.activity = row.activity;
+    }
+    if (part === 'fast') return;
+
+    this.gameTime = s.gameTime;
+    this.stock = { ...s.stock };
+    this.outdoor = { ...s.outdoor };
+    this.foodBatches = s.foodBatches ?? [];
+    this.spoiled = s.spoiled ?? 0;
+    if (s.weather) (this.weather ??= new WeatherState()).load(s.weather);
+    if (JSON.stringify(s.zones) !== JSON.stringify(this.zones)) {
+      this.zones = s.zones ?? [];
+      this.emit('zones');
+    }
+    if (s.age !== this.age) this.setAge(s.age);
+    if (s.clothesLeft !== this.clothesLeft) {
+      this.clothesLeft = s.clothesLeft;
+      this.emit('clothes');
+    }
+
+    // Edificios: se crean, actualizan o quitan según los del servidor (por id).
+    let changed = false;
+    const seen = new Set();
+    for (const row of s.buildings ?? []) {
+      const def = BUILDINGS[row.type];
+      if (!def) continue;
+      seen.add(row.id);
+      let b = this.building(row.id);
+      if (!b) {
+        b = this.createBuilding(def, row.x, row.z, row.yaw, row.done ? 1 : 0, row.produced, row.level, row.id);
+        changed = true;
+      }
+      if (b.done !== row.done || b.level !== row.level || b.upgrading !== row.upgrading) changed = true;
+      Object.assign(b, {
+        progress: row.progress,
+        done: row.done,
+        level: row.level,
+        upgrading: row.upgrading,
+        store: row.store,
+        produced: row.produced,
+        reason: row.reason,
+        status: row.status,
+      });
+      if (row.buildTime) b.buildTime = row.buildTime;
+      const worker = row.worker === null ? null : this.colonist(row.worker);
+      if (b.worker !== worker) {
+        b.worker = worker;
+        changed = true;
+      }
+    }
+    const gone = this.buildings.filter((b) => !seen.has(b.id));
+    if (gone.length) {
+      for (const b of gone) {
+        b.removed = true;
+        removeTerrainZone(b.zone);
+      }
+      this.buildings = this.buildings.filter((b) => seen.has(b.id));
+      this.heights.clear();
+      this.refreshObstacles();
+      changed = true;
+    }
+    for (const c of this.colonists) c.job = null;
+    for (const b of this.buildings) if (b.worker) b.worker.job = b;
+    if (changed) this.emit('buildings');
+
+    // Recursos: marcas, lo talado y lo que brotó.
+    const marked = new Set((s.marked ?? []).map(([key, index]) => `${key}:${index}`));
+    let marksChanged = false;
+    for (const sp of this.spots) {
+      const m = marked.has(`${sp.key}:${sp.index}`);
+      if (!!sp.marked !== m) {
+        sp.marked = m;
+        marksChanged = true;
+      }
+    }
+    if (marksChanged) this.emit('marks');
+    if ((s.sprouts?.length ?? 0) !== this.sprouts.length) {
+      this.sprouts = s.sprouts ?? [];
+      this.refreshSprouts();
+    }
+    const removedKey = JSON.stringify(s.removed ?? []);
+    if (removedKey !== JSON.stringify(this.serializeRemoved())) {
+      this.removed = new Map((s.removed ?? []).map(([key, idx]) => [key, new Set(idx)]));
+      for (const sp of this.spots) sp.gone = sp.kind !== 'food' && !!this.removed.get(sp.key)?.has(sp.index);
+      this.emit('resources');
+    }
   }
 
   restoreColony(data) {

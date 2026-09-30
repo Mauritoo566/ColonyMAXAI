@@ -106,7 +106,9 @@ function clothesPileMesh(count) {
 
 export class ColonyView {
   // campObject(): el modelo del campamento en la escena (camp.js), o null.
-  constructor({ scene, camera, canvas, labelsRoot, sim, campObject }) {
+  // selectable: si se puede elegir un colono (los de otros jugadores sólo se miran).
+  constructor({ scene, camera, canvas, labelsRoot, sim, campObject, selectable = true }) {
+    this.selectable = selectable;
     this.camera = camera;
     this.canvas = canvas;
     this.labelsRoot = labelsRoot;
@@ -157,9 +159,12 @@ export class ColonyView {
       label.innerHTML = `<span class="colonist-label-name"></span><span class="colonist-label-hp"><i></i></span>`;
       label.querySelector('.colonist-label-name').textContent = c.name;
       label.hidden = true;
-      label.addEventListener('click', () => this.select(c));
+      if (this.selectable) label.addEventListener('click', () => this.select(c));
+      else label.classList.add('colonist-label--other');
       this.labelsRoot.appendChild(label);
-      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, clothed: c.clothed });
+      // x, z, facing: dónde se dibuja; sigue con suavidad a la simulación (que por la red
+      // llega a saltos, varias veces por segundo).
+      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, clothed: c.clothed, x: c.x, z: c.z, facing: c.facing });
     }
     this.refreshClothes();
     this.refreshTotem();
@@ -218,6 +223,7 @@ export class ColonyView {
 
   // Colono bajo un punto de la pantalla (en píxeles del lienzo), o null.
   pickAt(clientX, clientY) {
+    if (!this.selectable) return null;
     const rect = this.canvas.getBoundingClientRect();
     const p = this.tmp.proj;
     let best = null;
@@ -245,7 +251,8 @@ export class ColonyView {
 
   // Dirección en el planeta donde está un colono (para centrar la cámara).
   directionOf(c, out = new THREE.Vector3()) {
-    return this.sim.directionOf(c, out);
+    const e = this.entries.get(c.id);
+    return e ? this.sim.toDirection(e.x, e.z, out) : this.sim.directionOf(c, out);
   }
 
   // Posición del modelo de un colono en la escena.
@@ -255,8 +262,9 @@ export class ColonyView {
 
   // ---- Cada fotograma --------------------------------------------------------
 
-  // animDelta: segundos para la animación (sigue la velocidad del tiempo, con tope).
-  update(animDelta) {
+  // animDelta: segundos para la animación (sigue la velocidad del tiempo, con tope);
+  // delta: segundos reales (para seguir a la simulación con suavidad).
+  update(animDelta, delta = animDelta) {
     const sim = this.sim;
     this.group.visible = !!sim.camp;
     if (!sim.camp) return;
@@ -266,7 +274,21 @@ export class ColonyView {
     for (const prop of [this.clothesPile, this.totem]) {
       if (prop && campObject && prop.parent !== campObject) campObject.add(prop);
     }
-    for (const e of this.entries.values()) this.place(e, animDelta);
+    const follow = 1 - Math.exp(-delta * 10);
+    for (const e of this.entries.values()) {
+      const { c } = e;
+      // Un salto grande (reconectar, volver a la pestaña) no se anima: se pone ahí.
+      if (Math.hypot(c.x - e.x, c.z - e.z) > 8) {
+        e.x = c.x;
+        e.z = c.z;
+        e.facing = c.facing;
+      } else {
+        e.x += (c.x - e.x) * follow;
+        e.z += (c.z - e.z) * follow;
+        e.facing += Math.atan2(Math.sin(c.facing - e.facing), Math.cos(c.facing - e.facing)) * follow;
+      }
+      this.place(e, animDelta);
+    }
     this.updateLabels();
   }
 
@@ -279,11 +301,11 @@ export class ColonyView {
     e.moving += (walking - e.moving) * Math.min(1, animDelta * 6);
     e.phase += animDelta * WALK_SPEED * 5.2 * e.moving;
 
-    const h = this.sim.heightAt(c.x, c.z);
-    this.sim.toDirection(c.x, c.z, world);
+    const h = this.sim.heightAt(e.x, e.z);
+    this.sim.toDirection(e.x, e.z, world);
     object.position.copy(world).multiplyScalar(RADIUS + h);
     // Orientación: la del campamento (su "arriba" es el del planeta allí) y el rumbo.
-    object.quaternion.copy(this.sim.camp.quaternion).multiply(yaw.setFromAxisAngle(Y_AXIS, c.facing));
+    object.quaternion.copy(this.sim.camp.quaternion).multiply(yaw.setFromAxisAngle(Y_AXIS, e.facing));
 
     const { body, armL, armR, legL, legR } = object.userData;
     const swing = Math.sin(e.phase) * 0.65 * e.moving;
@@ -301,6 +323,19 @@ export class ColonyView {
     }
     const breathe = Math.sin(performance.now() * 0.0018 + e.phase) * 0.01 * (1 - e.moving);
     body.position.y = Math.abs(Math.cos(e.phase)) * 0.05 * e.moving + breathe;
+  }
+
+  hideLabels() {
+    for (const e of this.entries.values()) e.label.hidden = true;
+  }
+
+  // Quita todo de la escena y de la página (colonia de otro jugador que ya no se ve).
+  dispose() {
+    for (const e of this.entries.values()) e.label.remove();
+    this.entries.clear();
+    this.group.removeFromParent();
+    this.clothesPile?.removeFromParent();
+    this.totem?.removeFromParent();
   }
 
   // Nombres sobre la cabeza cuando la cámara está cerca.

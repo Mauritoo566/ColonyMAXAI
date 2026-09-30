@@ -9,7 +9,6 @@ import {
 } from './elevation.js';
 import { biomeAt, BIOMES } from './biomes.js';
 import { Parts, mat, stick, v, triangle, seededRandom, vary } from './modelKit.js';
-import { storageKey } from './storage.js';
 import {
   FLAT_RADIUS,
   BLEND_RADIUS,
@@ -28,8 +27,8 @@ export { campLayout, campObstacles, seedFromDir } from './sim/campLayout.js';
 // Campamento inicial de la civilización: el jugador elige dónde fundarlo haciendo clic
 // en el terreno. Al fundarlo el terreno se nivela en un círculo y se pinta un claro de
 // tierra pisada.
-// Se funda una sola vez: después ya no se puede mover. Se guarda en el navegador (y, en
-// el mundo compartido, también en el servidor) para recuperarlo al volver.
+// Se funda una sola vez: después ya no se puede mover. Lo decide y lo guarda el servidor
+// (el clic pide fundarlo; el servidor contesta con el campamento o con el motivo).
 
 const MAX_PICK_CLEARANCE = 60_000; // hay que acercarse a menos de 60 km para elegir el sitio
 const MAX_SLOPE = 0.4; // desnivel máximo (por metro) alrededor del sitio, unos 22°
@@ -37,7 +36,6 @@ const CLICK_TOLERANCE = 6; // píxeles que se puede mover el puntero y seguir co
 const FLY_TO_CLEARANCE = 55; // altura a la que se acerca la cámara al fundar o ir al campamento
 const MIN_CAMP_DISTANCE = 2_000; // metros sobre la superficie entre dos campamentos distintos
 const MAX_GHOST_SCALE = 6; // la vista previa crece desde lejos, pero hasta este límite
-const SAVE_VERSION = 1;
 
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -477,23 +475,6 @@ export function orientOnSurface(object, dir, height, yaw) {
   if (yaw) object.quaternion.multiply(yawQuat.setFromAxisAngle(Y_AXIS, yaw));
 }
 
-// Lee cualquier versión del guardado y la convierte al formato interno.
-//   sin versión (primeras partidas): { x, y, z, yaw, height? }
-//   versión 1: { version: 1, position: { x, y, z }, yaw, height }
-function parseSave(data) {
-  if (!data || typeof data !== 'object') return null;
-  const p = data.version >= 1 ? data.position : data;
-  if (!p || ![p.x, p.y, p.z].every(Number.isFinite)) return null;
-  const dir = new THREE.Vector3(p.x, p.y, p.z);
-  if (dir.lengthSq() < 1e-12) return null;
-  return {
-    dir: dir.normalize(),
-    yaw: Number.isFinite(data.yaw) ? data.yaw : 0,
-    height: data.height,
-  };
-}
-
-
 // ---------------------------------------------------------------------------
 // Sistema: botones, modo de colocación, marcador y guardado
 // ---------------------------------------------------------------------------
@@ -569,7 +550,6 @@ export class CampSystem {
       if (this.candidate && !this.candidate.problem) this.found(this.candidate);
     });
 
-    this.load();
     this.refreshUi();
   }
 
@@ -583,21 +563,43 @@ export class CampSystem {
 
   stopPlacing() {
     this.placing = false;
+    this.waiting = false;
     this.candidate = null;
     this.ghost.visible = false;
     this.ui.tooltip.hidden = true;
     this.refreshUi();
   }
 
+  // Pedir al servidor fundar aquí (onFoundRequest lo manda). Mientras contesta no se
+  // puede elegir otro lugar.
   found({ dir }) {
-    if (this.camp) return;
-    const yaw = Math.random() * Math.PI * 2;
-    const at = dir.clone(); // "dir" es un objeto temporal que se reutiliza
-    this.setCamp(at, naturalSurfaceHeight(at), yaw);
-    this.save();
-    this.stopPlacing();
-    this.flyToCamp();
-    this.onFound?.(this.camp);
+    if (this.camp || this.waiting) return;
+    this.waiting = true;
+    this.ui.tooltip.hidden = true;
+    this.onFoundRequest?.(dir.clone()); // "dir" es un objeto temporal que se reutiliza
+  }
+
+  // El servidor no aceptó el lugar: se sigue eligiendo.
+  foundFailed(message) {
+    this.waiting = false;
+    this.lastPick.x = NaN;
+    this.onMessage?.(message);
+  }
+
+  // El campamento que manda el servidor ({ dir, height, yaw, seed }). La primera vez
+  // (recién fundado) la cámara vuela hasta él.
+  showCamp(camp) {
+    const dir = new THREE.Vector3(camp.dir.x, camp.dir.y, camp.dir.z).normalize();
+    const same = this.camp && this.camp.dir.distanceTo(dir) < 1e-9 && this.camp.yaw === camp.yaw;
+    if (same) return;
+    const wasPlacing = this.placing || this.waiting;
+    this.setCamp(dir, camp.height, camp.yaw);
+    this.waiting = false;
+    if (wasPlacing) {
+      this.stopPlacing();
+      this.flyToCamp();
+    }
+    this.refreshUi();
   }
 
   removeCamp() {
@@ -620,30 +622,6 @@ export class CampSystem {
     if (this.camp) this.controls.flyTo(this.camp.dir, FLY_TO_CLEARANCE);
   }
 
-  save() {
-    if (!this.camp) return;
-    const { dir, yaw, height } = this.camp;
-    const data = { version: SAVE_VERSION, position: { x: dir.x, y: dir.y, z: dir.z }, yaw, height };
-    try {
-      localStorage.setItem(storageKey('camp'), JSON.stringify(data));
-    } catch {
-      // Sin almacenamiento (ventana privada, etc.): el campamento dura sólo esta sesión.
-    }
-  }
-
-  load() {
-    let data = null;
-    try {
-      data = JSON.parse(localStorage.getItem(storageKey('camp')));
-    } catch {
-      data = null;
-    }
-    const camp = parseSave(data);
-    if (!camp) return;
-    const height = Number.isFinite(camp.height) ? camp.height : naturalSurfaceHeight(camp.dir);
-    this.setCamp(camp.dir, height, camp.yaw);
-  }
-
   refreshUi() {
     const { ui } = this;
     ui.foundButton.hidden = this.placing || !!this.camp;
@@ -658,7 +636,7 @@ export class CampSystem {
   }
 
   // Campamentos de los demás jugadores ({ dir }), que el sitio elegido debe respetar
-  // por distancia. Lo asigna main.js en el mundo compartido.
+  // por distancia (el servidor lo vuelve a comprobar). Lo asigna main.js.
   otherCamps() {
     return this.getOthers?.() ?? [];
   }

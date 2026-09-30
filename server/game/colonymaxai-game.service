@@ -1,0 +1,27 @@
+# Servidor del juego ColonyMAXAI: simula todas las colonias y atiende a los jugadores.
+# Instalar en /etc/systemd/system/ y cambiar User= por el usuario de despliegue.
+[Unit]
+Description=ColonyMAXAI: servidor del juego
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=CAMBIAR_USUARIO
+WorkingDirectory=/opt/colonymaxai/app
+EnvironmentFile=/etc/colonymaxai/game.env
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server/game/index.js
+Restart=always
+RestartSec=5
+# Al apagar guarda el mundo antes de salir (SIGTERM); se le dan hasta 20 s.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+# Base de datos y copias en /var/lib/colonymaxai (la única carpeta donde escribe).
+StateDirectory=colonymaxai
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

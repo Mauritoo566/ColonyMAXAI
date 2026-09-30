@@ -1,36 +1,42 @@
 # ColonyMAXAI
 
-Juego para navegador con un planeta Tierra de estilo *medium poly*, hecho con [Three.js](https://threejs.org/).
+Juego multijugador para navegador con un planeta Tierra de estilo *medium poly*, hecho con [Three.js](https://threejs.org/). Todos los jugadores comparten el mismo planeta: cada uno funda su campamento y ve en tiempo real los de los demás, con sus edificios y sus colonos.
 
 ## Cómo ejecutarlo
 
-No hace falta instalar nada: Three.js se carga desde un CDN. Solo hay que servir la carpeta con cualquier servidor estático, por ejemplo:
+El juego necesita su servidor (`server/game/`): simula todas las colonias, guarda las cuentas y las partidas y entrega la página. Hace falta Node 22 o más nuevo.
 
 ```bash
-python3 -m http.server 8000
-# o
-npx serve .
+npm install
+npm start
 ```
 
-Luego abre <http://localhost:8000>. (Abrir `index.html` directamente con doble clic no funciona porque los navegadores bloquean los módulos ES en `file://`.)
+Luego abre <http://localhost:3100>. La base de datos queda en `server/game/data/game.db` (se puede cambiar con `DB_PATH`). `npm test` prueba el servidor de punta a punta con dos jugadores de mentira.
+
+En el servidor de producción el juego corre como servicio de systemd detrás de un túnel de Cloudflare, y un bot de Telegram avisa la dirección: ver `server/game/INSTALAR.md` y `server/tunnel/INSTALAR.md`.
 
 ## Controles
 
 - Arrastrar: moverse sobre el planeta
 - Rueda del ratón o pellizcar: acercar / alejar (desde el espacio hasta unos metros del suelo)
 - Botón derecho, Shift + arrastrar o girar con dos dedos: rotar la vista (en horizontal) y levantar la mirada hacia el cielo (en vertical)
-- Botones Pausa / ×1 / ×10 / ×60: velocidad del paso del tiempo (a ×1 un día dura 6 minutos)
+- El tiempo es el mismo para todos los jugadores: un día de juego dura 6 minutos
 
 ## Cuentas y mundo compartido
 
-Al abrir el juego hay que **iniciar sesión o crear una cuenta** (`src/auth.js`).
+Al abrir el juego hay que **iniciar sesión o crear una cuenta** (`src/auth.js`). La cuenta vive en el servidor: nombre único y contraseña, que se guarda como huella scrypt (nunca en claro). El navegador guarda un token de sesión para entrar solo la próxima vez. Hay límite de intentos de inicio de sesión.
 
-- **Mundo compartido (página publicada en claude.ai):** el planeta es el servidor. La página usa la base de datos compartida del artifact (`src/world.js`): cada jugador tiene un documento `world/<id>` con su nombre, su campamento, su edad, su población y sus edificios. Todos se suscriben a la colección y ven aparecer en tiempo real los campamentos de los demás, con su nombre encima y sus edificios. El jugador es la cuenta de Claude con la que se abre la página; registrarse es elegir un nombre de jugador (único). El botón **Mundo** lista a los jugadores y permite volar a sus campamentos. No se puede fundar a menos de 2 km de otro campamento. Para escribir en el mundo hace falta acceso de Colaborador o Editor; con acceso de sólo lectura se mira pero no se juega.
-- **Sin servidor (GitHub, servidor local):** cuentas locales de este navegador con nombre y contraseña (guardada como huella PBKDF2, nunca en claro). Cada cuenta tiene su propia partida.
+El planeta es uno solo para todos. El servidor (`server/game/world.js`) simula **todas las colonias todo el tiempo**, estén o no conectados sus dueños, y a cada jugador le manda:
 
+- su colonia entera una vez por segundo, y dónde está cada colono cinco veces por segundo (el navegador los mueve con suavidad entre medio);
+- la lista de jugadores con sus campamentos, edades y edificios;
+- los colonos de las colonias ajenas que están cerca de lo que mira la cámara, en vivo.
 
+El navegador no simula: tiene una copia de la colonia que se pone al día con lo que llega (`src/sim/colony.js`, `applySnapshot`) y manda las órdenes del jugador (construir, mejorar, marcar, zona de acopio...) al servidor, que las valida y aplica. El botón **Mundo** lista a los jugadores (conectados o no) y permite volar a sus campamentos. No se puede fundar a menos de 2 km de otro campamento. Si se corta la conexión, abajo a la izquierda aparece **Reconectando…** y el juego vuelve a entrar solo.
 
-Con el botón **Fundar campamento** entras en modo colocación: al mover el ratón aparece una vista previa del campamento con un anillo verde (se puede) o rojo con el motivo (agua, hielo o nieve, pendiente de más de ~27°, o cámara a más de 60 km). Un clic lo funda y la cámara vuela hasta él. Después aparecen **Ir al campamento** y **Reubicar**, y una etiqueta marca dónde está cuando lo miras desde lejos. El campamento se guarda en el navegador (`localStorage`), así que sigue ahí al volver a abrir el juego. Al fundarlo, el terreno se nivela en un círculo de 30 m (con una pendiente suave de otros 32 m hasta el terreno natural), se pinta un claro de tierra pisada con borde irregular. Cerca del campamento el terreno usa triángulos más finos (hasta ~3 m). El claro y los adornos del campamento se adaptan al bioma (`src/biomes.js`): tierra en la pradera, grava en la montaña, arena en el desierto y la playa; matas de pasto sólo donde hay pasto. El código está en `src/camp.js`.
+**Cuando un jugador no está**, su colonia sigue viviendo en el servidor, pero nadie baja de la **salud crítica** (`CRITICAL_HEALTH` en `src/needs.js`): el dueño decide al volver. Al volver aparece el resumen **Mientras no estabas** (`src/sim/away.js`), con los cambios del almacén, las obras terminadas, la comida podrida y quién está mal. Si el servidor estuvo apagado, al encenderse las colonias se ponen al día (hasta dos días de juego).
+
+Con el botón **Fundar campamento** entras en modo colocación: al mover el ratón aparece una vista previa del campamento con un anillo verde (se puede) o rojo con el motivo (agua, hielo o nieve, pendiente de más de ~27°, o cámara a más de 60 km). Un clic lo funda y la cámara vuela hasta él. El servidor comprueba el lugar y lo funda (una sola vez: después no se puede mover). Luego aparece **Ir al campamento**, y una etiqueta marca dónde está cuando lo miras desde lejos. Al fundarlo, el terreno se nivela en un círculo de 30 m (con una pendiente suave de otros 32 m hasta el terreno natural), se pinta un claro de tierra pisada con borde irregular. Cerca del campamento el terreno usa triángulos más finos (hasta ~3 m). El claro y los adornos del campamento se adaptan al bioma (`src/biomes.js`): tierra en la pradera, grava en la montaña, arena en el desierto y la playa; matas de pasto sólo donde hay pasto. El código está en `src/camp.js`.
 
 ## Biomas
 
@@ -96,9 +102,7 @@ En la pestaña Almacenes se dibuja la **zona de acopio** al aire libre: un rect�
 
 ### Guardado
 
-Todo se guarda en el navegador (`localStorage`) cada pocos segundos y al cerrar la pestaña: edificios, trabajadores, almacén, las necesidades, salud, posición y registro de cada colono, los recursos talados o que están volviendo a crecer, los brotes de la lluvia, la hora, la fase de la Luna y el clima. Al volver se restaura todo en lugar de empezar de cero.
-
-El tiempo sigue corriendo aunque no estés (a velocidad ×1). Al volver, la colonia se pone al día en unos segundos con la misma IA, hasta un máximo de dos días de juego, y aparece un resumen **Mientras no estabas** (cambios del almacén, obras terminadas, comida podrida y quién está mal). Mientras no estás nadie empeora más allá de la **salud crítica** (`CRITICAL_HEALTH` en `src/needs.js`).
+Todo se guarda en el servidor (SQLite) cada 30 segundos y al apagarlo: edificios, trabajadores, almacén, las necesidades, salud, posición y registro de cada colono, los recursos talados o que están volviendo a crecer, los brotes de la lluvia y el clima de cada colonia. Hay copias de seguridad diarias (`server/game/backup.js`).
 
 ## Recursos naturales
 
@@ -135,7 +139,7 @@ Para que las nubes no tapen lo que estás mirando, las que quedan entre la cáma
 
 ## Clima
 
-El campamento tiene su propio clima (`src/weather.js`): despejado, nublado, lluvia o tormenta, que cambia cada pocas horas de juego. En lugares húmedos (selva, pantano) llueve a menudo y en el desierto casi nunca. Con lluvia:
+Cada campamento tiene su propio clima (`src/sim/weather.js`, simulado en el servidor): despejado, nublado, lluvia o tormenta, que cambia cada pocas horas de juego. En lugares húmedos (selva, pantano) llueve a menudo y en el desierto casi nunca. Con lluvia:
 
 - el **pozo rinde más** (hasta el doble con tormenta),
 - las bayas y setas recogidas **vuelven a crecer antes**,
@@ -160,23 +164,31 @@ El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: ca
 
 ## Estructura
 
-La simulación de la colonia está separada de lo que se dibuja: `src/sim/` no usa la página ni WebGL (sólo la matemática de Three.js), así que corre igual en el navegador y en Node, donde la va a ejecutar el servidor del juego. La vista escucha sus eventos y la dibuja. Para usarla desde Node: `npm install` (instala `three` 0.170.0, la misma versión que carga la página).
+La simulación de la colonia está separada de lo que se dibuja: `src/sim/` no usa la página ni WebGL (sólo la matemática de Three.js), así que corre igual en el navegador y en Node. El servidor la ejecuta de verdad; el navegador tiene una copia que refleja lo que manda el servidor y la vista escucha sus eventos y la dibuja.
 
 - `index.html` – página y *import map* de Three.js
-- `package.json` – dependencias para correr la simulación en Node
+- `package.json` – dependencias (`three`, `ws`) y los comandos `npm start` / `npm test`
+- `server/game/index.js` – servidor del juego: página, WebSocket y apagado ordenado
+- `server/game/world.js` – el mundo: simula todas las colonias, reloj común, envíos a cada jugador
+- `server/game/accounts.js` – cuentas, contraseñas y sesiones
+- `server/game/store.js` – base de datos SQLite
+- `server/game/admin.js`, `backup.js` – herramientas del administrador y copias de seguridad
+- `server/tunnel/` – túnel de Cloudflare y bot de Telegram que avisa la dirección
+- `src/net.js` – conexión con el servidor (se reconecta sola)
 - `src/sim/colony.js` – simulación de una colonia: colonos, IA, edificios, almacén, zona de acopio, recursos, edades y guardado
 - `src/sim/buildingTypes.js` – tipos de edificio y sus niveles (datos)
 - `src/sim/campLayout.js` – distribución del campamento, terreno que nivela y su semilla
-- `src/save.js` – guardado de la partida en el navegador
+- `src/sim/weather.js` – clima de cada colonia
+- `src/sim/away.js` – resumen «Mientras no estabas»
 - `src/main.js` – escena, luces, estrellas, cielo y bucle de animación
-- `src/auth.js` – pantalla de acceso: cuentas locales o jugador del mundo compartido
-- `src/storage.js` – claves de `localStorage` de cada cuenta
-- `src/world.js` – mundo compartido: publicar la colonia y ver los campamentos de los demás
+- `src/auth.js` – pantalla de acceso: iniciar sesión o crear una cuenta en el servidor
+- `src/storage.js` – claves de `localStorage` para preferencias de la interfaz
+- `src/world.js` – los demás jugadores: sus campamentos, edificios y colonos en vivo
 - `src/controls.js` – cámara tipo globo terráqueo con zoom hasta el suelo
 - `src/planet.js` – planeta: terreno, nubes y atmósfera
 - `src/clouds.js` – nubes (sistemas grandes y cúmulos cercanos)
 - `src/daynight.js` – ciclo de día y noche y órbita de la Luna
-- `src/weather.js` – clima del campamento y gotas de lluvia
+- `src/weather.js` – gotas de lluvia (el clima lo decide `src/sim/weather.js`)
 - `src/sky.js` – el Sol y la Luna que se ven en el cielo
 - `src/water.js` – efecto del agua
 - `src/colonists.js` – vista de los colonos: modelo, animación, nombres y selección

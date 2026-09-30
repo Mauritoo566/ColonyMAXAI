@@ -24,6 +24,8 @@ Si el repositorio cambió, las instrucciones oficiales están en <https://pkg.cl
 
 ## 3. Copiar los archivos (desde la PC Windows)
 
+> **Actualización:** ahora el código se baja de GitHub a `/opt/colonymaxai/app` (ver `server/game/INSTALAR.md`, pasos 1 y 3) y el servicio del túnel apunta a `/opt/colonymaxai/app/server/tunnel/`. Los pasos con `scp` de abajo quedan solo como referencia de la primera instalación.
+
 ```powershell
 ssh usuario@IP-DEL-SERVIDOR rm -rf /tmp/colonymaxai-server
 scp -r server usuario@IP-DEL-SERVIDOR:/tmp/colonymaxai-server

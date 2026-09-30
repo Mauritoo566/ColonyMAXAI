@@ -1,0 +1,10 @@
+# Una copia por día a las 4:10 (si la PC estaba apagada, se hace al encenderla).
+[Unit]
+Description=ColonyMAXAI: copia de seguridad diaria
+
+[Timer]
+OnCalendar=*-*-* 04:10:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

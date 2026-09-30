@@ -1,0 +1,14 @@
+# Copia de seguridad de la base del juego (la lanza colonymaxai-backup.timer).
+[Unit]
+Description=ColonyMAXAI: copia de seguridad de la base del juego
+
+[Service]
+Type=oneshot
+User=CAMBIAR_USUARIO
+WorkingDirectory=/opt/colonymaxai/app
+EnvironmentFile=/etc/colonymaxai/game.env
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server/game/backup.js
+StateDirectory=colonymaxai
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
