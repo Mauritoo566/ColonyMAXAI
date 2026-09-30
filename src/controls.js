@@ -36,6 +36,7 @@ export class PlanetControls {
     this.lowness = 0; // 0 = mirando desde el espacio, 1 = a ras de suelo
 
     this.flight = null; // vuelo animado en curso (flyTo)
+    this.viewClearance = null; // altura para la inclinación durante un vuelo
     this.pointers = new Map();
     this.pinch = null;
 
@@ -94,26 +95,66 @@ export class PlanetControls {
 
     const start = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - this.lat, this.lon);
     const end = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - endLat, endLon);
-    const startClearance = Math.max(MIN_CLEARANCE, this.altitude - this.groundHeight);
+    const rotation = new THREE.Quaternion().setFromUnitVectors(start, end);
     const distance = start.angleTo(end) * RADIUS;
-    const logStart = Math.log(startClearance);
-    const logEnd = Math.log(clearance);
-    // Altura máxima del vuelo: para ir lejos hay que subir para ver el camino.
-    // Sólo se sube si esa altura supera la de partida y la de llegada; si no, el vuelo
-    // baja (o sube) directamente sin pasarse.
-    const peak = distance * 0.45;
-    const bump = peak > Math.max(startClearance, clearance) ? Math.log(peak) - Math.max(logStart, logEnd) : 0;
+
+    // La trayectoria se calcula en altura absoluta (sobre el nivel del mar) para que la
+    // cámara no copie los altibajos del terreno. Se mide el terreno a lo largo de la
+    // ruta para que el vuelo pase siempre por encima de las montañas del camino.
+    const groundStart = Math.max(0, this.groundHeight);
+    const groundEnd = Math.max(0, surfaceHeight(end));
+    const altStart = Math.max(this.altitude, groundStart + MIN_CLEARANCE);
+    const altEnd = groundEnd + clearance;
+    const samples = 48;
+    const dir = new THREE.Vector3();
+    const partial = new THREE.Quaternion();
+    const grounds = [];
+    let base = Math.min(groundStart, groundEnd);
+    for (let i = 0; i <= samples; i++) {
+      partial.identity().slerp(rotation, i / samples);
+      dir.copy(start).applyQuaternion(partial);
+      const g = Math.max(0, surfaceHeight(dir, 12));
+      grounds.push(g);
+      base = Math.min(base, g);
+    }
+    base -= 50; // la escala logarítmica mide la altura sobre este nivel
+    const L = (altitude) => Math.log(Math.max(1, altitude - base));
+    const logStart = L(altStart);
+    const logEnd = L(altEnd);
+    const line = (e) => logStart + (logEnd - logStart) * e;
+
+    // "Joroba" del vuelo: lo que haga falta para librar el terreno (con margen) y, si el
+    // destino está lejos, para subir y ver el camino.
+    // Sólo se mira la parte central del vuelo: cerca de los extremos la joroba es casi
+    // nula y el mínimo de seguridad de updateFlight() evita atravesar el suelo.
+    let bump = 0;
+    let maxGround = 0;
+    for (let i = 1; i < samples; i++) {
+      const e = i / samples;
+      maxGround = Math.max(maxGround, grounds[i]);
+      if (e < 0.15 || e > 0.85) continue;
+      const margin = 150 + 0.02 * Math.min(i, samples - i) * (distance / samples);
+      bump = Math.max(bump, (L(grounds[i] + margin) - line(e)) / Math.sin(Math.PI * e));
+    }
+    const cruise = (groundStart + groundEnd) / 2 + distance * 0.45;
+    if (cruise > Math.max(altStart, altEnd)) bump = Math.max(bump, L(cruise) - Math.max(logStart, logEnd));
+    // Tope: nunca más alto que lo necesario para ver el camino o librar el terreno.
+    const ceiling = Math.max(altStart, altEnd, cruise, maxGround + 2_000);
+    bump = Math.min(bump, Math.max(0, L(ceiling) - Math.max(logStart, logEnd)) + 0.2);
+
     const duration = THREE.MathUtils.clamp(
-      1.2 + 1.1 * Math.log(1 + distance / 2_000) + 0.35 * Math.abs(logStart - logEnd),
+      1.2 + 1.1 * Math.log(1 + distance / 2_000) + 0.35 * Math.abs(Math.log(altStart - groundStart + 1) - Math.log(clearance)),
       FLIGHT_MIN_SECONDS,
       FLIGHT_MAX_SECONDS,
     );
     this.flight = {
       start,
-      rotation: new THREE.Quaternion().setFromUnitVectors(start, end),
-      logStart,
-      logEnd,
+      rotation,
+      base,
+      line,
       bump,
+      groundStart,
+      groundEnd,
       duration,
       time: 0,
       dir: new THREE.Vector3(),
@@ -125,6 +166,7 @@ export class PlanetControls {
   cancelFlight() {
     if (!this.flight) return;
     this.flight = null;
+    this.viewClearance = null;
     this.target.lat = this.lat;
     this.target.lon = this.lon;
     this.target.altitude = this.altitude;
@@ -134,20 +176,27 @@ export class PlanetControls {
     const f = this.flight;
     f.time += delta;
     const t = Math.min(1, f.time / f.duration);
-    const e = 0.5 - 0.5 * Math.cos(Math.PI * t); // acelera y frena suavemente
+    const e = t * t * t * (t * (t * 6 - 15) + 10); // arranca y frena muy suave
     // Recorrido por la superficie siguiendo la curvatura del planeta.
     f.partial.identity().slerp(f.rotation, e);
     f.dir.copy(f.start).applyQuaternion(f.partial);
     this.lat = Math.asin(THREE.MathUtils.clamp(f.dir.y, -1, 1));
     this.lon = Math.atan2(f.dir.x, f.dir.z);
     this.groundHeight = surfaceHeight(f.dir);
-    // Altura en escala logarítmica, con una "joroba" en el medio del viaje.
-    const clearance = Math.exp(f.logStart + (f.logEnd - f.logStart) * e + f.bump * Math.sin(Math.PI * e));
-    this.altitude = this.groundHeight + Math.max(MIN_CLEARANCE, clearance);
+    const altitude = f.base + Math.exp(f.line(e) + f.bump * Math.sin(Math.PI * e));
+    // Por seguridad nunca por debajo del suelo (la ruta ya lo evita casi siempre).
+    this.altitude = Math.max(altitude, this.groundHeight + MIN_CLEARANCE);
+    // La inclinación usa un suelo "de referencia" que pasa suavemente del de salida al
+    // de llegada, para que la cámara no cabecee con cada colina.
+    const reference = f.groundStart + (f.groundEnd - f.groundStart) * e;
+    this.viewClearance = Math.max(MIN_CLEARANCE, this.altitude - reference);
     this.target.lat = this.lat;
     this.target.lon = this.lon;
     this.target.altitude = this.altitude;
-    if (t >= 1) this.flight = null;
+    if (t >= 1) {
+      this.flight = null;
+      this.viewClearance = null;
+    }
   }
 
   onPointerDown(e) {
@@ -233,7 +282,7 @@ export class PlanetControls {
     forward.copy(north).multiplyScalar(Math.cos(this.heading)).addScaledVector(east, Math.sin(this.heading));
 
     // Inclinación: mirando hacia abajo desde el espacio, casi al horizonte cerca del suelo.
-    const clearance = Math.max(1, this.altitude - this.groundHeight);
+    const clearance = this.viewClearance ?? Math.max(1, this.altitude - this.groundHeight);
     this.lowness = lowness(clearance);
     const tilt = tiltFor(clearance);
 
