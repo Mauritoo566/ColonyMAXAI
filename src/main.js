@@ -9,10 +9,12 @@ import { CampSystem } from './camp.js';
 import { biomeAt } from './biomes.js';
 import { ResourceSystem } from './resources.js';
 import { createSky } from './sky.js';
+import { ColonySystem } from './colonists.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
 const timeLabel = document.getElementById('time');
+const colonistsLabel = document.getElementById('colonists');
 const biomeLabel = document.getElementById('biome');
 const speedButtons = document.querySelectorAll('[data-speed]');
 
@@ -70,6 +72,7 @@ const planet = createPlanet();
 scene.add(planet.object);
 
 const resources = new ResourceSystem(scene);
+const colony = new ColonySystem({ scene, camera, canvas, labelsRoot: document.getElementById('labels') });
 const resourceFocus = new THREE.Vector3();
 
 const camps = new CampSystem({
@@ -263,6 +266,7 @@ renderer.setAnimationLoop(() => {
   else resourceFocus.copy(controls.dir);
   resources.update(camera, resourceFocus, clearance, delta);
   camps.update(delta);
+  colony.update(delta, camps.camp, { timeScale: dayNight.speed });
   updateSky(altitude);
 
   labelTimer -= delta;
@@ -270,6 +274,10 @@ renderer.setAnimationLoop(() => {
     labelTimer = 0.1;
     if (altitudeLabel) altitudeLabel.textContent = formatAltitude(clearance);
     if (timeLabel) timeLabel.textContent = formatHour(dayNight.localHour(controls.lon));
+    if (colonistsLabel) {
+      colonistsLabel.parentElement.hidden = colony.count === 0;
+      colonistsLabel.textContent = String(colony.count);
+    }
     if (biomeLabel) {
       centerDir.copy(hit).normalize();
       biomeLabel.textContent = centerHit ? biomeAt(centerDir.x, centerDir.y, centerDir.z).name : '–';

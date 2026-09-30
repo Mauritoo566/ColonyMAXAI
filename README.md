@@ -45,6 +45,12 @@ Cada punto de tierra tiene una **temperatura** (baja con la latitud y con la alt
 | Sabana | cálido y semiseco |
 | Selva tropical | cálido y muy húmedo |
 
+## Colonos
+
+Al fundar el campamento aparecen 5 colonos (`src/colonists.js`), siempre los mismos para ese lugar: nombre, color de piel, pelo, ropa y altura al azar. Por ahora pasean por el campamento y sus alrededores: esquivan tiendas, fogata, bancos y a los demás, no entran al agua ni a pendientes fuertes, y caminan con brazos y piernas animados. Siguen la velocidad del tiempo (en pausa se quedan quietos). Su nombre se ve sobre la cabeza cuando la cámara está cerca, y el HUD muestra cuántos hay.
+
+Próximos pasos: necesidades (hambre, sed, sueño, calor, ánimo) con una barra general en el HUD, y una IA que elija qué hacer según esas necesidades (por ejemplo, con frío buscar una fuente de calor).
+
 ## Recursos naturales
 
 Aparecen solos por todo el planeta (`src/resources.js`), al azar pero siempre en el mismo lugar: el mundo se divide en baldosas de 320 m y cada una genera sus recursos con su propia semilla según el bioma. Los árboles se agrupan en bosques y los minerales sólo aparecen en vetas. Se generan en Web Workers (`src/resourceWorker.js` + `src/resourceGen.js`) y se dibujan cerca de la cámara (por debajo de 6 km de altura) con dos InstancedMesh por tipo: el modelo completo hasta 380 m y una versión simple más lejos. Más allá de 900 m se dibuja sólo una parte (la bruma lo disimula). No aparecen a menos de 90 m del campamento. Las cantidades por bioma están en `src/resourceTypes.js`.
@@ -102,6 +108,7 @@ El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: ca
 - `src/daynight.js` – ciclo de día y noche y órbita de la Luna
 - `src/sky.js` – el Sol y la Luna que se ven en el cielo
 - `src/water.js` – efecto del agua
+- `src/colonists.js` – colonos: modelo, movimiento y nombres
 - `src/camp.js` – campamento inicial: modelo, colocación y guardado
 - `src/resources.js` – recursos naturales: tipos, modelos y generación por baldosas
 - `src/modelKit.js` – herramientas para modelar objetos low poly

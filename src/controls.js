@@ -81,8 +81,22 @@ export class PlanetControls {
     this.cancelFlight();
     const ground = this.groundHeight + MIN_CLEARANCE;
     // Se escala la altura sobre el suelo, no sobre el nivel del mar.
+    const oldAltitude = this.target.altitude;
     const above = Math.max(1, this.target.altitude - ground) * factor;
     this.target.altitude = THREE.MathUtils.clamp(ground + above, ground, MAX_ALTITUDE);
+
+    // Cerca del suelo la cámara va inclinada: al cambiar la altura también cambia la
+    // inclinación y el punto del centro de la pantalla se desplazaría. Se mueve la
+    // cámara hacia delante o hacia atrás para que el zoom vaya hacia lo que se mira.
+    const oldC = Math.max(1, oldAltitude - this.groundHeight);
+    const newC = Math.max(1, this.target.altitude - this.groundHeight);
+    if (oldC < 200_000 && newC < 200_000 && this.target.lookUp < 0.05) {
+      const ahead = (c) => c * Math.tan(tiltFor(c));
+      const shift = ahead(oldC) - ahead(newC);
+      const h = this.target.heading;
+      this.target.lat = THREE.MathUtils.clamp(this.target.lat + (shift * Math.cos(h)) / RADIUS, -MAX_LAT, MAX_LAT);
+      this.target.lon += (shift * Math.sin(h)) / RADIUS / Math.max(0.05, Math.cos(this.target.lat));
+    }
   }
 
   // Vuela hasta mirar un punto de la superficie desde "clearance" metros de altura.
