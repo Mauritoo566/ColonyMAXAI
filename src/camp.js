@@ -20,6 +20,9 @@ const MAX_PICK_CLEARANCE = 60_000; // hay que acercarse a menos de 60 km para el
 const MAX_SLOPE = 0.4; // desnivel máximo (por metro) alrededor del sitio, unos 22°
 const CLICK_TOLERANCE = 6; // píxeles que se puede mover el puntero y seguir contando como clic
 const FLY_TO_CLEARANCE = 55; // altura a la que se acerca la cámara al fundar o ir al campamento
+const MIN_CAMP_DISTANCE = 2_000; // metros sobre la superficie entre dos campamentos distintos
+const MAX_GHOST_SCALE = 6; // la vista previa crece desde lejos, pero hasta este límite
+const SAVE_VERSION = 1;
 
 // Terreno que se modifica alrededor del campamento (metros).
 const FLAT_RADIUS = 30; // círculo nivelado
@@ -468,11 +471,11 @@ function addRock(parts, p, s, rand) {
   );
 }
 
-function tangentBasis(dir) {
-  const east = new THREE.Vector3().crossVectors(Y_AXIS, dir);
+function tangentBasis(dir, east = new THREE.Vector3(), north = new THREE.Vector3()) {
+  east.crossVectors(Y_AXIS, dir);
   if (east.lengthSq() < 1e-10) east.set(1, 0, 0);
   east.normalize();
-  const north = new THREE.Vector3().crossVectors(dir, east);
+  north.crossVectors(dir, east);
   return { east, north };
 }
 
@@ -557,9 +560,9 @@ const pickHit = new THREE.Vector3();
 
 // Punto de la superficie bajo un rayo. Se intersecta con una esfera y se ajusta su
 // radio a la altura del terreno unas cuantas veces (converge muy rápido).
-export function pickSurface(ray, startHeight = 0) {
+export function pickSurface(ray, startHeight = 0, out = { dir: new THREE.Vector3(), height: 0, point: new THREE.Vector3() }) {
   let radius = RADIUS + Math.max(0, startHeight);
-  const dir = new THREE.Vector3();
+  const dir = out.dir;
   let height = 0;
   for (let i = 0; i < 6; i++) {
     pickSphere.radius = radius;
@@ -568,41 +571,98 @@ export function pickSurface(ray, startHeight = 0) {
     height = Math.max(0, surfaceHeight(dir));
     radius = RADIUS + height;
   }
-  return { dir, height, point: dir.clone().multiplyScalar(radius) };
+  out.height = height;
+  out.point.copy(dir).multiplyScalar(radius);
+  return out;
 }
 
-// Devuelve null si se puede fundar en esa dirección, o el motivo si no.
-export function campProblem(dir) {
-  const e = elevation(dir.x, dir.y, dir.z);
+// Validaciones del sitio. Cada una devuelve null si está bien, o el motivo si no.
+// Para agregar una regla nueva basta con escribir otra función y sumarla a campProblem().
+
+const siteTmp = { east: new THREE.Vector3(), north: new THREE.Vector3(), p: new THREE.Vector3() };
+
+// Punto a "dist" metros de "dir" en la dirección "angle" (sobre la superficie).
+function pointAround(dir, angle, dist, out) {
+  return out
+    .copy(dir)
+    .addScaledVector(siteTmp.east, (Math.cos(angle) * dist) / RADIUS)
+    .addScaledVector(siteTmp.north, (Math.sin(angle) * dist) / RADIUS)
+    .normalize();
+}
+
+export function checkWater(dir, e) {
   if (e <= 0) return 'No se puede fundar en el agua';
-  if (Math.abs(dir.y) > 0.9 || e > 0.62) return 'Hace demasiado frío (hielo o nieve)';
-
-  const { east, north } = tangentBasis(dir);
-  const around = (angle, dist) =>
-    dir
-      .clone()
-      .addScaledVector(east, (Math.cos(angle) * dist) / RADIUS)
-      .addScaledVector(north, (Math.sin(angle) * dist) / RADIUS)
-      .normalize();
-
   // Todo el círculo que se va a nivelar tiene que ser tierra firme.
   for (let i = 0; i < 12; i++) {
-    const p = around((i / 12) * Math.PI * 2, FLAT_RADIUS + BLEND_RADIUS);
+    const p = pointAround(dir, (i / 12) * Math.PI * 2, FLAT_RADIUS + BLEND_RADIUS, siteTmp.p);
     if (elevation(p.x, p.y, p.z) <= 0.002) return 'Demasiado cerca del agua';
   }
-  // Pendiente: desnivel respecto al centro a 30 m en 8 direcciones.
+  return null;
+}
+
+export function checkClimate(dir, e) {
+  if (Math.abs(dir.y) > 0.9) return 'Zona polar: hace demasiado frío';
+  if (e > 0.62) return 'Demasiada altitud: nieve perpetua';
+  return null;
+}
+
+export function checkSlope(dir) {
+  // Desnivel respecto al centro a FLAT_RADIUS metros, en 8 direcciones.
   const h0 = naturalSurfaceHeight(dir);
   for (let i = 0; i < 8; i++) {
-    const h = naturalSurfaceHeight(around((i / 8) * Math.PI * 2, FLAT_RADIUS));
+    const h = naturalSurfaceHeight(pointAround(dir, (i / 8) * Math.PI * 2, FLAT_RADIUS, siteTmp.p));
     if (Math.abs(h - h0) / FLAT_RADIUS > MAX_SLOPE) return 'El terreno es demasiado empinado';
   }
   return null;
 }
 
+// Distancia sobre la superficie (por el ángulo entre direcciones, no en línea recta).
+export function surfaceDistance(dirA, dirB) {
+  return dirA.angleTo(dirB) * RADIUS;
+}
+
+export function checkDistance(dir, otherCamps) {
+  for (const other of otherCamps) {
+    if (surfaceDistance(dir, other.dir) < MIN_CAMP_DISTANCE) return 'Demasiado cerca de otro campamento';
+  }
+  return null;
+}
+
+// Coordina las validaciones. "otherCamps" son los campamentos que deben quedar a
+// distancia (no incluye el que se está reubicando).
+export function campProblem(dir, otherCamps = []) {
+  const e = elevation(dir.x, dir.y, dir.z);
+  tangentBasis(dir, siteTmp.east, siteTmp.north); // base para pointAround()
+  return (
+    checkWater(dir, e) ||
+    checkClimate(dir, e) ||
+    checkSlope(dir) ||
+    checkDistance(dir, otherCamps)
+  );
+}
+
+const yawQuat = new THREE.Quaternion();
+
 function orientOnSurface(object, dir, height, yaw) {
   object.position.copy(dir).multiplyScalar(RADIUS + height);
   object.quaternion.setFromUnitVectors(Y_AXIS, dir);
-  object.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(Y_AXIS, yaw));
+  if (yaw) object.quaternion.multiply(yawQuat.setFromAxisAngle(Y_AXIS, yaw));
+}
+
+// Lee cualquier versión del guardado y la convierte al formato interno.
+//   sin versión (primeras partidas): { x, y, z, yaw, height? }
+//   versión 1: { version: 1, position: { x, y, z }, yaw, height }
+function parseSave(data) {
+  if (!data || typeof data !== 'object') return null;
+  const p = data.version >= 1 ? data.position : data;
+  if (!p || ![p.x, p.y, p.z].every(Number.isFinite)) return null;
+  const dir = new THREE.Vector3(p.x, p.y, p.z);
+  if (dir.lengthSq() < 1e-12) return null;
+  return {
+    dir: dir.normalize(),
+    yaw: Number.isFinite(data.yaw) ? data.yaw : 0,
+    height: data.height,
+  };
 }
 
 function seedFromDir(dir) {
@@ -637,6 +697,8 @@ export class CampSystem {
       new THREE.RingGeometry(FLAT_RADIUS - 2.5, FLAT_RADIUS, 48),
       new THREE.MeshBasicMaterial({ color: '#5fe08a', transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }),
     );
+    // El anillo es hijo de la vista previa, que ya se orienta con la normal del planeta
+    // (orientOnSurface): aquí sólo se acuesta sobre el plano local del campamento.
     this.ring.rotation.x = -Math.PI / 2;
     this.ring.position.y = 0.8;
     this.ghost.add(this.ring);
@@ -645,6 +707,10 @@ export class CampSystem {
     this.raycaster = new THREE.Raycaster();
     this.ndc = new THREE.Vector2();
     this.markerPos = new THREE.Vector3();
+    this.cameraDir = new THREE.Vector3();
+    this.hit = { dir: new THREE.Vector3(), height: 0, point: new THREE.Vector3() };
+    // Para no repetir raycast y validaciones si ni el ratón ni la cámara se movieron.
+    this.lastPick = { x: NaN, y: NaN, position: new THREE.Vector3(), quaternion: new THREE.Quaternion() };
 
     ui.foundButton.addEventListener('click', () => this.startPlacing());
     ui.relocateButton.addEventListener('click', () => this.startPlacing());
@@ -655,7 +721,12 @@ export class CampSystem {
     });
 
     canvas.addEventListener('pointermove', (e) => {
-      this.pointer = { x: e.clientX, y: e.clientY };
+      if (this.pointer) {
+        this.pointer.x = e.clientX;
+        this.pointer.y = e.clientY;
+      } else {
+        this.pointer = { x: e.clientX, y: e.clientY };
+      }
     });
     canvas.addEventListener('pointerleave', () => {
       this.pointer = null;
@@ -669,7 +740,9 @@ export class CampSystem {
       if (!this.placing || !p || e.button !== 0) return;
       // Sólo cuenta como clic si el puntero casi no se movió (si no, era arrastrar el mapa).
       if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > CLICK_TOLERANCE) return;
-      this.pointer = { x: e.clientX, y: e.clientY };
+      if (!this.pointer) this.pointer = { x: 0, y: 0 };
+      this.pointer.x = e.clientX;
+      this.pointer.y = e.clientY;
       this.updateCandidate();
       if (this.candidate && !this.candidate.problem) this.found(this.candidate);
     });
@@ -681,6 +754,7 @@ export class CampSystem {
   startPlacing() {
     this.placing = true;
     this.candidate = null;
+    this.lastPick.x = NaN; // forzar un cálculo nuevo
     this.refreshUi();
   }
 
@@ -694,7 +768,8 @@ export class CampSystem {
 
   found({ dir }) {
     const yaw = Math.random() * Math.PI * 2;
-    this.setCamp(dir, naturalSurfaceHeight(dir), yaw);
+    const at = dir.clone(); // "dir" es un objeto temporal que se reutiliza
+    this.setCamp(at, naturalSurfaceHeight(at), yaw);
     this.save();
     this.stopPlacing();
     this.flyToCamp();
@@ -738,8 +813,9 @@ export class CampSystem {
   save() {
     if (!this.camp) return;
     const { dir, yaw, height } = this.camp;
+    const data = { version: SAVE_VERSION, position: { x: dir.x, y: dir.y, z: dir.z }, yaw, height };
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ x: dir.x, y: dir.y, z: dir.z, yaw, height }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch {
       // Sin almacenamiento (ventana privada, etc.): el campamento dura sólo esta sesión.
     }
@@ -752,10 +828,10 @@ export class CampSystem {
     } catch {
       data = null;
     }
-    if (!data || !Number.isFinite(data.x)) return;
-    const dir = new THREE.Vector3(data.x, data.y, data.z).normalize();
-    const height = Number.isFinite(data.height) ? data.height : naturalSurfaceHeight(dir);
-    this.setCamp(dir, height, data.yaw || 0);
+    const camp = parseSave(data);
+    if (!camp) return;
+    const height = Number.isFinite(camp.height) ? camp.height : naturalSurfaceHeight(camp.dir);
+    this.setCamp(camp.dir, height, camp.yaw);
   }
 
   refreshUi() {
@@ -772,20 +848,45 @@ export class CampSystem {
     return this.camera.position.length() - RADIUS - Math.max(0, this.controls.groundHeight);
   }
 
+  // Campamentos que el sitio elegido debe respetar por distancia. Hoy sólo hay uno y
+  // "Reubicar" lo reemplaza, así que no cuenta; con varios campamentos se listarían aquí.
+  otherCamps() {
+    return [];
+  }
+
   updateCandidate() {
+    if (!this.pointer) {
+      this.candidate = null;
+      return;
+    }
+    // Si ni el ratón ni la cámara se movieron, el resultado anterior sigue valiendo.
+    const last = this.lastPick;
+    const cam = this.camera;
+    if (
+      last.x === this.pointer.x &&
+      last.y === this.pointer.y &&
+      last.position.equals(cam.position) &&
+      last.quaternion.equals(cam.quaternion)
+    ) {
+      return;
+    }
+    last.x = this.pointer.x;
+    last.y = this.pointer.y;
+    last.position.copy(cam.position);
+    last.quaternion.copy(cam.quaternion);
+
     this.candidate = null;
-    if (!this.pointer) return;
     const rect = this.canvas.getBoundingClientRect();
     this.ndc.set(
       ((this.pointer.x - rect.left) / rect.width) * 2 - 1,
       -((this.pointer.y - rect.top) / rect.height) * 2 + 1,
     );
-    this.raycaster.setFromCamera(this.ndc, this.camera);
-    const hit = pickSurface(this.raycaster.ray, this.controls.groundHeight);
+    this.raycaster.setFromCamera(this.ndc, cam);
+    const hit = pickSurface(this.raycaster.ray, this.controls.groundHeight, this.hit);
     if (!hit) return;
-    let problem = campProblem(hit.dir);
-    if (this.clearance() > MAX_PICK_CLEARANCE) problem = 'Acércate más para elegir el lugar';
-    this.candidate = { ...hit, problem };
+    const problem =
+      this.clearance() > MAX_PICK_CLEARANCE ? 'Acércate más para elegir el lugar' : campProblem(hit.dir, this.otherCamps());
+    this.candidate = { dir: hit.dir, height: hit.height, point: hit.point, problem };
   }
 
   update(delta) {
@@ -799,7 +900,7 @@ export class CampSystem {
         orientOnSurface(this.ghost, c.dir, c.height, 0);
         // Desde lejos el campamento es diminuto: la vista previa crece para verse.
         const distance = this.camera.position.distanceTo(c.point);
-        this.ghost.scale.setScalar(Math.max(1, distance / 900));
+        this.ghost.scale.setScalar(THREE.MathUtils.clamp(distance / 900, 1, MAX_GHOST_SCALE));
         this.ring.material.color.set(c.problem ? '#ff5a4f' : '#5fe08a');
       }
       const { tooltip } = this.ui;
@@ -854,14 +955,16 @@ export class CampSystem {
       return;
     }
     const cam = this.camera.position;
-    const pos = this.markerPos.copy(this.camp.dir).multiplyScalar(RADIUS + this.camp.height + 12);
-    const distance = cam.distanceTo(pos);
-    // Oculto si está detrás del planeta o si ya estamos lo bastante cerca para verlo.
     const camR = cam.length();
-    const horizon = Math.sqrt(Math.max(0, camR * camR - RADIUS * RADIUS));
-    const hidden = distance > horizon + 20_000 || distance < 2_500;
+    const markerR = RADIUS + this.camp.height + 12;
+    // Detrás del planeta: el ángulo entre la cámara y el campamento (visto desde el
+    // centro) supera lo que alcanza a ver la cámara más lo que asoma el marcador.
+    const horizonAngle = Math.acos(Math.min(1, RADIUS / camR)) + Math.acos(Math.min(1, RADIUS / markerR));
+    const behind = this.cameraDir.copy(cam).divideScalar(camR).angleTo(this.camp.dir) > horizonAngle;
+    const pos = this.markerPos.copy(this.camp.dir).multiplyScalar(markerR);
+    const tooClose = cam.distanceTo(pos) < 2_500;
     pos.project(this.camera);
-    if (hidden || pos.z > 1 || Math.abs(pos.x) > 1.1 || Math.abs(pos.y) > 1.1) {
+    if (behind || tooClose || pos.z > 1 || Math.abs(pos.x) > 1.1 || Math.abs(pos.y) > 1.1) {
       marker.hidden = true;
       return;
     }
