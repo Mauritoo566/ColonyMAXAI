@@ -47,7 +47,7 @@ Cada punto de tierra tiene una **temperatura** (baja con la latitud y con la alt
 
 ## Recursos naturales
 
-Aparecen solos por todo el planeta (`src/resources.js`), al azar pero siempre en el mismo lugar: el mundo se divide en baldosas de 320 m y cada una genera sus recursos con su propia semilla según el bioma. Los árboles se agrupan en bosques y los minerales sólo aparecen en vetas. Se dibujan cerca de la cámara (por debajo de 6 km de altura), con un InstancedMesh por tipo, y no aparecen a menos de 90 m del campamento.
+Aparecen solos por todo el planeta (`src/resources.js`), al azar pero siempre en el mismo lugar: el mundo se divide en baldosas de 320 m y cada una genera sus recursos con su propia semilla según el bioma. Los árboles se agrupan en bosques y los minerales sólo aparecen en vetas. Se generan en Web Workers (`src/resourceWorker.js` + `src/resourceGen.js`) y se dibujan cerca de la cámara (por debajo de 6 km de altura) con dos InstancedMesh por tipo: el modelo completo hasta 380 m y una versión simple más lejos. Más allá de 900 m se dibuja sólo una parte (la bruma lo disimula). No aparecen a menos de 90 m del campamento. Las cantidades por bioma están en `src/resourceTypes.js`.
 
 | Recurso | Da | Biomas |
 |---|---|---|

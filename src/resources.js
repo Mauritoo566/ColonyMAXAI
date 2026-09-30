@@ -1,231 +1,30 @@
 import * as THREE from 'three';
-import { RADIUS, SEED, surfaceHeight, terrainZones, zoneDistance } from './elevation.js';
-import { biomeAt } from './biomes.js';
-import { createNoise3D } from './noise.js';
-import { partsGeometry, mat, stick, v, seededRandom } from './modelKit.js';
+import { RADIUS, terrainZones, zoneDistance } from './elevation.js';
+import { partsGeometry, mat, stick, v } from './modelKit.js';
+import { RESOURCE_TYPES, TILE } from './resourceTypes.js';
+import { TILE_ANGLE, generateTile } from './resourceGen.js';
 
 // Recursos naturales: aparecen solos por todo el planeta, al azar pero siempre en el
-// mismo lugar (cada zona del mundo usa su propia semilla). Qué recurso aparece y con
-// qué frecuencia depende del bioma. Sólo se dibujan cerca de la cámara.
+// mismo lugar (cada baldosa de 320 m usa su propia semilla), según el bioma.
 //
-// El mundo se divide en baldosas de ~TILE metros. Cada baldosa calcula sus recursos
-// una sola vez (se guardan) y cada tipo de recurso se dibuja con un InstancedMesh: una
-// llamada de dibujo por tipo, tenga cien o miles de ejemplares.
+// Para poder dibujar muchísimos sin lag:
+//  - Se generan en Web Workers (resourceWorker.js), no en el hilo del juego.
+//  - Cada tipo se dibuja con dos InstancedMesh: modelo completo cerca y versión
+//    simple lejos. Una llamada de dibujo por malla, haya cien o decenas de miles.
+//  - Cada ejemplar trae su rotación y escala ya calculadas: al moverse la cámara sólo
+//    se copian números al búfer de la tarjeta gráfica.
+//  - A lo lejos se dibuja sólo una parte (la bruma lo disimula).
 
-const TILE = 320; // metros por baldosa
-const TILE_ANGLE = TILE / RADIUS;
-const MAX_INSTANCES = 12000; // por tipo de recurso
-const BUILD_BUDGET_MS = 3; // tiempo máximo por fotograma generando baldosas
-const MAX_VISIBLE_CLEARANCE = 6_000; // más alto no se dibujan (serían puntitos)
+export { RESOURCE_TYPES };
+
+const MAX_NEAR = 30_000; // ejemplares con el modelo completo, por tipo
+const MAX_FAR = 60_000; // ejemplares con el modelo simple, por tipo
+const LOD_DISTANCE = 380; // metros: más lejos, modelo simple
+const FULL_DENSITY_DISTANCE = 900; // hasta aquí se ve todo; más lejos se aclara
+const MAX_VISIBLE_CLEARANCE = 6_000; // más alto no se dibujan
 const CAMP_CLEAR_RADIUS = 90; // alrededor del campamento no aparece nada
-
-const forestNoise = createNoise3D(SEED + 21);
-const oreNoise = createNoise3D(SEED + 22);
-
-// ---------------------------------------------------------------------------
-// Tipos de recurso: nombre, qué da, modelo y en qué biomas aparece
-// ---------------------------------------------------------------------------
-// "biomes" da la cantidad media por baldosa en cada bioma. "clustered" hace que se
-// agrupen en bosques (ruido), "ore" que sólo aparezcan en vetas (ruido raro).
-
-export const RESOURCES = {
-  broadleaf: {
-    name: 'Árbol frondoso',
-    gives: 'Madera dura',
-    scale: [0.8, 1.35],
-    clustered: true,
-    biomes: { forest: 75, grassland: 10, swamp: 14, steppe: 2 },
-    model: (p) => {
-      stick(p, v(0, -0.5, 0), v(0, 4, 0), 0.35, '#5e4128', 6);
-      for (const [x, y, z, r, c] of [
-        [0, 5.2, 0, 2.5, '#4f8a3a'],
-        [1.1, 4.6, 0.6, 1.8, '#5c9a42'],
-        [-1, 4.8, -0.5, 1.9, '#447d36'],
-      ]) {
-        p.add(new THREE.IcosahedronGeometry(r, 0), c, mat(x, y, z, 0.3, 0.5, 0));
-      }
-    },
-  },
-  pine: {
-    name: 'Pino',
-    gives: 'Madera blanda y resina',
-    scale: [0.8, 1.4],
-    clustered: true,
-    biomes: { taiga: 85, forest: 22, mountain: 6, tundra: 2 },
-    model: (p) => {
-      stick(p, v(0, -0.5, 0), v(0, 2.6, 0), 0.3, '#5a3b24', 5);
-      for (const [r, h, y, c] of [
-        [2.8, 4.2, 3.4, '#2f5a34'],
-        [2.1, 3.6, 5.6, '#34633a'],
-        [1.4, 3.0, 7.7, '#3a6b40'],
-      ]) {
-        p.add(new THREE.ConeGeometry(r, h, 7), c, mat(0, y, 0));
-      }
-    },
-  },
-  jungleTree: {
-    name: 'Árbol tropical',
-    gives: 'Madera dura y frutas',
-    scale: [0.9, 1.4],
-    clustered: true,
-    biomes: { jungle: 90, swamp: 8 },
-    model: (p) => {
-      stick(p, v(0, -0.5, 0), v(0.3, 8, 0), 0.4, '#6a4c30', 6);
-      p.add(new THREE.IcosahedronGeometry(3.2, 0), '#2e7a2c', mat(0.3, 9.3, 0, 0.2, 0.4, 0, 1, 0.6, 1));
-      p.add(new THREE.IcosahedronGeometry(2.2, 0), '#3a8f34', mat(-1.2, 8.2, 1, 0.5, 0.1, 0, 1, 0.7, 1));
-      p.add(new THREE.IcosahedronGeometry(0.35, 0), '#e0a030', mat(1.2, 7.8, 0.8));
-    },
-  },
-  acacia: {
-    name: 'Acacia',
-    gives: 'Madera y sombra',
-    scale: [0.8, 1.2],
-    biomes: { savanna: 7, steppe: 1.5 },
-    model: (p) => {
-      stick(p, v(0, -0.5, 0), v(0.4, 3.2, 0), 0.25, '#6e5236', 5);
-      stick(p, v(0.4, 3.2, 0), v(1.6, 4.4, 0.4), 0.16, '#6e5236', 4);
-      stick(p, v(0.4, 3.2, 0), v(-1, 4.3, -0.3), 0.16, '#6e5236', 4);
-      p.add(new THREE.CylinderGeometry(3.3, 2.6, 0.9, 8), '#6f8a3a', mat(0.3, 4.7, 0));
-    },
-  },
-  palm: {
-    name: 'Palmera',
-    gives: 'Cocos y fibras',
-    scale: [0.8, 1.2],
-    biomes: { beach: 2, jungle: 1.5 },
-    model: (p) => {
-      stick(p, v(0, -0.5, 0), v(0.6, 3, 0), 0.22, '#8a6a44', 5);
-      stick(p, v(0.6, 3, 0), v(1.1, 6.2, 0), 0.19, '#8a6a44', 5);
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        p.add(new THREE.BoxGeometry(3, 0.08, 0.7), '#4f8f3a', mat(1.1 + Math.cos(a) * 1.3, 6, Math.sin(a) * 1.3, 0, -a, -0.4));
-      }
-      p.add(new THREE.IcosahedronGeometry(0.28, 0), '#6b4a2a', mat(1.1, 5.8, 0.2));
-    },
-  },
-  cactus: {
-    name: 'Cactus',
-    gives: 'Agua y fibras',
-    scale: [0.7, 1.3],
-    biomes: { desert: 2.5 },
-    model: (p) => {
-      p.add(new THREE.CylinderGeometry(0.35, 0.4, 3.4, 7), '#5e8a3a', mat(0, 1.6, 0));
-      p.add(new THREE.CylinderGeometry(0.22, 0.25, 1.2, 6), '#5e8a3a', mat(0.6, 1.9, 0, 0, 0, Math.PI / 2));
-      p.add(new THREE.CylinderGeometry(0.22, 0.22, 1.1, 6), '#5e8a3a', mat(1.15, 2.4, 0));
-      p.add(new THREE.CylinderGeometry(0.2, 0.2, 0.9, 6), '#5e8a3a', mat(-0.55, 1.4, 0, 0, 0, Math.PI / 2));
-      p.add(new THREE.CylinderGeometry(0.2, 0.2, 0.8, 6), '#5e8a3a', mat(-0.95, 1.8, 0));
-    },
-  },
-  berryBush: {
-    name: 'Arbusto de bayas',
-    gives: 'Comida',
-    scale: [0.8, 1.3],
-    biomes: { grassland: 4, forest: 3, taiga: 2, savanna: 1, jungle: 2 },
-    model: (p) => {
-      p.add(new THREE.IcosahedronGeometry(1.1, 0), '#3f7a34', mat(0, 0.8, 0, 0, 0, 0, 1.2, 0.8, 1.1));
-      p.add(new THREE.IcosahedronGeometry(0.8, 0), '#4a8a3c', mat(0.7, 0.7, 0.3, 0.4, 0, 0));
-      for (const [x, y, z] of [[0.6, 1.3, 0.7], [-0.7, 1.1, 0.5], [0.2, 1.5, -0.6], [-0.3, 0.9, 0.9], [0.9, 0.9, -0.3]]) {
-        p.add(new THREE.IcosahedronGeometry(0.17, 0), '#c0283a', mat(x, y, z));
-      }
-    },
-  },
-  mushrooms: {
-    name: 'Setas',
-    gives: 'Comida',
-    scale: [0.8, 1.3],
-    biomes: { forest: 1.5, taiga: 1.5, jungle: 1, swamp: 1.5 },
-    model: (p) => {
-      for (const [x, z, s] of [[0, 0, 1], [0.5, 0.3, 0.7], [-0.4, 0.4, 0.6]]) {
-        p.add(new THREE.CylinderGeometry(0.08 * s, 0.1 * s, 0.5 * s, 5), '#e8dcc0', mat(x, 0.25 * s, z));
-        p.add(new THREE.ConeGeometry(0.35 * s, 0.3 * s, 7), '#b8402e', mat(x, 0.55 * s, z));
-      }
-    },
-  },
-  reeds: {
-    name: 'Juncos',
-    gives: 'Fibras y techos',
-    scale: [0.8, 1.2],
-    biomes: { swamp: 10, beach: 0.5 },
-    model: (p) => {
-      for (let i = 0; i < 9; i++) {
-        const a = i * 2.4;
-        const r = 0.2 + (i % 3) * 0.25;
-        p.add(new THREE.ConeGeometry(0.06, 2 + (i % 4) * 0.4, 3), '#7d8f45', mat(Math.cos(a) * r, 1, Math.sin(a) * r, 0.1 * Math.sin(i), 0, 0.1 * Math.cos(i)));
-      }
-      p.add(new THREE.CylinderGeometry(0.1, 0.1, 0.4, 5), '#6a4a2a', mat(0.2, 2.3, 0.1));
-    },
-  },
-  stone: {
-    name: 'Piedras',
-    gives: 'Piedra',
-    scale: [0.7, 1.6],
-    biomes: { mountain: 6, tundra: 3, desert: 2, steppe: 1.5, grassland: 1, forest: 0.8, taiga: 1, savanna: 1, snow: 1, beach: 0.5 },
-    model: (p) => {
-      p.add(new THREE.DodecahedronGeometry(1.1, 0), '#8b877f', mat(0, 0.45, 0, 0.3, 0.2, 0, 1.3, 0.8, 1));
-      p.add(new THREE.DodecahedronGeometry(0.6, 0), '#7f7b73', mat(1.1, 0.3, 0.4, 0.8, 0.5, 0));
-      p.add(new THREE.DodecahedronGeometry(0.4, 0), '#948f86', mat(-0.9, 0.2, 0.5, 0.1, 0.9, 0));
-    },
-  },
-  flint: {
-    name: 'Pedernal',
-    gives: 'Herramientas de piedra',
-    scale: [0.7, 1.1],
-    biomes: { grassland: 0.4, steppe: 0.6, forest: 0.3, desert: 0.4 },
-    model: (p) => {
-      for (const [x, z, r] of [[0, 0, 0.35], [0.4, 0.2, 0.25], [-0.3, 0.3, 0.3]]) {
-        p.add(new THREE.OctahedronGeometry(r, 0), '#3b3a3c', mat(x, r * 0.5, z, 0.4, x * 3, 0.2));
-      }
-    },
-  },
-  clay: {
-    name: 'Arcilla',
-    gives: 'Cerámica y ladrillos',
-    scale: [0.8, 1.3],
-    biomes: { swamp: 2, beach: 0.6, grassland: 0.2 },
-    model: (p) => {
-      p.add(new THREE.CylinderGeometry(1.6, 1.8, 0.25, 9), '#b0643c', mat(0, 0.08, 0));
-      p.add(new THREE.DodecahedronGeometry(0.5, 0), '#c0724a', mat(0.4, 0.25, 0.2, 0, 0, 0, 1, 0.5, 1));
-      p.add(new THREE.DodecahedronGeometry(0.35, 0), '#a85c36', mat(-0.6, 0.2, -0.3, 0, 0, 0, 1, 0.5, 1));
-    },
-  },
-  copper: {
-    name: 'Veta de cobre',
-    gives: 'Cobre',
-    scale: [0.9, 1.3],
-    ore: 0.45,
-    biomes: { mountain: 1.2, desert: 0.5, steppe: 0.3, tundra: 0.3 },
-    model: (p) => oreRock(p, '#c07038', '#3f8f7a'),
-  },
-  iron: {
-    name: 'Veta de hierro',
-    gives: 'Hierro',
-    scale: [0.9, 1.3],
-    ore: 0.5,
-    biomes: { mountain: 1, tundra: 0.5, taiga: 0.3, snow: 0.4 },
-    model: (p) => oreRock(p, '#8a4a36', '#5a3a30'),
-  },
-  gold: {
-    name: 'Veta de oro',
-    gives: 'Oro',
-    scale: [0.9, 1.2],
-    ore: 0.62,
-    biomes: { mountain: 0.5, desert: 0.2, jungle: 0.1 },
-    model: (p) => oreRock(p, '#e8c040', '#fff0a0'),
-  },
-  salt: {
-    name: 'Salinas',
-    gives: 'Sal',
-    scale: [0.8, 1.3],
-    ore: 0.35,
-    biomes: { desert: 0.8, beach: 0.3, steppe: 0.3 },
-    model: (p) => {
-      p.add(new THREE.CylinderGeometry(2, 2.2, 0.12, 10), '#ece7dc', mat(0, 0.04, 0));
-      for (const [x, z] of [[0.5, 0.3], [-0.6, -0.2], [0.1, -0.7]]) {
-        p.add(new THREE.OctahedronGeometry(0.3, 0), '#ffffff', mat(x, 0.2, z, 0, x, 0));
-      }
-    },
-  },
-};
+const MAX_PENDING = 24; // baldosas encargadas a la vez
+const REBUILD_INTERVAL = 0.12; // segundos mínimos entre dos reconstrucciones
 
 function oreRock(p, vein, glint) {
   p.add(new THREE.DodecahedronGeometry(1.3, 0), '#77726a', mat(0, 0.6, 0, 0.3, 0.4, 0, 1.3, 0.9, 1.1));
@@ -236,82 +35,188 @@ function oreRock(p, vein, glint) {
   p.add(new THREE.OctahedronGeometry(0.14, 0), glint, mat(-0.2, 1.4, 0.7));
 }
 
-const TYPES = Object.entries(RESOURCES).map(([id, r]) => ({ id, ...r }));
 
-// ---------------------------------------------------------------------------
-// Generación por baldosas
-// ---------------------------------------------------------------------------
-
-// Número entero de ejemplares a partir de una cantidad media, al azar.
-function poisson(mean, rand) {
-  let n = Math.floor(mean);
-  if (rand() < mean - n) n++;
-  return n;
-}
-
-const Y_AXIS = new THREE.Vector3(0, 1, 0);
-const tmp = {
-  dir: new THREE.Vector3(),
-  pos: new THREE.Vector3(),
-  quat: new THREE.Quaternion(),
-  spin: new THREE.Quaternion(),
-  scale: new THREE.Vector3(),
+// Modelos completos (cerca).
+const MODELS = {
+  broadleaf: (p) => {
+      stick(p, v(0, -0.5, 0), v(0, 4, 0), 0.35, '#5e4128', 6);
+      for (const [x, y, z, r, c] of [
+        [0, 5.2, 0, 2.5, '#4f8a3a'],
+        [1.1, 4.6, 0.6, 1.8, '#5c9a42'],
+        [-1, 4.8, -0.5, 1.9, '#447d36'],
+      ]) {
+        p.add(new THREE.IcosahedronGeometry(r, 0), c, mat(x, y, z, 0.3, 0.5, 0));
+      }
+    },
+  pine: (p) => {
+      stick(p, v(0, -0.5, 0), v(0, 2.6, 0), 0.3, '#5a3b24', 5);
+      for (const [r, h, y, c] of [
+        [2.8, 4.2, 3.4, '#2f5a34'],
+        [2.1, 3.6, 5.6, '#34633a'],
+        [1.4, 3.0, 7.7, '#3a6b40'],
+      ]) {
+        p.add(new THREE.ConeGeometry(r, h, 7), c, mat(0, y, 0));
+      }
+    },
+  jungleTree: (p) => {
+      stick(p, v(0, -0.5, 0), v(0.3, 8, 0), 0.4, '#6a4c30', 6);
+      p.add(new THREE.IcosahedronGeometry(3.2, 0), '#2e7a2c', mat(0.3, 9.3, 0, 0.2, 0.4, 0, 1, 0.6, 1));
+      p.add(new THREE.IcosahedronGeometry(2.2, 0), '#3a8f34', mat(-1.2, 8.2, 1, 0.5, 0.1, 0, 1, 0.7, 1));
+      p.add(new THREE.IcosahedronGeometry(0.35, 0), '#e0a030', mat(1.2, 7.8, 0.8));
+    },
+  acacia: (p) => {
+      stick(p, v(0, -0.5, 0), v(0.4, 3.2, 0), 0.25, '#6e5236', 5);
+      stick(p, v(0.4, 3.2, 0), v(1.6, 4.4, 0.4), 0.16, '#6e5236', 4);
+      stick(p, v(0.4, 3.2, 0), v(-1, 4.3, -0.3), 0.16, '#6e5236', 4);
+      p.add(new THREE.CylinderGeometry(3.3, 2.6, 0.9, 8), '#6f8a3a', mat(0.3, 4.7, 0));
+    },
+  palm: (p) => {
+      stick(p, v(0, -0.5, 0), v(0.6, 3, 0), 0.22, '#8a6a44', 5);
+      stick(p, v(0.6, 3, 0), v(1.1, 6.2, 0), 0.19, '#8a6a44', 5);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        p.add(new THREE.BoxGeometry(3, 0.08, 0.7), '#4f8f3a', mat(1.1 + Math.cos(a) * 1.3, 6, Math.sin(a) * 1.3, 0, -a, -0.4));
+      }
+      p.add(new THREE.IcosahedronGeometry(0.28, 0), '#6b4a2a', mat(1.1, 5.8, 0.2));
+    },
+  cactus: (p) => {
+      p.add(new THREE.CylinderGeometry(0.35, 0.4, 3.4, 7), '#5e8a3a', mat(0, 1.6, 0));
+      p.add(new THREE.CylinderGeometry(0.22, 0.25, 1.2, 6), '#5e8a3a', mat(0.6, 1.9, 0, 0, 0, Math.PI / 2));
+      p.add(new THREE.CylinderGeometry(0.22, 0.22, 1.1, 6), '#5e8a3a', mat(1.15, 2.4, 0));
+      p.add(new THREE.CylinderGeometry(0.2, 0.2, 0.9, 6), '#5e8a3a', mat(-0.55, 1.4, 0, 0, 0, Math.PI / 2));
+      p.add(new THREE.CylinderGeometry(0.2, 0.2, 0.8, 6), '#5e8a3a', mat(-0.95, 1.8, 0));
+    },
+  berryBush: (p) => {
+      p.add(new THREE.IcosahedronGeometry(1.1, 0), '#3f7a34', mat(0, 0.8, 0, 0, 0, 0, 1.2, 0.8, 1.1));
+      p.add(new THREE.IcosahedronGeometry(0.8, 0), '#4a8a3c', mat(0.7, 0.7, 0.3, 0.4, 0, 0));
+      for (const [x, y, z] of [[0.6, 1.3, 0.7], [-0.7, 1.1, 0.5], [0.2, 1.5, -0.6], [-0.3, 0.9, 0.9], [0.9, 0.9, -0.3]]) {
+        p.add(new THREE.IcosahedronGeometry(0.17, 0), '#c0283a', mat(x, y, z));
+      }
+    },
+  mushrooms: (p) => {
+      for (const [x, z, s] of [[0, 0, 1], [0.5, 0.3, 0.7], [-0.4, 0.4, 0.6]]) {
+        p.add(new THREE.CylinderGeometry(0.08 * s, 0.1 * s, 0.5 * s, 5), '#e8dcc0', mat(x, 0.25 * s, z));
+        p.add(new THREE.ConeGeometry(0.35 * s, 0.3 * s, 7), '#b8402e', mat(x, 0.55 * s, z));
+      }
+    },
+  reeds: (p) => {
+      for (let i = 0; i < 9; i++) {
+        const a = i * 2.4;
+        const r = 0.2 + (i % 3) * 0.25;
+        p.add(new THREE.ConeGeometry(0.06, 2 + (i % 4) * 0.4, 3), '#7d8f45', mat(Math.cos(a) * r, 1, Math.sin(a) * r, 0.1 * Math.sin(i), 0, 0.1 * Math.cos(i)));
+      }
+      p.add(new THREE.CylinderGeometry(0.1, 0.1, 0.4, 5), '#6a4a2a', mat(0.2, 2.3, 0.1));
+    },
+  stone: (p) => {
+      p.add(new THREE.DodecahedronGeometry(1.1, 0), '#8b877f', mat(0, 0.45, 0, 0.3, 0.2, 0, 1.3, 0.8, 1));
+      p.add(new THREE.DodecahedronGeometry(0.6, 0), '#7f7b73', mat(1.1, 0.3, 0.4, 0.8, 0.5, 0));
+      p.add(new THREE.DodecahedronGeometry(0.4, 0), '#948f86', mat(-0.9, 0.2, 0.5, 0.1, 0.9, 0));
+    },
+  flint: (p) => {
+      for (const [x, z, r] of [[0, 0, 0.35], [0.4, 0.2, 0.25], [-0.3, 0.3, 0.3]]) {
+        p.add(new THREE.OctahedronGeometry(r, 0), '#3b3a3c', mat(x, r * 0.5, z, 0.4, x * 3, 0.2));
+      }
+    },
+  clay: (p) => {
+      p.add(new THREE.CylinderGeometry(1.6, 1.8, 0.25, 9), '#b0643c', mat(0, 0.08, 0));
+      p.add(new THREE.DodecahedronGeometry(0.5, 0), '#c0724a', mat(0.4, 0.25, 0.2, 0, 0, 0, 1, 0.5, 1));
+      p.add(new THREE.DodecahedronGeometry(0.35, 0), '#a85c36', mat(-0.6, 0.2, -0.3, 0, 0, 0, 1, 0.5, 1));
+    },
+  copper: (p) => oreRock(p, '#c07038', '#3f8f7a'),
+  iron: (p) => oreRock(p, '#8a4a36', '#5a3a30'),
+  gold: (p) => oreRock(p, '#e8c040', '#fff0a0'),
+  salt: (p) => {
+      p.add(new THREE.CylinderGeometry(2, 2.2, 0.12, 10), '#ece7dc', mat(0, 0.04, 0));
+      for (const [x, z] of [[0.5, 0.3], [-0.6, -0.2], [0.1, -0.7]]) {
+        p.add(new THREE.OctahedronGeometry(0.3, 0), '#ffffff', mat(x, 0.2, z, 0, x, 0));
+      }
+    },
 };
 
-// Recursos de una baldosa (fila i, columna j). Devuelve [{ type, matrix }].
-function generateTile(i, j, cols) {
-  const rand = seededRandom((i * 73856093) ^ (j * 19349663) ^ SEED);
-  const lat = (i + 0.5) * TILE_ANGLE;
-  const lon = ((j + 0.5) / cols) * Math.PI * 2;
-  const center = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - lat, lon);
-  const biome = biomeAt(center.x, center.y, center.z).id;
-  const items = [];
-  if (biome === 'ocean' || biome === 'ice') return items;
+// Modelos simples (lejos): pocas caras y los mismos colores generales.
+const LOD_MODELS = {
+  broadleaf: (p) => {
+    p.add(new THREE.CylinderGeometry(0.3, 0.35, 4, 4), '#5e4128', mat(0, 1.8, 0));
+    p.add(new THREE.OctahedronGeometry(2.8, 0), '#4f8a3a', mat(0, 5, 0, 0, 0.4, 0, 1, 0.9, 1));
+  },
+  pine: (p) => p.add(new THREE.ConeGeometry(2.6, 8.5, 5), '#30603a', mat(0, 4.7, 0)),
+  jungleTree: (p) => {
+    p.add(new THREE.CylinderGeometry(0.35, 0.4, 8, 4), '#6a4c30', mat(0, 4, 0));
+    p.add(new THREE.OctahedronGeometry(3.2, 0), '#2e7a2c', mat(0, 9, 0, 0, 0.4, 0, 1, 0.6, 1));
+  },
+  acacia: (p) => {
+    p.add(new THREE.CylinderGeometry(0.2, 0.25, 4, 4), '#6e5236', mat(0, 2, 0));
+    p.add(new THREE.CylinderGeometry(3.2, 2.6, 0.9, 6), '#6f8a3a', mat(0, 4.6, 0));
+  },
+  palm: (p) => {
+    p.add(new THREE.CylinderGeometry(0.18, 0.22, 6, 4), '#8a6a44', mat(0.5, 3, 0, 0, 0, -0.15));
+    p.add(new THREE.ConeGeometry(2.4, 0.9, 6), '#4f8f3a', mat(1, 6, 0));
+  },
+  cactus: (p) => p.add(new THREE.CylinderGeometry(0.4, 0.45, 3.4, 5), '#5e8a3a', mat(0, 1.6, 0)),
+  stone: (p) => p.add(new THREE.OctahedronGeometry(1.1, 0), '#8b877f', mat(0, 0.4, 0, 0.3, 0.2, 0, 1.3, 0.7, 1)),
+  reeds: (p) => p.add(new THREE.ConeGeometry(0.6, 2.2, 4), '#7d8f45', mat(0, 1.1, 0)),
+  berryBush: (p) => p.add(new THREE.OctahedronGeometry(1.1, 0), '#3f7a34', mat(0, 0.8, 0, 0, 0, 0, 1.1, 0.8, 1.1)),
+  clay: (p) => p.add(new THREE.CylinderGeometry(1.6, 1.8, 0.25, 6), '#b0643c', mat(0, 0.08, 0)),
+  salt: (p) => p.add(new THREE.CylinderGeometry(2, 2.2, 0.12, 6), '#ece7dc', mat(0, 0.04, 0)),
+  copper: (p) => p.add(new THREE.OctahedronGeometry(1.3, 0), '#8a6a50', mat(0, 0.6, 0, 0.3, 0.4, 0, 1.3, 0.8, 1.1)),
+  iron: (p) => p.add(new THREE.OctahedronGeometry(1.3, 0), '#7a5a4c', mat(0, 0.6, 0, 0.3, 0.4, 0, 1.3, 0.8, 1.1)),
+  gold: (p) => p.add(new THREE.OctahedronGeometry(1.3, 0), '#9a8a5a', mat(0, 0.6, 0, 0.3, 0.4, 0, 1.3, 0.8, 1.1)),
+};
 
-  const cx = center.x * 3000;
-  const cy = center.y * 3000;
-  const cz = center.z * 3000;
-  const forest = 0.35 + 0.65 * Math.max(0, forestNoise(cx, cy, cz) + 0.35); // grupos de ~1 km
-  const orePresence = oreNoise(center.x * 900, center.y * 900, center.z * 900); // vetas raras
+// Información de cada tipo para la interfaz (nombre y qué da).
+export const RESOURCES = Object.fromEntries(RESOURCE_TYPES.map((t) => [t.id, t]));
 
-  for (const type of TYPES) {
-    let mean = type.biomes[biome];
-    if (!mean) continue;
-    if (type.clustered) mean *= forest;
-    if (type.ore !== undefined) {
-      if (orePresence < type.ore) continue;
-      mean *= 1.5;
-    }
-    const count = poisson(mean, rand);
-    for (let n = 0; n < count; n++) {
-      const pLat = (i + rand()) * TILE_ANGLE;
-      const pLon = ((j + rand()) / cols) * Math.PI * 2;
-      const dir = tmp.dir.setFromSphericalCoords(1, Math.PI / 2 - pLat, pLon);
-      // El bioma exacto del punto: en los bordes entre biomas no se mezclan cosas raras.
-      if (biomeAt(dir.x, dir.y, dir.z).id !== biome) continue;
-      const height = surfaceHeight(dir);
-      if (height <= 0.5) continue; // agua
-      tmp.pos.copy(dir).multiplyScalar(RADIUS + height - 0.25);
-      tmp.quat.setFromUnitVectors(Y_AXIS, dir);
-      tmp.spin.setFromAxisAngle(Y_AXIS, rand() * Math.PI * 2);
-      tmp.quat.multiply(tmp.spin);
-      const [s0, s1] = type.scale;
-      tmp.scale.setScalar(s0 + rand() * (s1 - s0));
-      items.push({
-        type: type.id,
-        dir: dir.clone(),
-        position: tmp.pos.clone(),
-        quaternion: tmp.quat.clone(),
-        scale: tmp.scale.x,
-        tint: 0.85 + rand() * 0.3,
-      });
-    }
-  }
-  return items;
+function createInstanced(geometry, material, max, name) {
+  const mesh = new THREE.InstancedMesh(geometry, material, max);
+  mesh.count = 0;
+  mesh.frustumCulled = false;
+  mesh.receiveShadow = true;
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3), 3);
+  mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  mesh.name = name;
+  return mesh;
 }
 
 // ---------------------------------------------------------------------------
-// Sistema: decide qué baldosas se ven y rellena los InstancedMesh
+// Workers
+// ---------------------------------------------------------------------------
+
+class ResourceWorkers {
+  constructor(onTile) {
+    this.onTile = onTile;
+    this.workers = [];
+    this.next = 0;
+    const count = Math.max(1, Math.min(2, (navigator.hardwareConcurrency || 4) - 2));
+    try {
+      for (let i = 0; i < count; i++) {
+        const w = new Worker(new URL('./resourceWorker.js', import.meta.url), { type: 'module' });
+        w.onmessage = (e) => this.onTile(e.data.key, e.data);
+        w.onerror = () => this.fail();
+        this.workers.push(w);
+      }
+    } catch {
+      this.fail();
+    }
+  }
+
+  get available() {
+    return this.workers.length > 0;
+  }
+
+  request(key, i, j, cols) {
+    const w = this.workers[this.next++ % this.workers.length];
+    w.postMessage({ key, i, j, cols });
+  }
+
+  fail() {
+    for (const w of this.workers) w.terminate();
+    this.workers = [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sistema
 // ---------------------------------------------------------------------------
 
 export class ResourceSystem {
@@ -320,127 +225,207 @@ export class ResourceSystem {
     this.group.name = 'resources';
     scene.add(this.group);
     this.material = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
-    this.meshes = {};
-    for (const type of TYPES) {
-      const mesh = new THREE.InstancedMesh(partsGeometry(type.model), this.material, MAX_INSTANCES);
-      mesh.count = 0;
-      mesh.frustumCulled = false;
-      mesh.receiveShadow = true;
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.setColorAt(0, new THREE.Color(1, 1, 1)); // crea el atributo de color por ejemplar
-      mesh.name = type.id;
-      this.meshes[type.id] = mesh;
-      this.group.add(mesh);
+    this.near = [];
+    this.far = [];
+    for (const type of RESOURCE_TYPES) {
+      const near = createInstanced(partsGeometry(MODELS[type.id]), this.material, MAX_NEAR, type.id);
+      const lod = LOD_MODELS[type.id];
+      const far = lod ? createInstanced(partsGeometry(lod), this.material, MAX_FAR, type.id + '-lejos') : null;
+      this.group.add(near);
+      if (far) this.group.add(far);
+      this.near.push(near);
+      this.far.push(far);
     }
-    this.cache = new Map(); // baldosa -> recursos
-    this.lastCenter = new THREE.Vector3(Infinity, 0, 0);
-    this.lastRadius = 0;
-    this.needsRefresh = false;
-    this.zonesSignature = '';
+    this.cache = new Map(); // clave -> datos de la baldosa, o 'pending'
+    this.pending = 0;
+    this.dirty = true;
+    this.sinceRebuild = 0;
+    this.lastCamera = new THREE.Vector3(Infinity, 0, 0);
     this.origin = new THREE.Vector3();
-    this.matrix = new THREE.Matrix4();
-    this.color = new THREE.Color();
-    this.local = new THREE.Vector3();
+    this.zonesSignature = '';
+    this.workers = new ResourceWorkers((key, data) => {
+      if (this.cache.get(key) === 'pending') {
+        this.cache.set(key, data);
+        this.pending--;
+        this.dirty = true;
+      }
+    });
   }
 
-  // Radio (en metros) alrededor del punto que se mira donde se dibujan recursos.
+  // Radio alrededor del punto que se mira donde se dibujan recursos.
   radiusFor(clearance) {
-    return THREE.MathUtils.clamp(clearance * 7, 700, 2_800);
+    return THREE.MathUtils.clamp(clearance * 7, 900, 2_600);
   }
 
-  update(camera, focusDir, clearance) {
+  update(camera, focusDir, clearance, delta = 0.016) {
     const visible = clearance < MAX_VISIBLE_CLEARANCE;
     this.group.visible = visible;
     if (!visible) return;
+    this.sinceRebuild += delta;
 
-    // Si cambia el campamento, las baldosas de alrededor se recalculan.
     const signature = terrainZones()
       .map((z) => `${z.dir.x.toFixed(6)},${z.dir.y.toFixed(6)}`)
       .join('|');
     if (signature !== this.zonesSignature) {
       this.zonesSignature = signature;
-      this.cache.clear();
-      this.needsRefresh = true;
+      this.dirty = true;
     }
 
     const radius = this.radiusFor(clearance);
-    const moved = this.lastCenter.angleTo(focusDir) * RADIUS;
-    if (moved > radius * 0.15 || Math.abs(radius - this.lastRadius) > this.lastRadius * 0.25) {
-      this.lastCenter.copy(focusDir);
-      this.lastRadius = radius;
-      this.needsRefresh = true;
+    const tiles = this.collectTiles(focusDir, radius);
+
+    // Reconstruir si la cámara se movió lo suficiente o llegaron baldosas nuevas.
+    const moved = this.lastCamera.distanceTo(camera.position);
+    if (moved > Math.max(15, clearance * 0.06)) this.dirty = true;
+    if (this.dirty && this.sinceRebuild >= REBUILD_INTERVAL) {
+      this.rebuild(tiles, camera.position, focusDir, radius);
+      this.lastCamera.copy(camera.position);
+      this.sinceRebuild = 0;
+      this.dirty = false;
     }
-    if (this.needsRefresh) this.refresh(focusDir, radius);
   }
 
-  // Rellena los InstancedMesh con las baldosas dentro del radio. Genera baldosas nuevas
-  // con un tope de tiempo por fotograma; si faltan, lo sigue en el siguiente.
-  refresh(center, radius) {
-    const start = performance.now();
+  // Baldosas dentro del radio (ya generadas); encarga las que faltan.
+  collectTiles(center, radius) {
     const lat0 = Math.asin(THREE.MathUtils.clamp(center.y, -1, 1));
     const lon0 = Math.atan2(center.x, center.z);
+    const lonNorm = lon0 < 0 ? lon0 + Math.PI * 2 : lon0;
     const span = radius / RADIUS;
     const i0 = Math.floor((lat0 - span) / TILE_ANGLE);
     const i1 = Math.floor((lat0 + span) / TILE_ANGLE);
-    const tiles = [];
-    let complete = true;
-
+    const ready = [];
+    const missing = [];
     for (let i = i0; i <= i1; i++) {
       const lat = (i + 0.5) * TILE_ANGLE;
       if (Math.abs(lat) > Math.PI / 2) continue;
       const cols = Math.max(1, Math.floor((Math.PI * 2 * Math.cos(lat)) / TILE_ANGLE));
       const colAngle = (Math.PI * 2) / cols;
       const lonSpan = span / Math.max(0.01, Math.cos(lat));
-      const lonNorm = lon0 < 0 ? lon0 + Math.PI * 2 : lon0;
       const j0 = Math.floor((lonNorm - lonSpan) / colAngle);
       const j1 = Math.floor((lonNorm + lonSpan) / colAngle);
       for (let j = j0; j <= j1 && j < j0 + cols; j++) {
         const jw = ((j % cols) + cols) % cols;
-        const key = `${i}:${jw}`;
-        let items = this.cache.get(key);
-        if (!items) {
-          if (performance.now() - start > BUILD_BUDGET_MS) {
-            complete = false;
-            continue;
-          }
-          items = generateTile(i, jw, cols);
-          this.cache.set(key, items);
+        const key = i * 1_000_000 + jw;
+        const data = this.cache.get(key);
+        if (data && data !== 'pending') ready.push(data);
+        else if (!data) {
+          // Más cerca del centro, antes.
+          const dLat = lat - lat0;
+          const dLon = (((j + 0.5) * colAngle - lonNorm) * Math.cos(lat));
+          missing.push({ key, i, jw, cols, d: dLat * dLat + dLon * dLon });
         }
-        tiles.push(items);
       }
     }
-    if (this.cache.size > 20_000) this.cache.clear();
+    missing.sort((a, b) => a.d - b.d);
+    for (const m of missing) {
+      if (this.workers.available) {
+        if (this.pending >= MAX_PENDING) break;
+        this.cache.set(m.key, 'pending');
+        this.pending++;
+        this.workers.request(m.key, m.i, m.jw, m.cols);
+      } else {
+        // Sin workers: una baldosa por fotograma en el hilo principal.
+        this.cache.set(m.key, generateTile(m.i, m.jw, m.cols));
+        this.dirty = true;
+        break;
+      }
+    }
+    if (this.cache.size > 6_000) this.trimCache(ready);
+    return ready;
+  }
 
+  trimCache(keep) {
+    const keepSet = new Set(keep);
+    for (const [key, data] of this.cache) {
+      if (data !== 'pending' && !keepSet.has(data)) this.cache.delete(key);
+    }
+  }
+
+  // Copia los ejemplares visibles a los InstancedMesh.
+  rebuild(tiles, cameraPos, center, radius) {
     // Posiciones relativas a un origen cercano: así caben en float32 sin temblar.
     this.origin.copy(center).multiplyScalar(RADIUS);
     this.group.position.copy(this.origin);
-    const counts = {};
-    for (const id in this.meshes) counts[id] = 0;
-    const zones = terrainZones();
-    for (const items of tiles) {
-      for (const item of items) {
-        if (item.dir.angleTo(center) * RADIUS > radius) continue;
+    const ox = this.origin.x, oy = this.origin.y, oz = this.origin.z;
+    const cx = cameraPos.x, cy = cameraPos.y, cz = cameraPos.z;
+    const radius2 = radius * radius;
+    const lod2 = LOD_DISTANCE * LOD_DISTANCE;
+    const zones = terrainZones().map((z) => {
+      const r = RADIUS + (z.height || 0);
+      return [z.dir.x * r, z.dir.y * r, z.dir.z * r];
+    });
+    const clear2 = CAMP_CLEAR_RADIUS * CAMP_CLEAR_RADIUS;
+    const maxDist2 = RESOURCE_TYPES.map((t) => (t.maxDistance ?? Infinity) ** 2);
+
+    const nearCount = new Int32Array(RESOURCE_TYPES.length);
+    const farCount = new Int32Array(RESOURCE_TYPES.length);
+    const nearM = this.near.map((m) => m.instanceMatrix.array);
+    const nearC = this.near.map((m) => m.instanceColor.array);
+    const farM = this.far.map((m) => (m ? m.instanceMatrix.array : null));
+    const farC = this.far.map((m) => (m ? m.instanceColor.array : null));
+
+    for (const t of tiles) {
+      const { count, type, pos, basis, tint, rank } = t;
+      for (let k = 0; k < count; k++) {
+        const px = pos[k * 3], py = pos[k * 3 + 1], pz = pos[k * 3 + 2];
+        // Distancia al punto que se mira, a la misma altura que el recurso.
+        const plen = Math.sqrt(px * px + py * py + pz * pz);
+        const fdx = px - center.x * plen, fdy = py - center.y * plen, fdz = pz - center.z * plen;
+        if (fdx * fdx + fdy * fdy + fdz * fdz > radius2) continue;
+        const dx = px - cx, dy = py - cy, dz = pz - cz;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        const ti = type[k];
+        if (d2 > maxDist2[ti]) continue;
+        // A lo lejos se aclara: sólo quedan los de "rank" bajo.
+        if (d2 > FULL_DENSITY_DISTANCE * FULL_DENSITY_DISTANCE) {
+          const keep = (FULL_DENSITY_DISTANCE * FULL_DENSITY_DISTANCE) / d2;
+          if (rank[k] > keep) continue;
+        }
         let blocked = false;
-        for (const zone of zones) {
-          if (zoneDistance(zone, item.dir.x, item.dir.y, item.dir.z) < CAMP_CLEAR_RADIUS) blocked = true;
+        for (const z of zones) {
+          const zx = px - z[0], zy = py - z[1], zz = pz - z[2];
+          if (zx * zx + zy * zy + zz * zz < clear2) blocked = true;
         }
         if (blocked) continue;
-        const mesh = this.meshes[item.type];
-        const n = counts[item.type];
-        if (n >= MAX_INSTANCES) continue;
-        this.local.copy(item.position).sub(this.origin);
-        this.matrix.compose(this.local, item.quaternion, tmp.scale.setScalar(item.scale));
-        mesh.setMatrixAt(n, this.matrix);
-        mesh.setColorAt(n, this.color.setScalar(item.tint));
-        counts[item.type] = n + 1;
+
+        let arr, col, n;
+        if (d2 > lod2 && farM[ti]) {
+          n = farCount[ti];
+          if (n >= MAX_FAR) continue;
+          farCount[ti] = n + 1;
+          arr = farM[ti];
+          col = farC[ti];
+        } else {
+          n = nearCount[ti];
+          if (n >= MAX_NEAR) continue;
+          nearCount[ti] = n + 1;
+          arr = nearM[ti];
+          col = nearC[ti];
+        }
+        const o = n * 16, b = k * 9;
+        arr[o] = basis[b]; arr[o + 1] = basis[b + 1]; arr[o + 2] = basis[b + 2]; arr[o + 3] = 0;
+        arr[o + 4] = basis[b + 3]; arr[o + 5] = basis[b + 4]; arr[o + 6] = basis[b + 5]; arr[o + 7] = 0;
+        arr[o + 8] = basis[b + 6]; arr[o + 9] = basis[b + 7]; arr[o + 10] = basis[b + 8]; arr[o + 11] = 0;
+        arr[o + 12] = px - ox; arr[o + 13] = py - oy; arr[o + 14] = pz - oz; arr[o + 15] = 1;
+        const c = tint[k];
+        col[n * 3] = c; col[n * 3 + 1] = c; col[n * 3 + 2] = c;
       }
     }
-    for (const id in this.meshes) {
-      const mesh = this.meshes[id];
-      mesh.count = counts[id];
+
+    const apply = (mesh, count) => {
+      if (!mesh) return;
+      mesh.count = count;
+      mesh.instanceMatrix.clearUpdateRanges();
+      mesh.instanceMatrix.addUpdateRange(0, Math.max(1, count) * 16);
       mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      mesh.instanceColor.clearUpdateRanges();
+      mesh.instanceColor.addUpdateRange(0, Math.max(1, count) * 3);
+      mesh.instanceColor.needsUpdate = true;
+    };
+    for (let ti = 0; ti < RESOURCE_TYPES.length; ti++) {
+      apply(this.near[ti], nearCount[ti]);
+      apply(this.far[ti], farCount[ti]);
     }
-    this.needsRefresh = !complete;
+    this.lastCounts = { near: nearCount.reduce((a, b) => a + b, 0), far: farCount.reduce((a, b) => a + b, 0) };
   }
 }

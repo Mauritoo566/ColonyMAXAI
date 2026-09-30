@@ -261,7 +261,7 @@ renderer.setAnimationLoop(() => {
   // Los recursos se dibujan alrededor del punto que se mira (centro de la pantalla).
   if (centerHit) resourceFocus.copy(hit).normalize();
   else resourceFocus.copy(controls.dir);
-  resources.update(camera, resourceFocus, clearance);
+  resources.update(camera, resourceFocus, clearance, delta);
   camps.update(delta);
   updateSky(altitude);
 

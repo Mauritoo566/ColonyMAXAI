@@ -251,7 +251,7 @@ export class PlanetControls {
       this.cancelFlight();
       this.target.heading -= dx * 0.005; // botón derecho: girar la vista
       // y en vertical: levantar o bajar la mirada (para ver el cielo, el Sol y la Luna)
-      this.target.lookUp = THREE.MathUtils.clamp(this.target.lookUp - dy * 0.004, 0, MAX_LOOK_UP);
+      this.target.lookUp = THREE.MathUtils.clamp(this.target.lookUp + dy * 0.004, 0, MAX_LOOK_UP);
     } else {
       this.pan(dx, dy);
     }
