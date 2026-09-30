@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { RADIUS, surfaceHeight, elevation } from './elevation.js';
 import { campObstacles } from './camp.js';
-import { seededRandom } from './modelKit.js';
+import { seededRandom, Parts, mat, stick, v } from './modelKit.js';
+import { AGES, ageInfo, nextAgeStatus } from './ages.js';
 import { temperature } from './biomes.js';
 import { createProfile, updateNeeds, hasTrait, wellbeing, addLog } from './needs.js';
 import { appearanceFromGenes, gene } from './genes.js';
@@ -22,7 +23,7 @@ import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, task
 
 export const START_COLONISTS = 5;
 // Provisiones con las que llega la colonia (comidas, jarras de agua, madera, piedra).
-export const START_STOCK = { food: 12, water: 12, wood: 45, stone: 20 };
+export const START_STOCK = { food: 12, water: 12, wood: 45, stone: 20, fiber: 10 };
 
 const WALK_SPEED = 1.4; // m/s
 const COLONIST_RADIUS = 0.45;
@@ -135,6 +136,8 @@ export class ColonySystem {
     this.resources = null; // ResourceSystem, para quitar lo que se tala
     this.stock = { food: 0, water: 0, wood: 0, stone: 0 }; // almacén de la colonia
     this.gameTime = 0;
+    this.age = 1; // edad de la colonia (ages.js)
+    this.totem = null;
     this.weather = null; // WeatherSystem: la lluvia acelera lo que crece y enfría
     this.sprouts = []; // brotes de la lluvia (se guardan)
     this.sproutTimer = 0;
@@ -218,6 +221,7 @@ export class ColonySystem {
     this.water = undefined;
     this.camp = camp;
     this.stock = { ...START_STOCK };
+    this.setAge(1);
     this.sprouts = [];
     this.resources?.setExtraTile(SPROUT_KEY, null);
     if (!camp) {
@@ -648,6 +652,43 @@ export class ColonySystem {
     }
   }
 
+  // ---- Edades ------------------------------------------------------------
+
+  // Pasar a la edad siguiente si se cumplen los requisitos (edificios mejorados y la
+  // ofrenda de materiales). Todos lo celebran y aparece el tótem de la tribu.
+  advanceAge(timeLabel = '') {
+    const status = nextAgeStatus(this);
+    if (!status.ready) return false;
+    for (const [k, n] of Object.entries(status.next.requires.cost)) this.stock[k] -= n;
+    this.setAge(status.next.n);
+    for (const c of this.colonists) {
+      addLog(c, timeLabel, `Celebró la llegada de la ${status.next.name}`);
+      c.needs.mood = Math.min(100, c.needs.mood + 25);
+    }
+    this.onAgeChange?.(this.age);
+    return true;
+  }
+
+  setAge(age) {
+    this.age = age;
+    const wantTotem = age >= 2 && this.camp;
+    if (this.totem && !wantTotem) {
+      this.totem.removeFromParent();
+      this.totem.geometry.dispose();
+      this.totem = null;
+    }
+    if (wantTotem && !this.totem) {
+      this.totem = totemMesh();
+      this.totem.position.set(TOTEM_SPOT.x, this.heightAt(TOTEM_SPOT.x, TOTEM_SPOT.z) - (this.camp.height ?? this.heightAt(0, 0)) - 0.1, TOTEM_SPOT.z);
+      this.camp.object.add(this.totem);
+    }
+    this.refreshObstacles();
+  }
+
+  get ageInfo() {
+    return ageInfo(this.age);
+  }
+
   // ---- Lluvia -------------------------------------------------------------
 
   // Con lluvia las bayas y setas recogidas vuelven a crecer mucho antes y, de vez en
@@ -740,6 +781,7 @@ export class ColonySystem {
   serialize() {
     return {
       gameTime: this.gameTime,
+      age: this.age,
       colonists: this.colonists.map((c) => ({
         id: c.id,
         needs: c.needs,
@@ -760,6 +802,7 @@ export class ColonySystem {
   restore(data) {
     if (!data) return;
     this.gameTime = data.gameTime || 0;
+    this.setAge(Math.min(AGES.length, Math.max(1, data.age || 1)));
     for (const saved of data.colonists || []) {
       const c = this.colonists.find((o) => o.id === saved.id);
       if (!c) continue;
@@ -797,6 +840,7 @@ export class ColonySystem {
   refreshObstacles() {
     this.obstacles = [
       ...campObstacles(),
+      ...(this.totem ? [{ x: TOTEM_SPOT.x, z: TOTEM_SPOT.z, r: 0.9, kind: 'prop' }] : []),
       ...this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint, kind: 'building' })),
     ];
   }
@@ -858,4 +902,39 @@ export class ColonySystem {
       }
     }
   }
+}
+
+// Tótem de la tribu (llega con la Edad Tribal), junto a la fogata.
+const TOTEM_SPOT = { x: Math.cos(4.6) * 7, z: Math.sin(4.6) * 7 };
+let totemMaterial = null;
+
+function totemMesh() {
+  const p = new Parts();
+  const faces = ['#9a5a34', '#b8763e', '#8a4a2a'];
+  for (let k = 0; k < 3; k++) {
+    const y = 0.6 + k * 1.05;
+    p.add(new THREE.CylinderGeometry(0.42, 0.46, 1.0, 8), faces[k], mat(0, y, 0));
+    // Ojos, boca y pico pintados.
+    p.add(new THREE.BoxGeometry(0.16, 0.12, 0.08), '#f0e2c0', mat(-0.16, y + 0.18, 0.42));
+    p.add(new THREE.BoxGeometry(0.16, 0.12, 0.08), '#f0e2c0', mat(0.16, y + 0.18, 0.42));
+    p.add(new THREE.BoxGeometry(0.34, 0.08, 0.08), k === 1 ? '#2f5d7a' : '#a8452d', mat(0, y - 0.2, 0.43));
+    p.add(new THREE.ConeGeometry(0.1, 0.3, 4), '#e0c25a', mat(0, y, 0.52, Math.PI / 2, 0, 0));
+  }
+  // Alas y cabeza de pájaro arriba.
+  p.add(new THREE.BoxGeometry(2.2, 0.14, 0.4), '#a8452d', mat(0, 3.1, 0, 0, 0, 0));
+  p.add(new THREE.BoxGeometry(0.7, 0.14, 0.38), '#2f5d7a', mat(-1.05, 3.2, 0, 0, 0, 0.35));
+  p.add(new THREE.BoxGeometry(0.7, 0.14, 0.38), '#2f5d7a', mat(1.05, 3.2, 0, 0, 0, -0.35));
+  p.add(new THREE.DodecahedronGeometry(0.36, 0), '#e0c25a', mat(0, 3.5, 0.05));
+  p.add(new THREE.ConeGeometry(0.12, 0.4, 4), '#d08a2a', mat(0, 3.45, 0.45, Math.PI / 2, 0, 0));
+  // Piedras en la base y plumas colgando.
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2;
+    p.add(new THREE.DodecahedronGeometry(0.22, 0), '#8f8a82', mat(Math.cos(a) * 0.62, 0.12, Math.sin(a) * 0.62, a, a, 0));
+  }
+  stick(p, v(-0.9, 3.05, 0.1), v(-0.95, 2.5, 0.12), 0.03, '#f0e2c0', 3);
+  stick(p, v(0.9, 3.05, 0.1), v(0.95, 2.5, 0.12), 0.03, '#f0e2c0', 3);
+  totemMaterial ??= new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85 });
+  const mesh = p.mesh(totemMaterial);
+  mesh.rotation.y = -4.6 + Math.PI / 2; // la cara mira a la fogata
+  return mesh;
 }

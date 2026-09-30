@@ -67,6 +67,12 @@ Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s 
 
 La **barra de construcción** (abajo) está ordenada por categorías (Producción, Vivienda, Almacenes, Decoración y Defensa; las que aún no tienen edificios dicen "próximamente") y permite encargar edificios (`src/buildings.js`). En Producción están choza de recolección (comida), cabaña del leñador (madera), cantera (piedra) y pozo (agua). Se elige dónde (hasta 75 m de la fogata; no sobre agua, pendientes fuertes ni encima de otra cosa) y los materiales se pagan al encargarlo. Los colonos construyen de día; los más hábiles en construcción avanzan más rápido. Al terminar, la colonia asigna el trabajo al **colono libre más capacitado** según sus habilidades (que salen de sus genes, su oficio anterior y su actitud). La ficha del edificio explica por qué lo eligió, muestra el ranking de candidatos y permite cambiarlo. Los árboles talados y las piedras picadas desaparecen del mundo.
 
+### Edades y mejoras
+
+La colonia avanza por edades (`src/ages.js`, barra decorada arriba al centro): Primitiva, Tribal, del Bronce, del Hierro y Medieval (de momento se juegan las dos primeras). Cada edificio tiene un nivel por edad, con su propio nombre, modelo 3D y rendimiento: en la Edad Primitiva son una enramada de recolección, una zona de tala, una pedrera y un **recolector de lluvia** (sólo junta agua cuando llueve, y un poco con el rocío). Desde la ficha del edificio se puede **mejorar** un nivel por encima de la edad actual: se paga el coste, los constructores trabajan en la obra con andamios y al terminar cambia el modelo (choza de recolección, cabaña del leñador, cantera, pozo simple). Con 3 edificios mejorados y una ofrenda de materiales la colonia pasa a la **Edad Tribal**, todos lo celebran y aparece el tótem de la tribu junto a la fogata. La choza de recolección trae también **fibras**, que se usan en las mejoras.
+
+Si se acaban los árboles o las piedras grandes cerca, el leñador junta ramas caídas y el cantero piedras sueltas (rinden menos, pero siguen trabajando).
+
 ### Guardado
 
 Todo se guarda en el navegador (`localStorage`) cada pocos segundos y al cerrar la pestaña: edificios, trabajadores, almacén, las necesidades, salud, posición y registro de cada colono, los recursos talados o que están volviendo a crecer, los brotes de la lluvia, la hora, la fase de la Luna y el clima. Al volver se restaura todo en lugar de empezar de cero.

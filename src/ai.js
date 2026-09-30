@@ -7,6 +7,7 @@
 //   eat, drink, sleep, warm, chat, build, work, wander
 
 import { hasTrait } from './needs.js';
+import { levelOf } from './buildings.js';
 
 const DAY = 360;
 
@@ -55,7 +56,8 @@ export function chooseTask(colony, c, env) {
     const water = colony.waterSpot();
     if (water) add(base * distanceFactor(dist(c, water)), { type: 'drink', source: 'water', spot: water });
     for (const b of colony.buildings) {
-      if (b.def.id === 'well' && b.done) add(base * distanceFactor(dist(c, b)) * 1.1, { type: 'drink', source: 'well', building: b });
+      // Del recolector de lluvia sólo se bebe si tiene agua juntada.
+      if (b.def.id === 'well' && b.done && (!levelOf(b).rainOnly || b.store >= 1)) add(base * distanceFactor(dist(c, b)) * 1.1, { type: 'drink', source: 'well', building: b });
     }
     if (stock.water >= 1) add(base * distanceFactor(dist(c, storage)), { type: 'drink', source: 'stock' });
   }
@@ -188,6 +190,10 @@ export function runTask(colony, c, task, dt, env) {
         if (stock.water < 1) return 'failed';
         stock.water -= 1;
         n.water = Math.min(100, n.water + 60);
+      } else if (task.source === 'well' && levelOf(task.building).rainOnly) {
+        if (task.building.store < 1) return 'failed';
+        task.building.store -= 1;
+        n.water = Math.min(100, n.water + 60);
       } else {
         n.water = 100;
       }
@@ -236,7 +242,7 @@ export function runTask(colony, c, task, dt, env) {
       c.working = true;
       colony.faceTowards(c, b.x, b.z, dt);
       // Trabajo necesario según el edificio; los hábiles construyen más rápido.
-      b.progress = Math.min(1, b.progress + (dt / b.def.buildTime) * (0.5 + c.skills.building / 10));
+      b.progress = Math.min(1, b.progress + (dt / (b.buildTime ?? b.def.buildTime)) * (0.5 + c.skills.building / 10));
       if (b.progress >= 1) b.finish?.(c);
       return b.done ? 'done' : 'running';
     }
@@ -278,22 +284,48 @@ function runWork(colony, c, task, dt, env) {
   if (!b.done || c.job !== b || b.removed) return 'done';
   const def = b.def;
 
+  const level = levelOf(b);
   if (def.id === 'well') {
+    // Recolector de lluvia: el aguatero vacía las vasijas en el almacén (si hay agua).
+    if (level.rainOnly && b.store < 1) {
+      task.noResource = true;
+      b.status = 'Esperando lluvia: las vasijas están vacías';
+      return busy(task, dt, 20) ? 'done' : 'running';
+    }
     // El aguatero saca agua del pozo.
     if (!go(colony, c, task, edgeOf(b, c), dt, 0.9)) return 'running';
     c.working = true;
     colony.faceTowards(c, b.x, b.z, dt);
     if (!busy(task, dt, 10)) return 'running';
     task.timer = 0;
-    // Con lluvia el pozo se llena solo: rinde hasta el doble.
-    const water = def.yield * (1 + (colony.weather?.rain ?? 0));
+    let water;
+    if (level.rainOnly) {
+      water = Math.min(Math.floor(b.store), level.yield);
+      b.store -= water;
+    } else {
+      // Con lluvia el pozo se llena solo: rinde hasta el doble.
+      water = level.yield * (1 + (colony.weather?.rain ?? 0));
+    }
     colony.stock.water += water;
     b.produced += water;
+    b.status = null;
     return 'done';
   }
 
   if (task.phase === 'start') {
     task.spot = colony.nearestSpot(def.resource, b.x, b.z, def.range, env.gameTime);
+    if (!task.spot && def.scavenge) {
+      // Sin árboles o piedras grandes cerca: junta lo que hay suelto por el suelo (rinde
+      // menos, pero no se queda sin hacer nada).
+      for (let k = 0; k < 6 && !task.spot; k++) {
+        const a = c.rand() * Math.PI * 2;
+        const r = 8 + c.rand() * 20;
+        const x = b.x + Math.cos(a) * r;
+        const z = b.z + Math.sin(a) * r;
+        if (colony.walkable(x, z, 0.8)) task.spot = { x, z, scavenge: true };
+      }
+      if (task.spot) b.status = def.scavenge.status;
+    }
     if (!task.spot) {
       task.noResource = true;
       b.status = def.noResourceText;
@@ -311,15 +343,18 @@ function runWork(colony, c, task, dt, env) {
     c.working = true;
     colony.faceTowards(c, task.spot.x, task.spot.z, dt);
     const skill = c.skills[def.skill] / 10;
-    if (!busy(task, dt, def.workTime * (1.4 - skill * 0.7))) return 'running';
-    colony.consumeSpot(task.spot, env.gameTime);
+    const scavenging = task.spot.scavenge;
+    if (!busy(task, dt, def.workTime * (1.4 - skill * 0.7) * (scavenging ? 1.5 : 1))) return 'running';
+    if (!scavenging) colony.consumeSpot(task.spot, env.gameTime);
     task.phase = 'returning';
   }
   if (task.phase === 'returning') {
     if (!go(colony, c, task, edgeOf(b, c), dt, 0.9)) return 'running';
-    colony.stock[def.stock] += def.yield;
-    b.produced += def.yield;
-    b.status = null;
+    const amount = task.spot.scavenge ? def.scavenge.yield : level.yield;
+    colony.stock[def.stock] += amount;
+    for (const [k, n] of Object.entries(def.extra || {})) colony.stock[k] = (colony.stock[k] || 0) + n;
+    b.produced += amount;
+    if (!task.spot.scavenge) b.status = null;
     return 'done';
   }
   return 'running';
@@ -352,11 +387,16 @@ export function taskActivity(colony, c, task) {
     case 'chat':
       return walking ? `Va a charlar con ${task.partner.name}` : `Charlando con ${task.partner.name}`;
     case 'build':
-      return walking ? `Va a construir: ${task.building.def.name}` : `Construyendo: ${task.building.def.name}`;
+      if (task.building.upgrading) return walking ? `Va a mejorar: ${task.building.name}` : `Mejorando: ${task.building.name}`;
+      return walking ? `Va a construir: ${task.building.name}` : `Construyendo: ${task.building.name}`;
     case 'work': {
       const def = task.building.def;
-      if (task.noResource) return def.noResourceText;
-      if (def.id === 'well') return walking ? 'Va al pozo' : 'Sacando agua del pozo';
+      if (task.noResource) return def.id === 'well' ? 'Espera a que llueva' : def.noResourceText;
+      if (def.id === 'well') {
+        if (levelOf(task.building).rainOnly) return walking ? 'Va al recolector de lluvia' : 'Vaciando las vasijas de lluvia';
+        return walking ? 'Va al pozo' : 'Sacando agua del pozo';
+      }
+      if (task.spot?.scavenge && task.phase !== 'returning') return def.scavenge.text;
       if (task.phase === 'going') return def.goingText;
       if (task.phase === 'gathering') return def.workingText;
       return def.returningText;
@@ -379,9 +419,9 @@ export function taskLog(c, task) {
     case 'warm':
       return 'Fue a calentarse junto al fuego';
     case 'build':
-      return `Ayudó a construir: ${task.building.def.name}`;
+      return `Ayudó a ${task.building.upgrading ? 'mejorar' : 'construir'}: ${task.building.name}`;
     case 'work':
-      return `Trabajó en: ${task.building.def.name}`;
+      return `Trabajó en: ${task.building.name}`;
   }
   return null;
 }

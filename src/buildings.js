@@ -4,6 +4,7 @@ import { biomeAt, BIOMES } from './biomes.js';
 import { pickSurface } from './camp.js';
 import { Parts, mat, stick, v } from './modelKit.js';
 import { hasTrait, addLog, SKILLS } from './needs.js';
+import { ageInfo } from './ages.js';
 
 // Edificios de la colonia. El jugador elige qué construir en la barra de construcción y
 // dónde; los colonos lo construyen (los más hábiles, más rápido) y, al terminarlo, la
@@ -20,89 +21,111 @@ const Y_AXIS = new THREE.Vector3(0, 1, 0);
 // Tipos de edificio
 // ---------------------------------------------------------------------------
 
+// Cada tipo tiene niveles: el nivel N corresponde a la edad N y cambia el nombre, el
+// modelo y el rendimiento. El nivel 1 es el que se construye desde la barra.
 export const BUILDING_TYPES = [
   {
     id: 'gatherer',
     category: 'production',
-    name: 'Choza de recolección',
     job: 'Recolección',
     skill: 'gathering',
     icon: 'food',
-    desc: 'Un colono recoge bayas y setas de los alrededores y las guarda como comida.',
-    cost: { wood: 15 },
-    buildTime: 60,
-    footprint: 2.8,
+    cost: { wood: 10 },
+    buildTime: 45,
+    footprint: 2.6,
     resource: 'food',
     stock: 'food',
-    yield: 2,
+    extra: { fiber: 1 }, // además de comida trae fibras (hierbas y cortezas)
     workTime: 10,
     range: 170,
     goingText: 'Va a recolectar',
     workingText: 'Recolectando',
-    returningText: 'Lleva comida al almacén',
+    returningText: 'Lleva comida y fibras al almacén',
     noResourceText: 'No hay bayas ni setas cerca',
-    model: gathererModel,
+    levels: [
+      { name: 'Enramada de recolección', desc: 'Un techo de ramas con cestas. Un colono recoge bayas y setas, y de paso hierbas para fibras.', yield: 2, model: gathererModel1 },
+      { name: 'Choza de recolección', desc: 'Choza de barro y paja con un secadero: cada viaje trae más comida.', yield: 3, model: gathererModel2, upgradeCost: { wood: 20, fiber: 8 } },
+    ],
   },
   {
     id: 'woodcutter',
     category: 'production',
-    name: 'Cabaña del leñador',
     job: 'Tala',
     skill: 'woodcutting',
     icon: 'axe',
-    desc: 'Un colono tala árboles cercanos y trae la madera al almacén.',
-    cost: { wood: 20 },
-    buildTime: 80,
-    footprint: 3,
+    cost: { wood: 8, stone: 2 },
+    buildTime: 50,
+    footprint: 2.6,
     resource: 'wood',
     stock: 'wood',
-    yield: 6,
     workTime: 14,
     range: 200,
     goingText: 'Va a talar un árbol',
     workingText: 'Talando',
     returningText: 'Lleva madera al almacén',
     noResourceText: 'No hay árboles cerca',
-    model: woodcutterModel,
+    scavenge: { yield: 1, text: 'Juntando ramas caídas', status: 'No quedan árboles cerca: junta ramas caídas (rinde menos)' },
+    levels: [
+      { name: 'Zona de tala', desc: 'Un tocón y un hacha de piedra. Un colono tala árboles cercanos.', yield: 4, model: woodcutterModel1 },
+      { name: 'Cabaña del leñador', desc: 'Cabaña de troncos con mejores hachas: cada árbol da más madera.', yield: 6, model: woodcutterModel2, upgradeCost: { wood: 25, stone: 5, fiber: 6 } },
+    ],
   },
   {
     id: 'quarry',
     category: 'production',
-    name: 'Cantera',
     job: 'Cantería',
     skill: 'mining',
     icon: 'pick',
-    desc: 'Un colono pica las piedras de los alrededores y trae piedra al almacén.',
-    cost: { wood: 25, stone: 5 },
-    buildTime: 90,
-    footprint: 3.2,
+    cost: { wood: 10 },
+    buildTime: 55,
+    footprint: 2.8,
     resource: 'stone',
     stock: 'stone',
-    yield: 3,
     workTime: 16,
     range: 200,
     goingText: 'Va a picar piedra',
     workingText: 'Picando piedra',
     returningText: 'Lleva piedra al almacén',
     noResourceText: 'No hay piedras cerca',
-    model: quarryModel,
+    scavenge: { yield: 1, text: 'Juntando piedras sueltas', status: 'No quedan piedras grandes cerca: junta piedras sueltas (rinde menos)' },
+    levels: [
+      { name: 'Pedrera', desc: 'Un montón de piedras y un percutor. Un colono junta piedra de los alrededores.', yield: 2, model: quarryModel1 },
+      { name: 'Cantera', desc: 'Con palancas y una grúa de troncos se sacan bloques más grandes.', yield: 3, model: quarryModel2, upgradeCost: { wood: 25, stone: 10, fiber: 6 } },
+    ],
   },
   {
     id: 'well',
     category: 'production',
-    name: 'Pozo',
     job: 'Acarreo de agua',
     skill: 'hauling',
     icon: 'water',
-    desc: 'Todos pueden beber de él. Un aguatero además llena las vasijas del almacén.',
-    cost: { wood: 10, stone: 15 },
-    buildTime: 70,
-    footprint: 1.8,
+    cost: { wood: 8, fiber: 4 },
+    buildTime: 40,
+    footprint: 1.9,
     stock: 'water',
-    yield: 2,
-    model: wellModel,
+    levels: [
+      {
+        name: 'Recolector de lluvia',
+        desc: 'Pieles tensadas que llenan vasijas cuando llueve (y un poco con el rocío). Se puede beber de él y un aguatero lleva el agua al almacén.',
+        yield: 3,
+        rainOnly: true,
+        capacity: 14,
+        model: wellModel1,
+      },
+      { name: 'Pozo simple', desc: 'Un anillo de piedras y un cubo de cuero: da agua siempre, llueva o no.', yield: 2, model: wellModel2, upgradeCost: { wood: 15, stone: 20, fiber: 5 } },
+    ],
   },
 ];
+
+for (const def of BUILDING_TYPES) {
+  def.name = def.levels[0].name;
+  def.desc = def.levels[0].desc;
+}
+
+// Nivel actual (o el siguiente) de un edificio.
+export function levelOf(b, offset = 0) {
+  return b.def.levels[b.level - 1 + offset] ?? null;
+}
 
 // Categorías de la barra de construcción (las vacías se muestran como "próximamente").
 export const BUILD_CATEGORIES = [
@@ -115,7 +138,7 @@ export const BUILD_CATEGORIES = [
 
 export const BUILDINGS = Object.fromEntries(BUILDING_TYPES.map((t) => [t.id, t]));
 
-export const STOCK_NAMES = { food: 'comida', water: 'agua', wood: 'madera', stone: 'piedra' };
+export const STOCK_NAMES = { food: 'comida', water: 'agua', wood: 'madera', stone: 'piedra', fiber: 'fibras' };
 
 // ---------------------------------------------------------------------------
 // Modelos (metros, suelo en y = 0)
@@ -129,7 +152,7 @@ function prism(radius, length) {
   return g;
 }
 
-function gathererModel(p) {
+function gathererModel2(p) {
   p.add(new THREE.CylinderGeometry(2.2, 2.4, 1.8, 9), '#9a7148', mat(0, 0.9, 0));
   p.add(new THREE.CylinderGeometry(2.55, 2.75, 0.25, 9), '#a8843e', mat(0, 1.95, 0));
   p.add(new THREE.ConeGeometry(2.9, 2.3, 9), '#c9a45a', mat(0, 3.1, 0));
@@ -142,7 +165,7 @@ function gathererModel(p) {
   }
 }
 
-function woodcutterModel(p) {
+function woodcutterModel2(p) {
   p.add(new THREE.BoxGeometry(3.6, 0.35, 3), '#6b4a2e', mat(0, 0.17, 0));
   p.add(new THREE.BoxGeometry(3.4, 1.8, 2.8), '#8a5a34', mat(0, 1.2, 0));
   p.add(prism(1.7, 3.5), '#8a5a34', mat(0, 2.95, 0));
@@ -162,7 +185,7 @@ function woodcutterModel(p) {
   p.add(new THREE.BoxGeometry(0.4, 0.22, 0.05), '#6d6d70', mat(-2.55, 0.78, 1.42, 0, 0, -0.3));
 }
 
-function quarryModel(p) {
+function quarryModel2(p) {
   // Bloques de piedra cortados.
   const blocks = [
     [-1.6, 0.35, 1.2, 1.3, 0.7, 0.9, '#8f8a82'],
@@ -188,16 +211,103 @@ function quarryModel(p) {
   p.add(new THREE.BoxGeometry(0.5, 0.12, 0.08), '#6d6d70', mat(2.42, 1.22, 1.93, 0, 0, 0.4));
 }
 
-function wellModel(p) {
-  p.add(new THREE.CylinderGeometry(1.2, 1.3, 0.9, 12), '#8b877f', mat(0, 0.45, 0));
-  p.add(new THREE.CylinderGeometry(1.25, 1.25, 0.15, 12), '#9a958c', mat(0, 0.95, 0));
-  p.add(new THREE.CircleGeometry(0.95, 12), '#1f3a55', mat(0, 1.03, 0, -Math.PI / 2));
-  stick(p, v(-1.1, 0.9, 0), v(-1.1, 2.6, 0), 0.08, '#6b4a2e', 5);
-  stick(p, v(1.1, 0.9, 0), v(1.1, 2.6, 0), 0.08, '#6b4a2e', 5);
-  stick(p, v(-1.3, 2.3, 0), v(1.3, 2.3, 0), 0.06, '#7a5230', 5);
-  p.add(prism(0.9, 2.7), '#5a3a22', mat(0, 2.85, 0, 0, Math.PI / 2, 0));
-  stick(p, v(0.2, 2.25, 0), v(0.2, 1.5, 0), 0.015, '#c8b48a', 3);
-  p.add(new THREE.CylinderGeometry(0.22, 0.18, 0.3, 8), '#7a5230', mat(0.2, 1.35, 0));
+// Pozo simple (Edad Tribal): anillo de piedras sueltas, travesaño y cubo de cuero.
+function wellModel2(p) {
+  for (let k = 0; k < 11; k++) {
+    const a = (k / 11) * Math.PI * 2;
+    p.add(new THREE.DodecahedronGeometry(0.34, 0), k % 2 ? '#8b877f' : '#9a958c', mat(Math.cos(a) * 1.05, 0.3, Math.sin(a) * 1.05, a, a * 2, 0, 1, 0.8, 1));
+    p.add(new THREE.DodecahedronGeometry(0.28, 0), k % 3 ? '#7d786f' : '#938e85', mat(Math.cos(a + 0.3) * 1.0, 0.72, Math.sin(a + 0.3) * 1.0, a, a, 0));
+  }
+  p.add(new THREE.CircleGeometry(0.8, 10), '#1f3a55', mat(0, 0.55, 0, -Math.PI / 2));
+  // Horquetas y travesaño.
+  stick(p, v(-1.35, 0, 0), v(-1.3, 2.1, 0), 0.08, '#6b4a2e', 5);
+  stick(p, v(1.35, 0, 0), v(1.3, 2.1, 0), 0.08, '#6b4a2e', 5);
+  stick(p, v(-1.3, 2.1, 0), v(-1.45, 2.4, 0.1), 0.05, '#6b4a2e', 4);
+  stick(p, v(1.3, 2.1, 0), v(1.45, 2.4, 0.1), 0.05, '#6b4a2e', 4);
+  stick(p, v(-1.55, 2.12, 0), v(1.55, 2.12, 0), 0.06, '#7a5230', 5);
+  stick(p, v(0.1, 2.08, 0), v(0.1, 1.2, 0), 0.015, '#c8b48a', 3);
+  p.add(new THREE.CylinderGeometry(0.22, 0.16, 0.32, 7), '#8a5a3a', mat(0.1, 1.05, 0));
+}
+
+// ---- Nivel 1: Edad Primitiva ------------------------------------------------
+
+// Enramada: cuatro palos, un techo inclinado de ramas con hojas y cestas de fibra.
+function gathererModel1(p) {
+  const posts = [[-1.6, -1.3, 2.3], [1.6, -1.3, 2.3], [-1.6, 1.3, 1.5], [1.6, 1.3, 1.5]];
+  for (const [x, z, h] of posts) stick(p, v(x, 0, z), v(x * 1.02, h, z), 0.07, '#6b4a2e', 5);
+  stick(p, v(-1.8, 2.3, -1.3), v(1.8, 2.3, -1.3), 0.06, '#7a5230', 4);
+  stick(p, v(-1.8, 1.5, 1.3), v(1.8, 1.5, 1.3), 0.06, '#7a5230', 4);
+  // Ramas del techo y hojas encima.
+  for (let k = 0; k < 7; k++) {
+    const x = -1.6 + k * 0.53;
+    stick(p, v(x, 2.36, -1.6), v(x + 0.1, 1.52, 1.6), 0.035, '#5a3a22', 3);
+  }
+  for (let k = 0; k < 9; k++) {
+    const x = -1.6 + (k % 3) * 1.6;
+    const z = -1.1 + Math.floor(k / 3) * 1.1;
+    const y = 2.3 - ((z + 1.3) / 2.6) * 0.8 + 0.12;
+    p.add(new THREE.IcosahedronGeometry(0.62, 0), k % 2 ? '#5f7f35' : '#6f8f3c', mat(x, y, z, k, k * 2, 0, 1.2, 0.35, 1));
+  }
+  // Cestas con bayas y un montón de hierbas secas.
+  for (const [x, z] of [[-0.8, -0.3], [0.5, 0.2], [2.3, 1.6]]) {
+    p.add(new THREE.CylinderGeometry(0.36, 0.28, 0.42, 7), '#b89a5e', mat(x, 0.21, z));
+    for (let k = 0; k < 4; k++) {
+      p.add(new THREE.IcosahedronGeometry(0.11, 0), k % 2 ? '#b8283a' : '#7a2a6a', mat(x + (k - 1.5) * 0.12, 0.46, z + ((k * 7) % 3 - 1) * 0.1));
+    }
+  }
+  for (let k = 0; k < 6; k++) stick(p, v(-2.4 + k * 0.08, 0, 1.2), v(-2.1 + k * 0.1, 0.9, 1.5 - k * 0.05), 0.03, '#c9b36a', 3);
+}
+
+// Zona de tala: un tocón con un hacha de piedra clavada, troncos y astillas.
+function woodcutterModel1(p) {
+  p.add(new THREE.CylinderGeometry(0.55, 0.7, 0.75, 8), '#6b4a2e', mat(0, 0.37, 0));
+  p.add(new THREE.CylinderGeometry(0.5, 0.5, 0.04, 8), '#c9a26a', mat(0, 0.76, 0));
+  stick(p, v(0.05, 0.75, 0), v(0.55, 1.45, 0.1), 0.045, '#9a7446', 4);
+  p.add(new THREE.DodecahedronGeometry(0.16, 0), '#6d6a64', mat(0.12, 0.84, 0.02, 0, 0, 0, 1.4, 0.7, 0.6));
+  for (const [x, z, a] of [[1.6, -0.6, 0.2], [1.7, 0.1, 0.1], [1.65, -0.25, 0.15]]) {
+    stick(p, v(x - 1.2, 0.25, z + a), v(x + 1.2, 0.25, z - a), 0.24, '#7a5230', 6);
+  }
+  stick(p, v(0.5, 0.72, -0.25), v(2.8, 0.72, -0.4), 0.22, '#6b4a2e', 6);
+  for (let k = 0; k < 10; k++) {
+    const a = k * 2.4;
+    p.add(new THREE.BoxGeometry(0.18, 0.04, 0.08), '#c9a26a', mat(Math.cos(a) * (0.9 + (k % 3) * 0.3), 0.02, Math.sin(a) * (0.9 + (k % 3) * 0.3), 0, a, 0));
+  }
+  // Un pequeño cobertizo de ramas para las herramientas.
+  stick(p, v(-1.6, 0, -1.2), v(-1.2, 1.5, -0.6), 0.05, '#5a3a22', 4);
+  stick(p, v(-2.2, 0, -0.2), v(-1.2, 1.5, -0.6), 0.05, '#5a3a22', 4);
+  stick(p, v(-1.8, 0, 0.6), v(-1.2, 1.5, -0.6), 0.05, '#5a3a22', 4);
+}
+
+// Pedrera: piedras sin labrar amontonadas, un percutor y una piel para sentarse.
+function quarryModel1(p) {
+  const rocks = [
+    [-1.0, 0.35, 0.6, 0.6, '#8f8a82'], [-0.2, 0.3, 1.1, 0.5, '#7d786f'], [-0.6, 0.75, 0.9, 0.45, '#9a958c'],
+    [0.9, 0.3, -0.9, 0.55, '#857f76'], [1.5, 0.25, -0.2, 0.4, '#938e85'], [0.4, 0.22, -1.5, 0.35, '#8b877f'],
+    [-1.6, 0.2, -0.6, 0.35, '#7d786f'], [1.2, 0.62, -0.6, 0.35, '#9a958c'],
+  ];
+  for (const [x, y, z, r, c] of rocks) p.add(new THREE.DodecahedronGeometry(r, 0), c, mat(x, y, z, x, z, 0, 1, 0.75, 1));
+  p.add(new THREE.CylinderGeometry(0.9, 0.9, 0.03, 7), '#a0764a', mat(0.4, 0.02, 0.6, 0, 0.5, 0));
+  p.add(new THREE.DodecahedronGeometry(0.14, 0), '#5f5b55', mat(0.6, 0.12, 0.3));
+  // Lascas de piedra.
+  for (let k = 0; k < 8; k++) {
+    const a = k * 2.1;
+    p.add(new THREE.TetrahedronGeometry(0.1, 0), '#a8a39a', mat(0.4 + Math.cos(a) * 0.6, 0.05, 0.6 + Math.sin(a) * 0.6, a, a, 0));
+  }
+}
+
+// Recolector de lluvia: cuatro palos con una piel tensada que desagua en vasijas.
+function wellModel1(p) {
+  const posts = [[-1.2, -1.0, 1.8], [1.2, -1.0, 1.8], [-1.2, 1.0, 1.4], [1.2, 1.0, 1.4]];
+  for (const [x, z, h] of posts) stick(p, v(x, 0, z), v(x, h, z), 0.06, '#6b4a2e', 5);
+  // La piel: un cono muy plano invertido (se hunde en el centro).
+  p.add(new THREE.ConeGeometry(1.55, 0.45, 8, 1, true), '#a0764a', mat(0, 1.45, 0, Math.PI, Math.PI / 8, 0, 1, 1, 0.8));
+  for (const [x, z, h] of posts) stick(p, v(x, h, z), v(x * 0.2, 1.3, z * 0.2), 0.012, '#c8b48a', 3);
+  // Vasijas de barro debajo.
+  p.add(new THREE.CylinderGeometry(0.3, 0.22, 0.55, 8), '#a8583a', mat(0, 0.27, 0));
+  p.add(new THREE.CylinderGeometry(0.18, 0.3, 0.12, 8), '#a8583a', mat(0, 0.6, 0));
+  p.add(new THREE.CircleGeometry(0.17, 8), '#2a4a66', mat(0, 0.665, 0, -Math.PI / 2));
+  p.add(new THREE.CylinderGeometry(0.24, 0.18, 0.42, 8), '#b8683a', mat(0.7, 0.21, 0.5));
+  p.add(new THREE.CylinderGeometry(0.2, 0.16, 0.34, 8), '#98482a', mat(-0.65, 0.17, 0.55));
 }
 
 // Andamio de obra: base de tablones y cuatro postes.
@@ -325,7 +435,7 @@ export class BuildingSystem {
     this.select(null);
     this.placing = BUILDINGS[id];
     this.ghost.clear();
-    const model = buildMesh(this.placing.model);
+    const model = buildMesh(this.placing.levels[0].model);
     model.material = material.clone();
     model.material.transparent = true;
     model.material.opacity = 0.55;
@@ -395,7 +505,7 @@ export class BuildingSystem {
 
   // ---- Crear y quitar ------------------------------------------------------
 
-  create(def, x, z, yaw, progress, produced) {
+  create(def, x, z, yaw, progress, produced, level = 1) {
     const colony = this.colony;
     const height = colony.heightAt(x, z);
     const dir = colony.toDirection(x, z, new THREE.Vector3());
@@ -417,7 +527,7 @@ export class BuildingSystem {
     const object = new THREE.Group();
     object.position.copy(dir).multiplyScalar(RADIUS + height);
     object.quaternion.copy(colony.camp.object.quaternion).multiply(this.tmpQuat.setFromAxisAngle(Y_AXIS, yaw));
-    const model = buildMesh(def.model);
+    const model = buildMesh(def.levels[level - 1].model);
     const frame = buildMesh(frameModel, def.footprint);
     object.add(model, frame);
     this.scene.add(object);
@@ -426,7 +536,6 @@ export class BuildingSystem {
     label.type = 'button';
     label.className = 'building-label';
     label.innerHTML = `<span class="building-label-name"></span><span class="building-label-sub"></span><span class="building-label-bar"><i></i></span>`;
-    label.querySelector('.building-label-name').textContent = def.name;
     label.hidden = true;
     this.labelsRoot.appendChild(label);
 
@@ -441,6 +550,12 @@ export class BuildingSystem {
       progress,
       done: false,
       produced,
+      level,
+      upgrading: false,
+      store: 0, // agua juntada por el recolector de lluvia
+      get name() {
+        return this.def.levels[this.level - 1].name;
+      },
       worker: null,
       reason: '',
       status: null,
@@ -451,6 +566,7 @@ export class BuildingSystem {
       zone,
       finish: (builder) => this.finish(b, builder),
     };
+    label.querySelector('.building-label-name').textContent = b.name;
     label.addEventListener('click', () => this.select(b));
     this.list.push(b);
     colony.refreshObstacles();
@@ -478,14 +594,59 @@ export class BuildingSystem {
     b.progress = 1;
     b.done = true;
     b.frame.visible = false;
-    if (builder && !silent) {
-      const time = this.timeLabel?.() ?? '';
-      addLog(builder, time, `Terminó de construir: ${b.def.name}`);
+    const time = this.timeLabel?.() ?? '';
+    if (b.upgrading) {
+      // La mejora cambia el nivel, el nombre y el modelo.
+      const old = b.name;
+      b.upgrading = false;
+      b.level++;
+      this.setModel(b);
+      if (builder && !silent) addLog(builder, time, `Terminó de mejorar ${old}: ahora es ${b.name}`);
+      if (b.worker && b.worker !== builder && !silent) addLog(b.worker, time, `Su lugar de trabajo ahora es ${b.name}`);
+    } else if (builder && !silent) {
+      addLog(builder, time, `Terminó de construir: ${b.name}`);
     }
     this.assignWorker(b);
     this.updateVisual(b);
     this.save();
     this.onChange?.();
+  }
+
+  setModel(b) {
+    b.object.remove(b.model);
+    b.model.geometry.dispose();
+    b.model = buildMesh(levelOf(b).model);
+    b.object.add(b.model);
+    b.label.querySelector('.building-label-name').textContent = b.name;
+  }
+
+  // ---- Mejoras ---------------------------------------------------------------
+
+  // Por qué no se puede mejorar (o null si se puede).
+  upgradeProblem(b) {
+    const next = levelOf(b, 1);
+    if (!b.done) return b.upgrading ? 'Ya se está mejorando' : 'Primero hay que terminar la obra';
+    if (!next) return `Más mejoras en la ${ageInfo(b.level + 1).name} (próximamente)`;
+    if (b.level + 1 > this.colony.age + 1) return `Hace falta llegar a la ${ageInfo(b.level).name}`;
+    if (!this.canAfford({ cost: next.upgradeCost })) return `Faltan ${this.missing({ cost: next.upgradeCost }).join(' y ')}`;
+    return null;
+  }
+
+  // Pagar la mejora y dejarla en obra: los constructores vienen a hacerla. El trabajador
+  // se queda asignado y vuelve a trabajar cuando termina.
+  upgrade(b) {
+    if (this.upgradeProblem(b)) return false;
+    const next = levelOf(b, 1);
+    for (const [k, n] of Object.entries(next.upgradeCost)) this.colony.stock[k] -= n;
+    b.upgrading = true;
+    b.done = false;
+    b.progress = 0;
+    b.buildTime = b.def.buildTime * (1 + b.level * 0.4);
+    b.frame.visible = true;
+    this.updateVisual(b);
+    this.save();
+    this.onChange?.();
+    return true;
   }
 
   // ---- Trabajadores --------------------------------------------------------
@@ -519,13 +680,13 @@ export class BuildingSystem {
     if (c.job && c.job !== b) {
       const old = c.job;
       old.worker = null;
-      old.reason = `${c.name} se fue a trabajar a ${b.def.name}.`;
+      old.reason = `${c.name} se fue a trabajar a ${b.name}.`;
     }
     if (b.worker && b.worker !== c) b.worker.job = null;
     b.worker = c;
     b.reason = reason;
     c.job = b;
-    addLog(c, this.timeLabel?.() ?? '', `Ahora trabaja en: ${b.def.name}`);
+    addLog(c, this.timeLabel?.() ?? '', `Ahora trabaja en: ${b.name}`);
     this.save();
     this.onChange?.();
   }
@@ -569,8 +730,15 @@ export class BuildingSystem {
 
   // ---- Cada fotograma --------------------------------------------------------
 
-  update(delta, { timeLabel } = {}) {
+  update(delta, { timeLabel, timeScale = 1 } = {}) {
     this.timeLabel = timeLabel;
+    // El recolector de lluvia se llena solo: mucho con lluvia y un poco con el rocío.
+    const rain = this.colony.weather?.rain ?? 0;
+    const gameDt = delta * timeScale;
+    for (const b of this.list) {
+      const lv = b.done && levelOf(b);
+      if (lv?.rainOnly) b.store = Math.min(lv.capacity, b.store + (0.004 + rain * 0.08) * gameDt);
+    }
     if (this.placing) {
       this.updateCandidate();
       const c = this.candidate;
@@ -600,7 +768,8 @@ export class BuildingSystem {
 
   // La obra "crece" desde el suelo mientras se construye.
   updateVisual(b) {
-    const s = b.done ? 1 : 0.06 + 0.94 * b.progress;
+    // Una obra nueva crece desde el suelo; una mejora mantiene el edificio con andamios.
+    const s = b.done || b.upgrading ? 1 : 0.06 + 0.94 * b.progress;
     b.model.scale.set(1, s, 1);
     b.frame.visible = !b.done;
   }
@@ -616,7 +785,7 @@ export class BuildingSystem {
       if (!visible) continue;
       const sub = b.label.querySelector('.building-label-sub');
       const bar = b.label.querySelector('.building-label-bar');
-      const text = b.done ? (b.worker ? b.worker.name : 'Sin trabajador') : `En obra · ${Math.round(b.progress * 100)}%`;
+      const text = b.done ? (b.worker ? b.worker.name : 'Sin trabajador') : `${b.upgrading ? 'Mejorando' : 'En obra'} · ${Math.round(b.progress * 100)}%`;
       if (sub.textContent !== text) sub.textContent = text;
       bar.hidden = b.done;
       if (!b.done) bar.firstChild.style.width = `${Math.round(b.progress * 100)}%`;
@@ -645,6 +814,9 @@ export class BuildingSystem {
         yaw: b.yaw,
         progress: b.progress,
         produced: b.produced,
+        level: b.level,
+        upgrading: b.upgrading,
+        store: b.store,
         worker: b.worker ? b.worker.id : null,
       })),
     };
@@ -675,7 +847,17 @@ export class BuildingSystem {
     for (const s of data.buildings || []) {
       const def = BUILDINGS[s.type];
       if (!def) continue;
-      const b = this.create(def, s.x, s.z, s.yaw, s.progress, s.produced || 0);
+      const level = Math.min(def.levels.length, Math.max(1, s.level || 1));
+      const b = this.create(def, s.x, s.z, s.yaw, s.upgrading ? 1 : s.progress, s.produced || 0, level);
+      b.store = s.store || 0;
+      if (s.upgrading && levelOf(b, 1)) {
+        b.upgrading = true;
+        b.done = false;
+        b.progress = s.progress;
+        b.buildTime = def.buildTime * (1 + b.level * 0.4);
+        b.frame.visible = true;
+        this.updateVisual(b);
+      }
       const worker = this.colony.colonists.find((c) => c.id === s.worker);
       if (b.done && worker) {
         if (b.worker) b.worker.job = null;

@@ -1,4 +1,5 @@
-import { BUILDING_TYPES, BUILD_CATEGORIES, STOCK_NAMES } from './buildings.js';
+import { BUILDING_TYPES, BUILD_CATEGORIES, STOCK_NAMES, levelOf } from './buildings.js';
+import { AGES, ageInfo } from './ages.js';
 import { SKILLS } from './needs.js';
 
 // Interfaz de construcción: barra para elegir qué construir, el almacén de la colonia
@@ -11,6 +12,7 @@ const STOCK = [
   { id: 'water', icon: 'water', color: 'var(--water)' },
   { id: 'wood', icon: 'wood', color: '#c08a52' },
   { id: 'stone', icon: 'stone', color: '#a8a39a' },
+  { id: 'fiber', icon: 'fiber', color: '#b5c46a' },
 ];
 
 function icon(id) {
@@ -167,10 +169,21 @@ export class BuildUI {
   render(b) {
     const def = b.def;
     const skill = SKILLS.find((s) => s.id === def.skill);
-    const state = !b.done ? `En construcción · ${Math.round(b.progress * 100)}%` : b.worker ? 'Funcionando' : 'Sin trabajador';
+    const level = levelOf(b);
+    const next = levelOf(b, 1);
+    const age = ageInfo(b.level);
+    const state = b.upgrading
+      ? `Mejorando · ${Math.round(b.progress * 100)}%`
+      : !b.done
+        ? `En construcción · ${Math.round(b.progress * 100)}%`
+        : b.worker
+          ? 'Funcionando'
+          : 'Sin trabajador';
     const ranking = this.buildings.ranking(b);
+    const upgradeProblem = this.buildings.upgradeProblem(b);
+    const stored = level.rainOnly ? Math.floor(b.store) : null;
     // Clave para no redibujar si nada cambió.
-    const key = [state, b.worker?.id, Math.floor(b.produced), b.status, b.reason, ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [state, b.level, b.worker?.id, Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, this.colony.age, ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -179,15 +192,21 @@ export class BuildUI {
       <header class="cp-head">
         <span class="bp-icon">${icon(def.icon)}</span>
         <div>
-          <h2 class="cp-name">${def.name}</h2>
-          <p class="cp-sub">${state}</p>
+          <h2 class="cp-name">${b.name}</h2>
+          <p class="cp-sub"><span class="level-chip">Nivel ${b.level} · ${age.name}</span> ${state}</p>
         </div>
         <button type="button" class="icon-button" data-close aria-label="Cerrar ficha">${icon('close')}</button>
       </header>
       <div class="cp-body">
-        <p class="reason">${def.desc}</p>
+        <p class="reason">${level.desc}</p>
         ${
-          !b.done
+          b.upgrading
+            ? `<section class="cp-section">
+                <h3>Mejora a ${next.name}</h3>
+                <div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.progress * 100)}%"></i></div>
+                <p class="reason">Los constructores trabajan en la mejora. Mientras tanto no se produce nada; al terminar, ${b.worker ? escapeHtml(b.worker.name) + ' vuelve a su trabajo' : 'la colonia elegirá un trabajador'}.</p>
+              </section>`
+            : !b.done
             ? `<section class="cp-section">
                 <h3>Obra</h3>
                 <div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.progress * 100)}%"></i></div>
@@ -210,6 +229,26 @@ export class BuildUI {
               <section class="cp-section">
                 <h3>Producción</h3>
                 <div class="stat-line"><span>Ha producido</span><strong>${produced}</strong></div>
+                ${stored !== null ? `<div class="stat-line"><span>Agua en las vasijas</span><strong>${stored} / ${level.capacity}</strong></div>` : ''}
+              </section>
+              <section class="cp-section">
+                <h3>Mejora</h3>
+                <ol class="level-track" aria-label="Niveles">
+                  ${AGES.map((a) => `<li class="${a.n < b.level ? 'is-past' : a.n === b.level ? 'is-now' : ''}" title="${a.name}">${a.numeral}</li>`).join('')}
+                </ol>
+                ${
+                  next
+                    ? `<div class="upgrade-card">
+                        <div class="upgrade-title"><span>Siguiente nivel</span><strong>${next.name}</strong></div>
+                        <p class="reason">${next.desc}</p>
+                        <div class="upgrade-foot">
+                          <span class="build-cost">${costHtml({ cost: next.upgradeCost }, this.colony.stock)}</span>
+                          <button type="button" class="btn btn--primary" data-upgrade ${upgradeProblem ? 'disabled' : ''}>${icon('hammer')}Mejorar</button>
+                        </div>
+                        ${upgradeProblem ? `<p class="reason" style="color:var(--warn)">${escapeHtml(upgradeProblem)}</p>` : ''}
+                      </div>`
+                    : `<p class="reason">${escapeHtml(upgradeProblem ?? '')}</p>`
+                }
               </section>`
         }
         <section class="cp-section">
@@ -229,11 +268,13 @@ export class BuildUI {
           </ul>
         </section>
       </div>`;
-    if (b.worker) paintAvatar(this.panel.querySelector('.worker-card .avatar'), b.worker.look);
+    const workerAvatar = this.panel.querySelector('.worker-card .avatar');
+    if (b.worker && workerAvatar) paintAvatar(workerAvatar, b.worker.look);
     for (const el of this.panel.querySelectorAll('[data-avatar]')) {
       paintAvatar(el, this.colony.colonists.find((c) => c.id === Number(el.dataset.avatar)).look);
     }
     this.panel.querySelector('[data-close]').addEventListener('click', () => this.buildings.select(null));
+    this.panel.querySelector('[data-upgrade]')?.addEventListener('click', () => this.buildings.upgrade(b));
     this.panel.querySelector('[data-see-worker]')?.addEventListener('click', () => this.onFocusColonist?.(b.worker));
     for (const button of this.panel.querySelectorAll('[data-assign]')) {
       button.addEventListener('click', () => {

@@ -14,6 +14,7 @@ import { ColonyUI } from './colonyUI.js';
 import { BuildingSystem } from './buildings.js';
 import { BuildUI } from './buildUI.js';
 import { WeatherSystem } from './weather.js';
+import { AgeUI } from './ageUI.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
@@ -146,6 +147,18 @@ const buildUI = new BuildUI({ buildings, colony, onFocusColonist: (c) => colonyU
 // Sólo una ficha abierta a la vez.
 colonyUI.onOpen = () => buildings.select(null);
 buildUI.onOpen = () => colony.select(null);
+const ageUI = new AgeUI({
+  colony,
+  timeLabel: () => {
+    const d = camps.camp?.dir;
+    return d ? `Día ${dayNight.day} · ${formatHour(dayNight.localHour(Math.atan2(d.x, d.z)))}` : '';
+  },
+});
+ageUI.onOpen = () => {
+  colony.select(null);
+  buildings.select(null);
+};
+colony.onAgeChange = () => buildings.save();
 
 // Estrellas pegadas a la cámara: siempre están "en el infinito".
 function createStars(count) {
@@ -346,9 +359,10 @@ renderer.setAnimationLoop(() => {
     isNight: campDir ? campDir.dot(dayNight.sunDirection) < -0.05 : false,
     timeLabel: campTime,
   });
-  if (camps.camp) buildings.update(delta, { timeLabel: campTime });
+  if (camps.camp) buildings.update(delta, { timeLabel: campTime, timeScale: dayNight.speed });
   colonyUI.update(delta);
   buildUI.update(delta);
+  ageUI.update(delta);
   updateSky(altitude);
 
   labelTimer -= delta;

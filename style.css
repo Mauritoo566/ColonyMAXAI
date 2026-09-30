@@ -978,8 +978,8 @@ summary:focus-visible {
 
 .stock {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -989,21 +989,356 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 6px 4px;
+  gap: 3px;
+  min-width: 0;
+  padding: 6px 2px;
   border-radius: 8px;
   background: var(--ui-bg-raised);
-  font: 700 15px/1 var(--font-display);
+  font: 700 14px/1 var(--font-display);
   font-variant-numeric: tabular-nums;
 }
 
 .stock .icon {
+  flex: none;
   color: var(--res);
-  font-size: 15px;
+  font-size: 13px;
 }
 
 .stock li.is-empty {
   color: var(--bad);
+}
+
+/* ---- Barra de edad (arriba al centro) ------------------------------------ */
+
+.age-wrap {
+  position: fixed;
+  top: calc(var(--gap) + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  z-index: 4;
+}
+
+.age-bar {
+  --gold: #e9c46a;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 18px 7px 8px;
+  border: 1px solid rgba(233, 196, 106, 0.45);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 236, 190, 0.1), rgba(255, 236, 190, 0) 55%),
+    linear-gradient(90deg, rgba(58, 36, 16, 0.92), rgba(24, 20, 16, 0.92) 50%, rgba(58, 36, 16, 0.92));
+  box-shadow:
+    inset 0 0 0 3px rgba(12, 10, 8, 0.55),
+    inset 0 0 0 4px rgba(233, 196, 106, 0.18),
+    0 8px 26px rgba(0, 0, 0, 0.45);
+  color: var(--ui-text);
+  font: inherit;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.age-bar:hover,
+.age-bar[aria-expanded='true'] {
+  border-color: var(--gold);
+}
+
+.age-flourish {
+  width: 46px;
+  height: 10px;
+  color: var(--gold);
+  opacity: 0.75;
+  transform: scaleX(-1);
+}
+
+.age-flourish--right {
+  transform: none;
+}
+
+.age-medal {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fbe3a0, #d9a441 55%, #8a5a1c);
+  box-shadow:
+    0 0 0 2px #3a2410,
+    0 0 0 3.5px rgba(233, 196, 106, 0.7),
+    0 3px 10px rgba(0, 0, 0, 0.5);
+  color: #3a2410;
+  font: 800 16px/1 Georgia, 'Times New Roman', serif;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.6);
+}
+
+.age-text {
+  display: grid;
+  gap: 5px;
+  min-width: 150px;
+  text-align: left;
+}
+
+.age-name {
+  color: #fbe7b5;
+  font: 700 16px/1 Georgia, 'Times New Roman', serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+}
+
+.age-progress {
+  display: grid;
+  gap: 4px;
+}
+
+.age-progress-label {
+  color: rgba(251, 231, 181, 0.7);
+  font: 600 11px/1 var(--font-display);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.age-progress-bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.age-progress-bar i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #b8862e, #f5d27a);
+  transition: width 0.4s ease;
+}
+
+.age-bar.is-ready .age-medal {
+  animation: age-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes age-glow {
+  50% {
+    box-shadow:
+      0 0 0 2px #3a2410,
+      0 0 0 3.5px rgba(233, 196, 106, 0.9),
+      0 0 18px rgba(245, 210, 122, 0.8);
+  }
+}
+
+.age-panel {
+  width: min(400px, calc(100vw - 2 * var(--gap)));
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+  padding: 14px;
+  box-sizing: border-box;
+}
+
+.age-list {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.age-item {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-bg-raised);
+}
+
+.age-item .age-medal {
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+  filter: grayscale(1) brightness(0.7);
+}
+
+.age-item.is-past .age-medal,
+.age-item.is-now .age-medal {
+  filter: none;
+}
+
+.age-item.is-now {
+  border-color: rgba(233, 196, 106, 0.6);
+  background: rgba(233, 196, 106, 0.08);
+}
+
+.age-item.is-soon {
+  opacity: 0.55;
+}
+
+.age-item h3 {
+  margin: 0 0 2px;
+  font: 700 14px/1.2 var(--font-display);
+}
+
+.age-item h3 small {
+  margin-left: 6px;
+  color: var(--ui-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.age-item p {
+  margin: 0;
+  color: var(--ui-muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.age-unlocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.age-unlocks span {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ui-text);
+  font: 600 11px/1.3 var(--font-display);
+}
+
+.age-req {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(233, 196, 106, 0.35);
+  border-radius: 10px;
+  background: rgba(233, 196, 106, 0.06);
+}
+
+.age-req h3 {
+  margin: 0;
+  font: 700 14px/1.2 var(--font-display);
+}
+
+.age-check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.age-check strong {
+  font-family: var(--font-display);
+}
+
+.age-check.is-ok strong {
+  color: var(--good);
+}
+
+.age-req .btn {
+  justify-content: center;
+}
+
+.age-req .btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ---- Nivel y mejora de edificios ----------------------------------------- */
+
+.level-chip {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(233, 196, 106, 0.16);
+  color: #f5d27a;
+  font: 700 11px/1.4 var(--font-display);
+}
+
+.level-track {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.level-track li {
+  flex: 1;
+  padding: 4px 0;
+  border-radius: 6px;
+  background: var(--ui-bg-raised);
+  color: var(--ui-muted);
+  font: 700 12px/1 Georgia, serif;
+  text-align: center;
+}
+
+.level-track li.is-past {
+  background: rgba(233, 196, 106, 0.18);
+  color: #f5d27a;
+}
+
+.level-track li.is-now {
+  background: linear-gradient(180deg, #f5d27a, #c9922f);
+  color: #3a2410;
+}
+
+.upgrade-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 10px;
+  background: var(--ui-bg-raised);
+}
+
+.upgrade-card .reason {
+  margin: 0;
+}
+
+.upgrade-title {
+  display: grid;
+  gap: 2px;
+}
+
+.upgrade-title span {
+  color: var(--ui-muted);
+  font: 600 11px/1 var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.upgrade-title strong {
+  font: 700 15px/1.2 var(--font-display);
+}
+
+.upgrade-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.upgrade-foot .btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 /* ---- Barra de construcción (abajo al centro) ----------------------------- */
@@ -1358,6 +1693,29 @@ summary:focus-visible {
 /* ---- Pantallas chicas ---------------------------------------------------- */
 
 @media (max-width: 720px) {
+  /* En el móvil sólo la medalla, arriba a la izquierda. */
+  .age-wrap {
+    left: var(--gap);
+    transform: none;
+    justify-items: start;
+  }
+
+  .age-bar {
+    padding: 3px;
+    gap: 0;
+  }
+
+  .age-flourish,
+  .age-text {
+    display: none;
+  }
+
+  .age-medal {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+  }
+
   :root {
     --gap: 12px;
   }
@@ -1417,6 +1775,18 @@ summary:focus-visible {
 }
 
 @media (min-width: 721px) and (max-width: 1100px) {
+  .age-flourish {
+    display: none;
+  }
+
+  .age-text {
+    min-width: 0;
+  }
+
+  .age-name {
+    font-size: 14px;
+  }
+
   .build-tab:not([aria-selected='true']) .build-tab-name {
     display: none;
   }
