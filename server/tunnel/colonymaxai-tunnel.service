@@ -1,0 +1,25 @@
+# Túnel rápido de Cloudflare hacia el juego + aviso de la dirección por Telegram.
+# Instalar en /etc/systemd/system/ y cambiar User= por el usuario de despliegue.
+[Unit]
+Description=ColonyMAXAI: túnel de Cloudflare y aviso por Telegram
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=CAMBIAR_USUARIO
+EnvironmentFile=/etc/colonymaxai/tunnel.env
+ExecStart=/usr/bin/node /opt/colonymaxai/server/tunnel/tunnel-bot.mjs
+Restart=always
+RestartSec=10
+# Carpeta propia en /var/lib/colonymaxai-tunnel (ahí queda url.txt con la dirección).
+StateDirectory=colonymaxai-tunnel
+Environment=HOME=/var/lib/colonymaxai-tunnel
+# Endurecimiento: no toca /home (así cloudflared no lee otra configuración) ni el sistema.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
