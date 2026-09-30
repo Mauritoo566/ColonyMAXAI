@@ -45,6 +45,8 @@ export class PlanetControls {
     this.north = new THREE.Vector3();
     this.forward = new THREE.Vector3();
     this.look = new THREE.Vector3();
+    this.tmpQuat = new THREE.Quaternion();
+    this.lookQuat = new THREE.Quaternion();
 
     element.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     element.addEventListener('pointermove', (e) => this.onPointerMove(e));
@@ -89,6 +91,19 @@ export class PlanetControls {
     const lat = Math.asin(THREE.MathUtils.clamp(targetDir.y, -1, 1));
     const lon = Math.atan2(targetDir.x, targetDir.z);
     const back = clearance * Math.tan(tiltFor(clearance));
+    // Terminar del lado por el que se llega, mirando en la dirección del viaje: así la
+    // cámara no pasa por encima del destino ni tiene que darse la vuelta al final.
+    const here = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - this.lat, this.lon);
+    const goal = targetDir.clone().normalize();
+    if (here.angleTo(goal) * RADIUS > back * 3) {
+      const gEast = new THREE.Vector3().crossVectors(WORLD_UP, goal).normalize();
+      const gNorth = new THREE.Vector3().crossVectors(goal, gEast);
+      const travel = goal.clone().sub(here); // desde aquí hacia el destino
+      const bearing = Math.atan2(travel.dot(gEast), travel.dot(gNorth));
+      // El ángulo equivalente más cercano al actual, para girar lo mínimo.
+      this.target.heading =
+        this.heading + THREE.MathUtils.euclideanModulo(bearing - this.heading + Math.PI, Math.PI * 2) - Math.PI;
+    }
     const h = this.target.heading;
     const endLat = THREE.MathUtils.clamp(lat - (back * Math.cos(h)) / RADIUS, -MAX_LAT, MAX_LAT);
     const endLon = lon - (back * Math.sin(h)) / RADIUS / Math.max(0.05, Math.cos(lat));
@@ -148,6 +163,9 @@ export class PlanetControls {
       FLIGHT_MAX_SECONDS,
     );
     this.flight = {
+      startHeading: this.heading,
+      // Punto que la cámara mira durante todo el vuelo (el destino, sobre el suelo).
+      focus: targetDir.clone().normalize().multiplyScalar(RADIUS + Math.max(0, surfaceHeight(targetDir))),
       start,
       rotation,
       base,
@@ -248,7 +266,14 @@ export class PlanetControls {
   update(delta) {
     if (this.flight) {
       this.updateFlight(delta);
-      this.heading += (this.target.heading - this.heading) * (1 - Math.exp(-delta * 8));
+      // Durante el vuelo el rumbo cambia de forma gradual en la primera mitad.
+      const f = this.flight;
+      if (f) {
+        const p = THREE.MathUtils.smoothstep(Math.min(1, f.time / f.duration), 0.05, 0.55);
+        this.heading = f.startHeading + (this.target.heading - f.startHeading) * p;
+      } else {
+        this.heading = this.target.heading;
+      }
       this.placeCamera();
       return;
     }
@@ -290,5 +315,24 @@ export class PlanetControls {
     look.copy(dir).multiplyScalar(-Math.cos(tilt)).addScaledVector(forward, Math.sin(tilt));
     camera.up.copy(dir).multiplyScalar(Math.sin(tilt)).addScaledVector(forward, Math.cos(tilt)).normalize();
     camera.lookAt(look.add(camera.position));
+
+    // Durante un vuelo la cámara mira fija al destino. Al empezar gira hacia él en un
+    // momento, y al final coincide con la vista normal (el vuelo termina justo detrás
+    // del destino), así que no hay saltos.
+    const f = this.flight;
+    if (f) {
+      const normalView = this.tmpQuat.copy(camera.quaternion);
+      // Arriba de la cámara: una mezcla fija del "arriba" del planeta y la dirección de
+      // avance. Mirando en horizontal manda el "arriba"; mirando hacia abajo, la
+      // dirección de avance. Así la cámara nunca gira sobre sí misma.
+      camera.up.copy(dir).addScaledVector(forward, 1.5).normalize();
+      camera.lookAt(f.focus);
+      // Gira hacia el destino en ~1 s al empezar y vuelve a la vista normal al final.
+      const t = Math.min(1, f.time / f.duration);
+      const turnIn = Math.min(0.3, 1.1 / f.duration);
+      const blend = THREE.MathUtils.smoothstep(t, 0, turnIn) * (1 - THREE.MathUtils.smoothstep(t, 0.8, 1));
+      this.lookQuat.copy(camera.quaternion);
+      camera.quaternion.slerpQuaternions(normalView, this.lookQuat, blend);
+    }
   }
 }

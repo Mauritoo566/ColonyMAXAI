@@ -353,7 +353,11 @@ function createHighClouds() {
 function cellClusters(i, j, lonCells) {
   const rand = seededRandom((i * 92821) ^ (j * 68917) ^ SEED);
   const center = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - (i + 0.5) * CELL, (j + 0.5) * CELL);
-  const count = Math.floor(cloudCover(center) * 6 + 1.2 + rand() * 1.6);
+  // Las celdas de 1° se achican hacia los polos (su ancho es proporcional al coseno de
+  // la latitud): la cantidad de cúmulos se escala igual para que la densidad sea pareja.
+  const area = Math.cos((i + 0.5) * CELL);
+  // Redondeo al azar: en promedio sale exactamente la cantidad esperada.
+  const count = Math.floor((cloudCover(center) * 6 + 2) * area + rand());
   const clusters = [];
   for (let c = 0; c < count; c++) {
     const lat = (i + rand()) * CELL;
