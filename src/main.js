@@ -7,6 +7,7 @@ import { cloudFade } from './clouds.js';
 import { waterUniforms } from './water.js';
 import { CampSystem } from './camp.js';
 import { biomeAt } from './biomes.js';
+import { ResourceSystem } from './resources.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
@@ -65,6 +66,9 @@ scene.add(stars);
 
 const planet = createPlanet();
 scene.add(planet.object);
+
+const resources = new ResourceSystem(scene);
+const resourceFocus = new THREE.Vector3();
 
 const camps = new CampSystem({
   scene,
@@ -249,6 +253,10 @@ renderer.setAnimationLoop(() => {
   updateSun(clearance);
   planet.update(delta, camera, dayNight.sunDirection, window.innerHeight);
   updateCloudFade(clearance);
+  // Los recursos se dibujan alrededor del punto que se mira (centro de la pantalla).
+  if (centerHit) resourceFocus.copy(hit).normalize();
+  else resourceFocus.copy(controls.dir);
+  resources.update(camera, resourceFocus, clearance);
   camps.update(delta);
   updateSky(altitude);
 

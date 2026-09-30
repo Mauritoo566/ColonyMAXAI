@@ -45,6 +45,29 @@ Cada punto de tierra tiene una **temperatura** (baja con la latitud y con la alt
 | Sabana | cálido y semiseco |
 | Selva tropical | cálido y muy húmedo |
 
+## Recursos naturales
+
+Aparecen solos por todo el planeta (`src/resources.js`), al azar pero siempre en el mismo lugar: el mundo se divide en baldosas de 320 m y cada una genera sus recursos con su propia semilla según el bioma. Los árboles se agrupan en bosques y los minerales sólo aparecen en vetas. Se dibujan cerca de la cámara (por debajo de 6 km de altura), con un InstancedMesh por tipo, y no aparecen a menos de 90 m del campamento.
+
+| Recurso | Da | Biomas |
+|---|---|---|
+| Árbol frondoso | madera dura | bosque templado, pradera, pantano, estepa |
+| Pino | madera blanda y resina | taiga, bosque, montaña, tundra |
+| Árbol tropical | madera dura y frutas | selva, pantano |
+| Acacia | madera | sabana, estepa |
+| Palmera | cocos y fibras | playa, selva |
+| Cactus | agua y fibras | desierto |
+| Arbusto de bayas | comida | pradera, bosque, taiga, sabana, selva |
+| Setas | comida | bosque, taiga, selva, pantano |
+| Juncos | fibras y techos | pantano, playa |
+| Piedras | piedra | casi todos, sobre todo montaña y tundra |
+| Pedernal | herramientas de piedra | pradera, estepa, bosque, desierto |
+| Arcilla | cerámica y ladrillos | pantano, playa, pradera |
+| Salinas | sal | desierto, playa, estepa |
+| Veta de cobre | cobre | montaña, desierto, estepa, tundra |
+| Veta de hierro | hierro | montaña, tundra, taiga, nieve |
+| Veta de oro | oro | montaña, desierto, selva (muy raro) |
+
 ## Día, noche y nubes
 
 El Sol gira alrededor del planeta; la hora que se muestra es la hora solar del lugar que estás mirando. De noche una luz de luna azulada y más luz ambiente mantienen el paisaje visible, y el cielo pasa por tonos de atardecer.
@@ -77,6 +100,8 @@ El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: ca
 - `src/daynight.js` – ciclo de día y noche
 - `src/water.js` – efecto del agua
 - `src/camp.js` – campamento inicial: modelo, colocación y guardado
+- `src/resources.js` – recursos naturales: tipos, modelos y generación por baldosas
+- `src/modelKit.js` – herramientas para modelar objetos low poly
 - `src/biomes.js` – biomas: qué hay en cada punto y con qué colores y adornos se dibuja
 - `src/terrain.js` – terreno con nivel de detalle (LOD) y reparto del trabajo a los workers
 - `src/chunkBuilder.js` – cálculo de la geometría de cada trozo (sin Three.js)
