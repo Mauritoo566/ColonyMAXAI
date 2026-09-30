@@ -6,6 +6,8 @@ const MAX_ALTITUDE = RADIUS * 4;
 const MAX_LAT = THREE.MathUtils.degToRad(89);
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const MAX_TILT = THREE.MathUtils.degToRad(62); // vista de estrategia cerca del suelo
+const FLIGHT_MIN_SECONDS = 1.5;
+const FLIGHT_MAX_SECONDS = 10;
 
 // 0 = mirando desde el espacio, 1 = a ras de suelo.
 function lowness(clearance) {
@@ -33,6 +35,7 @@ export class PlanetControls {
     this.groundHeight = 0;
     this.lowness = 0; // 0 = mirando desde el espacio, 1 = a ras de suelo
 
+    this.flight = null; // vuelo animado en curso (flyTo)
     this.pointers = new Map();
     this.pinch = null;
 
@@ -58,6 +61,7 @@ export class PlanetControls {
   }
 
   pan(dx, dy) {
+    this.cancelFlight();
     const angle = this.metersPerPixel() / RADIUS;
     const forward = dy * angle;
     const right = -dx * angle;
@@ -69,27 +73,81 @@ export class PlanetControls {
   }
 
   zoom(factor) {
+    this.cancelFlight();
     const ground = this.groundHeight + MIN_CLEARANCE;
     // Se escala la altura sobre el suelo, no sobre el nivel del mar.
     const above = Math.max(1, this.target.altitude - ground) * factor;
     this.target.altitude = THREE.MathUtils.clamp(ground + above, ground, MAX_ALTITUDE);
   }
 
-  // Lleva la cámara (con su suavizado) a mirar un punto de la superficie desde
-  // "clearance" metros de altura. Como cerca del suelo la cámara va inclinada, se
-  // coloca un poco por detrás del punto para que quede en el centro de la pantalla.
+  // Vuela hasta mirar un punto de la superficie desde "clearance" metros de altura.
+  // Como cerca del suelo la cámara va inclinada, termina un poco por detrás del punto
+  // para que quede en el centro de la pantalla. El vuelo sube más cuanto más lejos
+  // está el destino y dura más (entre FLIGHT_MIN_SECONDS y FLIGHT_MAX_SECONDS).
   flyTo(targetDir, clearance) {
     const lat = Math.asin(THREE.MathUtils.clamp(targetDir.y, -1, 1));
     const lon = Math.atan2(targetDir.x, targetDir.z);
     const back = clearance * Math.tan(tiltFor(clearance));
     const h = this.target.heading;
-    const tLat = THREE.MathUtils.clamp(lat - (back * Math.cos(h)) / RADIUS, -MAX_LAT, MAX_LAT);
-    const tLon = lon - (back * Math.sin(h)) / RADIUS / Math.max(0.05, Math.cos(lat));
-    this.target.lat = tLat;
-    // Longitud equivalente más cercana a la actual, para no dar la vuelta larga.
-    this.target.lon = this.lon + THREE.MathUtils.euclideanModulo(tLon - this.lon + Math.PI, Math.PI * 2) - Math.PI;
-    const under = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - tLat, tLon);
-    this.target.altitude = Math.max(0, surfaceHeight(under)) + clearance;
+    const endLat = THREE.MathUtils.clamp(lat - (back * Math.cos(h)) / RADIUS, -MAX_LAT, MAX_LAT);
+    const endLon = lon - (back * Math.sin(h)) / RADIUS / Math.max(0.05, Math.cos(lat));
+
+    const start = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - this.lat, this.lon);
+    const end = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - endLat, endLon);
+    const startClearance = Math.max(MIN_CLEARANCE, this.altitude - this.groundHeight);
+    const distance = start.angleTo(end) * RADIUS;
+    const logStart = Math.log(startClearance);
+    const logEnd = Math.log(clearance);
+    // Altura máxima del vuelo: para ir lejos hay que subir para ver el camino.
+    // Sólo se sube si esa altura supera la de partida y la de llegada; si no, el vuelo
+    // baja (o sube) directamente sin pasarse.
+    const peak = distance * 0.45;
+    const bump = peak > Math.max(startClearance, clearance) ? Math.log(peak) - Math.max(logStart, logEnd) : 0;
+    const duration = THREE.MathUtils.clamp(
+      1.2 + 1.1 * Math.log(1 + distance / 2_000) + 0.35 * Math.abs(logStart - logEnd),
+      FLIGHT_MIN_SECONDS,
+      FLIGHT_MAX_SECONDS,
+    );
+    this.flight = {
+      start,
+      rotation: new THREE.Quaternion().setFromUnitVectors(start, end),
+      logStart,
+      logEnd,
+      bump,
+      duration,
+      time: 0,
+      dir: new THREE.Vector3(),
+      partial: new THREE.Quaternion(),
+    };
+  }
+
+  // El jugador toma el control: la cámara se queda donde está.
+  cancelFlight() {
+    if (!this.flight) return;
+    this.flight = null;
+    this.target.lat = this.lat;
+    this.target.lon = this.lon;
+    this.target.altitude = this.altitude;
+  }
+
+  updateFlight(delta) {
+    const f = this.flight;
+    f.time += delta;
+    const t = Math.min(1, f.time / f.duration);
+    const e = 0.5 - 0.5 * Math.cos(Math.PI * t); // acelera y frena suavemente
+    // Recorrido por la superficie siguiendo la curvatura del planeta.
+    f.partial.identity().slerp(f.rotation, e);
+    f.dir.copy(f.start).applyQuaternion(f.partial);
+    this.lat = Math.asin(THREE.MathUtils.clamp(f.dir.y, -1, 1));
+    this.lon = Math.atan2(f.dir.x, f.dir.z);
+    this.groundHeight = surfaceHeight(f.dir);
+    // Altura en escala logarítmica, con una "joroba" en el medio del viaje.
+    const clearance = Math.exp(f.logStart + (f.logEnd - f.logStart) * e + f.bump * Math.sin(Math.PI * e));
+    this.altitude = this.groundHeight + Math.max(MIN_CLEARANCE, clearance);
+    this.target.lat = this.lat;
+    this.target.lon = this.lon;
+    this.target.altitude = this.altitude;
+    if (t >= 1) this.flight = null;
   }
 
   onPointerDown(e) {
@@ -111,6 +169,7 @@ export class PlanetControls {
       const distance = Math.hypot(a.x - b.x, a.y - b.y);
       const angle = Math.atan2(b.y - a.y, b.x - a.x);
       if (this.pinch) {
+        this.cancelFlight();
         this.zoom(this.pinch.distance / Math.max(1, distance));
         this.target.heading -= angle - this.pinch.angle;
       }
@@ -119,6 +178,7 @@ export class PlanetControls {
     }
 
     if (p.button === 2 || p.shift) {
+      this.cancelFlight();
       this.target.heading -= dx * 0.005; // botón derecho: girar la vista
     } else {
       this.pan(dx, dy);
@@ -137,6 +197,12 @@ export class PlanetControls {
   }
 
   update(delta) {
+    if (this.flight) {
+      this.updateFlight(delta);
+      this.heading += (this.target.heading - this.heading) * (1 - Math.exp(-delta * 8));
+      this.placeCamera();
+      return;
+    }
     const k = 1 - Math.exp(-delta * 8);
     const t = this.target;
 

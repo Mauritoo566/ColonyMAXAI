@@ -43,7 +43,9 @@ Rendimiento: los grandes sistemas nubosos están divididos en zonas y sólo se d
 
 El planeta tiene el radio real de la Tierra (6.371 km) y todo se mide en metros. El relieve está exagerado ×2,5 para que las montañas se vean desde el espacio.
 
-El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: cada trozo tiene 32×32 celdas y, cuando la cámara se acerca, se divide en 4 trozos hijos con el doble de detalle, hasta celdas de unos 10 m (unos 3 m cerca del campamento). Sólo se detalla lo que está en pantalla, y la geometría se calcula en Web Workers (`src/terrainWorker.js` + `src/chunkBuilder.js`) para que generar terreno no frene el juego; si el navegador no permite workers, se genera en el hilo principal con un tope de 5 ms por fotograma. Las sombras de las nubes se recalculan cada 3 fotogramas.
+El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: cada trozo tiene 32×32 celdas y, cuando la cámara se acerca, se divide en 4 trozos hijos con el doble de detalle, hasta celdas de unos 10 m (unos 3 m cerca del campamento). Sólo se detalla lo que está en pantalla, y la geometría se calcula en Web Workers (`src/terrainWorker.js` + `src/chunkBuilder.js`) para que generar terreno no frene el juego; si el navegador no permite workers, se genera en el hilo principal con un tope de 5 ms por fotograma. Lo que la bruma tapa no se detalla, y una calidad automática reduce el detalle del terreno si los fotogramas tardan más de 25 ms (y lo recupera si sobra tiempo). Las sombras de las nubes usan un mapa de 2048 px con filtro PCF y se recalculan cada 3 fotogramas.
+
+**Ir al campamento** hace un vuelo animado: sube si el destino está lejos, sigue la curvatura del planeta y baja con suavidad (de 1,5 a 10 s según la distancia). Mover la cámara durante el vuelo lo cancela.
 
 ## Estructura
 

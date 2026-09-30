@@ -19,7 +19,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap; // más barato que PCFSoft; el radio suaviza igual
 // Las sombras son de las nubes, que se mueven muy despacio: basta recalcularlas cada
 // pocos fotogramas (la sombra ya calculada sigue bien ubicada mientras tanto).
 renderer.shadowMap.autoUpdate = false;
@@ -45,10 +45,10 @@ const dayNight = new DayNight({ startLon: controls.lon, startHour: 10 });
 const sun = new THREE.DirectionalLight(SUN_WHITE.clone(), 3);
 sun.castShadow = true;
 const isSmallScreen = Math.min(window.innerWidth, window.innerHeight) < 700;
-sun.shadow.mapSize.setScalar(isSmallScreen ? 2048 : 4096);
+sun.shadow.mapSize.setScalar(isSmallScreen ? 1024 : 2048);
 sun.shadow.bias = -0.0002;
 sun.shadow.normalBias = 0;
-sun.shadow.radius = 3;
+sun.shadow.radius = 2;
 sun.shadow.intensity = 0.6; // la sombra de una nube oscurece, pero no deja el suelo negro
 scene.add(sun, sun.target);
 
@@ -168,8 +168,11 @@ function updateSky(altitude) {
     scene.fog.color.copy(scene.background);
     scene.fog.far = horizon * 1.3 + 150_000;
     scene.fog.near = scene.fog.far * 0.15;
+    // Lo que la bruma tapa casi del todo no necesita detalle.
+    planet.terrain.detailDistance = scene.fog.far * 0.8;
   } else {
     scene.fog.near = scene.fog.far = 1e12;
+    planet.terrain.detailDistance = Infinity;
   }
 }
 
@@ -213,10 +216,25 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// Calidad automática: si los fotogramas tardan mucho se reduce el detalle del
+// terreno poco a poco, y si sobra tiempo se recupera.
+const quality = { frameTime: 1 / 60, timer: 0, scale: 1 };
+function updateQuality(rawDelta) {
+  quality.frameTime += (Math.min(rawDelta, 0.25) - quality.frameTime) * 0.05;
+  quality.timer += rawDelta;
+  if (quality.timer < 1.5) return;
+  quality.timer = 0;
+  if (quality.frameTime > 1 / 40) quality.scale = Math.min(2.2, quality.scale * 1.15);
+  else if (quality.frameTime < 1 / 55) quality.scale = Math.max(1, quality.scale / 1.1);
+  planet.terrain.detailScale = quality.scale;
+}
+
 const clock = new THREE.Clock();
 let labelTimer = 0;
 renderer.setAnimationLoop(() => {
-  const delta = Math.min(clock.getDelta(), 0.1);
+  const rawDelta = clock.getDelta();
+  const delta = Math.min(rawDelta, 0.1);
+  updateQuality(rawDelta);
   controls.update(delta);
   dayNight.update(delta);
   waterUniforms.uTime.value += delta;

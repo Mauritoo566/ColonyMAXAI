@@ -193,6 +193,9 @@ export class Terrain {
     this.horizon = Infinity;
     this.frame = 0;
     this.zonesVersion = 0;
+    // Ajustes de rendimiento que decide main.js:
+    this.detailScale = 1; // >1 = menos detalle (calidad automática en equipos lentos)
+    this.detailDistance = Infinity; // más allá (dentro de la bruma) no se detalla
 
     this.pool = new WorkerPool(
       (node, data) => this.receive(node, data),
@@ -272,7 +275,8 @@ export class Terrain {
     const centerDistance = this.camera.distanceTo(node.center);
     if (centerDistance - node.worldSize > this.horizon) return false;
     const distance = Math.max(1, centerDistance - node.worldSize * 0.7);
-    const threshold = node.children ? MERGE_THRESHOLD : SPLIT_THRESHOLD;
+    if (distance > this.detailDistance) return false;
+    const threshold = (node.children ? MERGE_THRESHOLD : SPLIT_THRESHOLD) * this.detailScale;
     return node.worldSize / distance > threshold;
   }
 
