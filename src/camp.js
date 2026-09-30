@@ -1,168 +1,537 @@
 import * as THREE from 'three';
-import { RADIUS, elevation, surfaceHeight } from './elevation.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import {
+  RADIUS,
+  elevation,
+  moisture,
+  surfaceHeight,
+  naturalSurfaceHeight,
+  addTerrainZone,
+  removeTerrainZone,
+} from './elevation.js';
 
 // Campamento inicial de la civilización: el jugador elige dónde fundarlo haciendo clic
-// en el terreno. Se guarda en el navegador para recuperarlo al volver a abrir el juego.
+// en el terreno. Al fundarlo el terreno se nivela en un círculo, se pinta un claro de
+// tierra pisada y alrededor crecen árboles, arbustos y rocas según el bioma.
+// Se guarda en el navegador para recuperarlo al volver a abrir el juego.
 
 const STORAGE_KEY = 'colonymaxai.camp';
 const MAX_PICK_CLEARANCE = 60_000; // hay que acercarse a menos de 60 km para elegir el sitio
-const MAX_SLOPE = 0.5; // pendiente máxima (desnivel / distancia), unos 27°
-const CAMP_RADIUS = 45; // metros: tamaño del anillo de la vista previa
+const MAX_SLOPE = 0.4; // desnivel máximo (por metro) alrededor del sitio, unos 22°
 const CLICK_TOLERANCE = 6; // píxeles que se puede mover el puntero y seguir contando como clic
 const FLY_TO_CLEARANCE = 55; // altura a la que se acerca la cámara al fundar o ir al campamento
+
+// Terreno que se modifica alrededor del campamento (metros).
+const FLAT_RADIUS = 30; // círculo nivelado
+const BLEND_RADIUS = 32; // transición suave hasta el terreno natural
+const CLEAR_RADIUS = 21; // claro de tierra pisada
+const DETAIL_RADIUS = 1_500; // malla más fina alrededor
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 // ---------------------------------------------------------------------------
-// Modelo low poly del campamento (en metros, con el eje Y hacia arriba)
+// Utilidades de modelado: todas las piezas fijas se juntan en una sola malla con
+// colores por vértice (una sola llamada de dibujo).
 // ---------------------------------------------------------------------------
 
-function flatMaterial(color, extra = {}) {
-  return new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.9, metalness: 0, ...extra });
+class Parts {
+  constructor() {
+    this.list = [];
+  }
+
+  add(geometry, color, matrix) {
+    let g = geometry.index ? geometry.toNonIndexed() : geometry;
+    geometry.dispose?.();
+    for (const name of Object.keys(g.attributes)) {
+      if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+    }
+    if (!g.attributes.normal) g.computeVertexNormals();
+    if (matrix) g.applyMatrix4(matrix);
+    const c = new THREE.Color(color);
+    const n = g.attributes.position.count;
+    const colors = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) c.toArray(colors, i * 3);
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    this.list.push(g);
+    return this;
+  }
+
+  mesh(material) {
+    const geometry = mergeGeometries(this.list, false);
+    for (const g of this.list) g.dispose();
+    this.list = [];
+    geometry.computeBoundingSphere();
+    return new THREE.Mesh(geometry, material);
+  }
 }
 
-function createTent(color, size = 1) {
-  const tent = new THREE.Group();
-  const cloth = new THREE.Mesh(new THREE.ConeGeometry(4 * size, 5.5 * size, 6), flatMaterial(color));
-  cloth.position.y = 2.75 * size;
-  tent.add(cloth);
-  // Entrada oscura.
-  const door = new THREE.Mesh(new THREE.PlaneGeometry(1.6 * size, 2.4 * size), flatMaterial('#2a1d14'));
-  door.position.set(0, 1.2 * size, 3.35 * size);
-  door.rotation.x = -0.63;
-  tent.add(door);
-  // Palos que asoman por arriba.
-  const poleMaterial = flatMaterial('#5b3b22');
-  for (let i = 0; i < 3; i++) {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.6 * size, 4), poleMaterial);
-    pole.position.y = 5.9 * size;
-    pole.rotation.z = (i - 1) * 0.35;
-    pole.rotation.y = i * 2.1;
-    tent.add(pole);
-  }
-  return tent;
-}
+const tmpQuat = new THREE.Quaternion();
+const tmpEuler = new THREE.Euler();
 
-function createCampfire() {
-  const fire = new THREE.Group();
-  const stoneMaterial = flatMaterial('#7d7a74');
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2;
-    const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.45, 0), stoneMaterial);
-    stone.position.set(Math.cos(a) * 1.5, 0.2, Math.sin(a) * 1.5);
-    stone.rotation.set(a, a * 2, 0);
-    fire.add(stone);
-  }
-  const logMaterial = flatMaterial('#6b4426');
-  for (let i = 0; i < 4; i++) {
-    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 2.2, 5), logMaterial);
-    log.rotation.z = Math.PI / 2 - 0.35;
-    log.rotation.y = (i / 4) * Math.PI * 2;
-    log.position.y = 0.45;
-    fire.add(log);
-  }
-  const flameMaterial = new THREE.MeshStandardMaterial({
-    color: '#ffb347',
-    emissive: '#ff7a1a',
-    emissiveIntensity: 2.5,
-    flatShading: true,
-  });
-  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.7, 1.9, 5), flameMaterial);
-  flame.position.y = 1.2;
-  fire.add(flame);
-  const inner = new THREE.Mesh(
-    new THREE.ConeGeometry(0.4, 1.2, 5),
-    new THREE.MeshStandardMaterial({ color: '#fff1a8', emissive: '#ffd24a', emissiveIntensity: 3, flatShading: true }),
+function mat(x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) {
+  tmpEuler.set(rx, ry, rz);
+  return new THREE.Matrix4().compose(
+    new THREE.Vector3(x, y, z),
+    tmpQuat.setFromEuler(tmpEuler).clone(),
+    new THREE.Vector3(sx, sy, sz),
   );
-  inner.position.y = 0.9;
-  fire.add(inner);
+}
 
-  // Luz de la fogata: se nota sobre todo de noche.
-  const light = new THREE.PointLight('#ff9a4a', 120, 140, 2);
+// Un palo (cilindro) entre dos puntos.
+function stick(parts, from, to, radius, color, segments = 5, base = null) {
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const length = dir.length();
+  const m = new THREE.Matrix4().compose(
+    from.clone().add(to).multiplyScalar(0.5),
+    new THREE.Quaternion().setFromUnitVectors(Y_AXIS, dir.normalize()),
+    new THREE.Vector3(1, 1, 1),
+  );
+  if (base) m.premultiply(base);
+  parts.add(new THREE.CylinderGeometry(radius * 0.85, radius, length, segments), color, m);
+}
+
+function v(x, y, z) {
+  return new THREE.Vector3(x, y, z);
+}
+
+function triangle(a, b, c) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([...a.toArray(), ...b.toArray(), ...c.toArray()], 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+function seededRandom(seed) {
+  let s = seed >>> 0 || 1;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function vary(color, rand, amount = 0.08) {
+  const c = new THREE.Color(color);
+  const k = 1 + (rand() - 0.5) * 2 * amount;
+  return c.multiplyScalar(k);
+}
+
+// ---------------------------------------------------------------------------
+// Piezas del campamento (en metros, suelo en y = 0)
+// ---------------------------------------------------------------------------
+
+const BARK = '#6b4a2e';
+const WOOD = '#8a643c';
+const STONE = '#8b877f';
+
+function addTipi(parts, x, z, facing, style) {
+  const base = mat(x, 0, z, 0, facing, 0);
+  const H = 7.2 * style.size;
+  const R = 3.5 * style.size;
+  const radiusAt = (y) => R * (1 - y / H);
+  const local = (m) => m.premultiply(base);
+
+  parts.add(new THREE.ConeGeometry(R, H, 9, 1), style.cloth, local(mat(0, H / 2, 0)));
+  // Franjas decorativas pintadas sobre la tela.
+  for (const [y0, y1, color] of style.bands) {
+    const a = y0 * H;
+    const b = y1 * H;
+    parts.add(
+      new THREE.CylinderGeometry(radiusAt(b) * 1.015, radiusAt(a) * 1.015, b - a, 9, 1, true),
+      color,
+      local(mat(0, (a + b) / 2, 0)),
+    );
+  }
+  // Puerta abierta (mirando hacia la fogata) y la solapa doblada.
+  const onCone = (angle, y, out = 1.03) => {
+    const r = radiusAt(y) * out;
+    return v(Math.sin(angle) * r, y, Math.cos(angle) * r);
+  };
+  const doorTop = 2.9 * style.size;
+  parts.add(triangle(onCone(-0.3, 0.02), onCone(0.3, 0.02), onCone(0, doorTop)), '#2a1d14', base.clone());
+  parts.add(
+    triangle(onCone(0.3, 0.02), onCone(0, doorTop, 1.05), onCone(0.62, 0.35, 1.28)),
+    new THREE.Color(style.cloth).multiplyScalar(0.82),
+    base.clone(),
+  );
+  // Palos que asoman por arriba.
+  const apex = v(0, H * 0.9, 0);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + 0.3;
+    const tip = apex.clone().add(v(Math.sin(a) * 0.55, 1.7, Math.cos(a) * 0.55).multiplyScalar(style.size));
+    stick(parts, apex, tip, 0.07, '#4e3421', 4, base);
+  }
+  // Estacas en la base.
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + 0.45;
+    if (Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < 0.5) continue; // no delante de la puerta
+    const p = onCone(a, 0, 1.08);
+    stick(parts, p.clone().setY(-0.2), p.clone().setY(0.45), 0.05, '#4e3421', 4, base);
+  }
+}
+
+function addFirePit(parts, rand) {
+  parts.add(new THREE.CircleGeometry(1.45, 10), '#3a322b', mat(0, 0.06, 0, -Math.PI / 2));
+  for (let i = 0; i < 11; i++) {
+    const a = (i / 11) * Math.PI * 2 + rand() * 0.2;
+    const s = 0.34 + rand() * 0.16;
+    parts.add(
+      new THREE.DodecahedronGeometry(1, 0),
+      vary(STONE, rand, 0.12),
+      mat(Math.cos(a) * 1.7, s * 0.35, Math.sin(a) * 1.7, rand() * 3, rand() * 3, 0, s * 1.1, s * 0.7, s),
+    );
+  }
+  // Leños en forma de tipi.
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    stick(parts, v(Math.sin(a) * 0.85, 0.05, Math.cos(a) * 0.85), v(Math.sin(a) * 0.08, 1.25, Math.cos(a) * 0.08), 0.12, '#4a3020');
+  }
+  // Trípode con olla.
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 + 0.5;
+    stick(parts, v(Math.sin(a) * 1.9, 0, Math.cos(a) * 1.9), v(0, 3.2, 0), 0.06, '#5a3d26', 4);
+  }
+  stick(parts, v(0, 3.2, 0), v(0, 2.55, 0), 0.02, '#2b2b2b', 3);
+  const pot = new THREE.LatheGeometry(
+    [
+      new THREE.Vector2(0.01, 0),
+      new THREE.Vector2(0.32, 0.03),
+      new THREE.Vector2(0.44, 0.22),
+      new THREE.Vector2(0.42, 0.45),
+      new THREE.Vector2(0.34, 0.54),
+      new THREE.Vector2(0.38, 0.58),
+    ],
+    8,
+  );
+  parts.add(pot, '#34302c', mat(0, 1.98, 0));
+  // Bancos de troncos alrededor.
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.4;
+    const c = v(Math.sin(a) * 4.4, 0.32, Math.cos(a) * 4.4);
+    const t = v(Math.cos(a), 0, -Math.sin(a)).multiplyScalar(1.5 + rand() * 0.4);
+    stick(parts, c.clone().sub(t), c.clone().add(t), 0.33, vary(BARK, rand), 7);
+  }
+}
+
+function addDryingRack(parts, x, z, facing, rand) {
+  const base = mat(x, 0, z, 0, facing, 0);
+  stick(parts, v(-1.6, -0.2, 0), v(-1.6, 2.5, 0), 0.08, WOOD, 5, base);
+  stick(parts, v(1.6, -0.2, 0), v(1.6, 2.5, 0), 0.08, WOOD, 5, base);
+  stick(parts, v(-1.9, 2.4, 0), v(1.9, 2.4, 0), 0.06, WOOD, 5, base);
+  const hides = ['#b58b5b', '#a3784a', '#c49a68'];
+  for (let i = 0; i < 3; i++) {
+    const m = mat(-1 + i, 1.65, 0.02, 0, (rand() - 0.5) * 0.3, (rand() - 0.5) * 0.12, 0.85, 1.25, 1);
+    parts.add(new THREE.PlaneGeometry(1, 1.2, 1, 2), hides[i], m.premultiply(base));
+  }
+}
+
+function addWoodPile(parts, x, z, facing, rand) {
+  const base = mat(x, 0, z, 0, facing, 0);
+  for (let row = 0; row < 4; row++) {
+    const count = 4 - row;
+    for (let i = 0; i < count; i++) {
+      const px = (i - (count - 1) / 2) * 0.58;
+      const py = 0.28 + row * 0.5;
+      stick(parts, v(px, py, -1.5), v(px, py, 1.5), 0.27, vary(BARK, rand, 0.1), 6, base);
+    }
+  }
+  // Tocón con un hacha clavada.
+  parts.add(new THREE.CylinderGeometry(0.55, 0.62, 0.8, 7), BARK, mat(2.4, 0.4, 0.6).premultiply(base));
+  parts.add(new THREE.CylinderGeometry(0.5, 0.5, 0.04, 7), '#c9a26b', mat(2.4, 0.81, 0.6).premultiply(base));
+  stick(parts, v(2.35, 0.78, 0.6), v(2.05, 1.7, 0.55), 0.045, '#9a7446', 4, base);
+  parts.add(new THREE.BoxGeometry(0.42, 0.24, 0.05), '#6d6d70', mat(2.45, 0.85, 0.6, 0, 0, -0.3).premultiply(base));
+}
+
+function addStorage(parts, x, z, rand) {
+  const potShape = [
+    new THREE.Vector2(0.01, 0),
+    new THREE.Vector2(0.28, 0.02),
+    new THREE.Vector2(0.42, 0.35),
+    new THREE.Vector2(0.36, 0.72),
+    new THREE.Vector2(0.2, 0.86),
+    new THREE.Vector2(0.24, 0.94),
+  ];
+  for (let i = 0; i < 4; i++) {
+    const s = 0.75 + rand() * 0.5;
+    parts.add(
+      new THREE.LatheGeometry(potShape, 8),
+      vary('#b3643a', rand, 0.12),
+      mat(x + (rand() - 0.5) * 2.4, 0, z + (rand() - 0.5) * 2.4, 0, rand() * 6, 0, s),
+    );
+  }
+  for (let i = 0; i < 2; i++) {
+    parts.add(
+      new THREE.CylinderGeometry(0.5, 0.4, 0.6, 9),
+      vary('#c49a5a', rand),
+      mat(x + 1.6 + i * 1.1, 0.3, z - 0.8 + rand() * 0.4),
+    );
+  }
+  for (let i = 0; i < 3; i++) {
+    parts.add(
+      new THREE.DodecahedronGeometry(1, 0),
+      vary('#bfa57a', rand),
+      mat(x - 1.8 + i * 0.7, 0.35, z + 1.3, rand(), rand() * 6, 0, 0.5, 0.55, 0.42),
+    );
+  }
+}
+
+function addGroundDetails(parts, rand) {
+  // Matas de pasto y piedritas en el borde del claro.
+  for (let i = 0; i < 40; i++) {
+    const a = rand() * Math.PI * 2;
+    const r = 17 + rand() * 14;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    if (rand() < 0.75) {
+      for (let k = 0; k < 3; k++) {
+        parts.add(
+          new THREE.ConeGeometry(0.12, 0.7 + rand() * 0.4, 3),
+          vary('#5d8f36', rand, 0.15),
+          mat(x + (rand() - 0.5) * 0.4, 0.3, z + (rand() - 0.5) * 0.4, (rand() - 0.5) * 0.5, 0, (rand() - 0.5) * 0.5),
+        );
+      }
+    } else {
+      const s = 0.2 + rand() * 0.3;
+      parts.add(new THREE.DodecahedronGeometry(1, 0), vary(STONE, rand, 0.15), mat(x, s * 0.3, z, rand(), rand(), 0, s));
+    }
+  }
+}
+
+function addBannerPole(parts) {
+  stick(parts, v(0, -0.3, 0), v(0, 9.2, 0), 0.13, '#4a3120', 6);
+  stick(parts, v(-0.1, 8.3, 0), v(2.9, 8.3, 0), 0.05, '#4a3120', 4);
+  parts.add(new THREE.OctahedronGeometry(0.32, 0), '#d8a640', mat(0, 9.45, 0));
+}
+
+// Partes animadas: fuego, humo y bandera.
+function createFire() {
+  const fire = new THREE.Group();
+  const flameColors = [
+    ['#ff8a2a', '#ff5a0a', 0.75, 1.9],
+    ['#ffc04a', '#ff9a1a', 0.5, 1.5],
+    ['#fff2b0', '#ffd860', 0.28, 1.0],
+  ];
+  fire.userData.flames = flameColors.map(([color, emissive, r, h], i) => {
+    const flame = new THREE.Mesh(
+      new THREE.ConeGeometry(r, h, 6),
+      new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: 2.2 + i, flatShading: true }),
+    );
+    flame.position.y = h / 2 + 0.2;
+    flame.userData.height = h;
+    fire.add(flame);
+    return flame;
+  });
+  // Brasas.
+  const emberMaterial = new THREE.MeshStandardMaterial({ color: '#ff6a1a', emissive: '#ff4a00', emissiveIntensity: 2 });
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const ember = new THREE.Mesh(new THREE.DodecahedronGeometry(0.16, 0), emberMaterial);
+    ember.position.set(Math.cos(a) * 0.6, 0.15, Math.sin(a) * 0.6);
+    fire.add(ember);
+  }
+  // Humo: bolitas grises que suben y se desvanecen.
+  const puffGeometry = new THREE.IcosahedronGeometry(1, 0);
+  fire.userData.smoke = [];
+  for (let i = 0; i < 7; i++) {
+    const puff = new THREE.Mesh(
+      puffGeometry,
+      new THREE.MeshStandardMaterial({ color: '#b8b4ae', transparent: true, depthWrite: false, flatShading: true }),
+    );
+    puff.userData.phase = i / 7;
+    fire.add(puff);
+    fire.userData.smoke.push(puff);
+  }
+  const light = new THREE.PointLight('#ff9a4a', 140, 160, 2);
   light.position.y = 2.2;
   fire.add(light);
-
-  fire.userData.flame = flame;
-  fire.userData.inner = inner;
   fire.userData.light = light;
   return fire;
 }
 
-function createBanner() {
-  const banner = new THREE.Group();
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 9, 5), flatMaterial('#4a3120'));
-  pole.position.y = 4.5;
-  banner.add(pole);
-  const flag = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.8, 3, 1), flatMaterial('#c0392b', { side: THREE.DoubleSide }));
-  flag.position.set(1.6, 7.8, 0);
-  banner.add(flag);
-  banner.userData.flag = flag;
-  return banner;
-}
-
-function createWoodPile() {
-  const pile = new THREE.Group();
-  const logMaterial = flatMaterial('#7a5230');
-  for (let row = 0; row < 3; row++) {
-    for (let i = 0; i < 3 - row; i++) {
-      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 3, 6), logMaterial);
-      log.rotation.x = Math.PI / 2;
-      log.position.set((i - (2 - row) / 2) * 0.62, 0.3 + row * 0.52, 0);
-      pile.add(log);
-    }
+function createFlag() {
+  const geometry = new THREE.PlaneGeometry(2.7, 1.7, 10, 4);
+  geometry.translate(1.45, 7.35, 0);
+  const colors = new Float32Array(geometry.attributes.position.count * 3);
+  const main = new THREE.Color('#b8322a');
+  const stripe = new THREE.Color('#e8c35a');
+  const pos = geometry.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    (Math.abs(y - 7.35) < 0.22 ? stripe : main).toArray(colors, i * 3);
   }
-  return pile;
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const flag = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide, roughness: 0.8 }),
+  );
+  flag.userData.base = Float32Array.from(pos.array);
+  return flag;
 }
 
-function createCrate() {
-  return new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), flatMaterial('#9c7446'));
-}
-
-export function createCampModel() {
+// Modelo completo del campamento, centrado en la fogata.
+export function createCampModel(seed = 1) {
+  const rand = seededRandom(seed);
   const camp = new THREE.Group();
   camp.name = 'camp';
+  const parts = new Parts();
 
-  // Suelo pisado bajo el campamento, para que se lea como un claro.
-  const ground = new THREE.Mesh(new THREE.CircleGeometry(24, 9), flatMaterial('#9a8158'));
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = 0.5;
-  camp.add(ground);
-
-  const fire = createCampfire();
-  camp.add(fire);
-
-  const tents = [
-    { angle: 0.3, dist: 11, color: '#d9c9a3', size: 1 },
-    { angle: 2.2, dist: 12, color: '#c8a77a', size: 1.15 },
-    { angle: 4.1, dist: 10.5, color: '#e0d3b1', size: 0.9 },
+  addFirePit(parts, rand);
+  const tipis = [
+    { angle: 0.2, dist: 11.5, size: 1.05, cloth: '#dccaa2', bands: [[0.18, 0.26, '#a8452d'], [0.3, 0.33, '#2f5d7a'], [0.62, 0.66, '#a8452d']] },
+    { angle: 1.75, dist: 12.5, size: 1.2, cloth: '#cdb088', bands: [[0.2, 0.3, '#2f5d7a'], [0.34, 0.37, '#e0c25a'], [0.6, 0.64, '#2f5d7a']] },
+    { angle: 3.4, dist: 11, size: 0.95, cloth: '#e4d7b6', bands: [[0.16, 0.22, '#7a3b8a'], [0.58, 0.62, '#7a3b8a']] },
+    { angle: 4.9, dist: 13, size: 1.1, cloth: '#d1b98e', bands: [[0.22, 0.3, '#a8452d'], [0.33, 0.36, '#1f1f1f'], [0.64, 0.68, '#a8452d']] },
   ];
-  for (const t of tents) {
-    const tent = createTent(t.color, t.size);
-    tent.position.set(Math.cos(t.angle) * t.dist, 0, Math.sin(t.angle) * t.dist);
-    // La entrada mira hacia la fogata.
-    tent.lookAt(0, 0, 0);
-    camp.add(tent);
+  for (const t of tipis) {
+    const x = Math.cos(t.angle) * t.dist;
+    const z = Math.sin(t.angle) * t.dist;
+    // La puerta (eje +Z del tipi) mira hacia la fogata.
+    addTipi(parts, x, z, Math.atan2(-x, -z), t);
   }
+  addDryingRack(parts, Math.cos(2.6) * 9, Math.sin(2.6) * 9, 2.6 + Math.PI / 2, rand);
+  addWoodPile(parts, Math.cos(5.8) * 9.5, Math.sin(5.8) * 9.5, 5.8, rand);
+  addStorage(parts, Math.cos(1.0) * 8, Math.sin(1.0) * 8, rand);
+  addGroundDetails(parts, rand);
 
-  const banner = createBanner();
-  banner.position.set(-4, 0, -14);
+  const bannerX = Math.cos(4.1) * 6.5;
+  const bannerZ = Math.sin(4.1) * 6.5;
+  const banner = new THREE.Group();
+  banner.position.set(bannerX, 0, bannerZ);
+  const bannerParts = new Parts();
+  addBannerPole(bannerParts);
+  const propsMaterial = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    flatShading: true,
+    roughness: 0.9,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+  banner.add(bannerParts.mesh(propsMaterial));
+  const flag = createFlag();
+  banner.add(flag);
   camp.add(banner);
 
-  const pile = createWoodPile();
-  pile.position.set(15, 0, 4);
-  pile.rotation.y = 0.8;
-  camp.add(pile);
-
-  for (const [x, z, r] of [[-15, 6, 0.3], [-16.3, 7.2, 1.1], [-14.8, 7.6, 0.6]]) {
-    const crate = createCrate();
-    crate.position.set(x, 0.6, z);
-    crate.rotation.y = r;
-    camp.add(crate);
-  }
+  camp.add(parts.mesh(propsMaterial));
+  const fire = createFire();
+  camp.add(fire);
 
   camp.userData.fire = fire;
-  camp.userData.banner = banner;
+  camp.userData.flag = flag;
   return camp;
+}
+
+// ---------------------------------------------------------------------------
+// Naturaleza alrededor del campamento: árboles, arbustos y rocas según el bioma
+// ---------------------------------------------------------------------------
+
+function addPine(parts, p, s, rand) {
+  stick(parts, p.clone().setY(p.y - 0.5), p.clone().setY(p.y + 2.4 * s), 0.28 * s, '#5a3b24', 5);
+  const layers = [
+    [2.7, 4.2, 3.4],
+    [2.1, 3.6, 5.6],
+    [1.4, 3.0, 7.7],
+  ];
+  for (const [r, h, y] of layers) {
+    parts.add(new THREE.ConeGeometry(r * s, h * s, 7), vary('#2f5a34', rand, 0.12), mat(p.x, p.y + y * s, p.z, 0, rand() * 6, 0));
+  }
+}
+
+function addBroadleaf(parts, p, s, rand) {
+  stick(parts, p.clone().setY(p.y - 0.5), p.clone().setY(p.y + 3.6 * s), 0.32 * s, '#5e4128', 5);
+  const greens = ['#4f8a3a', '#5c9a42', '#447d36'];
+  for (let i = 0; i < 3; i++) {
+    const a = rand() * Math.PI * 2;
+    const r = 2.1 + rand() * 0.9;
+    parts.add(
+      new THREE.IcosahedronGeometry(1, 0),
+      vary(greens[i], rand),
+      mat(p.x + Math.cos(a) * 1.1 * s, p.y + (4.6 + rand() * 1.2) * s, p.z + Math.sin(a) * 1.1 * s, rand(), rand(), 0, r * s, r * 0.85 * s, r * s),
+    );
+  }
+}
+
+function addBush(parts, p, s, rand, color = '#4e8636') {
+  for (let i = 0; i < 2; i++) {
+    const r = (0.8 + rand() * 0.6) * s;
+    parts.add(
+      new THREE.IcosahedronGeometry(1, 0),
+      vary(color, rand, 0.12),
+      mat(p.x + (rand() - 0.5) * s, p.y + r * 0.55, p.z + (rand() - 0.5) * s, rand(), rand(), 0, r, r * 0.75, r),
+    );
+  }
+}
+
+function addRock(parts, p, s, rand) {
+  parts.add(
+    new THREE.DodecahedronGeometry(1, 0),
+    vary('#8a867e', rand, 0.15),
+    mat(p.x, p.y + 0.25 * s, p.z, rand(), rand() * 6, rand() * 0.4, s * 1.2, s * 0.7, s),
+  );
+}
+
+function tangentBasis(dir) {
+  const east = new THREE.Vector3().crossVectors(Y_AXIS, dir);
+  if (east.lengthSq() < 1e-10) east.set(1, 0, 0);
+  east.normalize();
+  const north = new THREE.Vector3().crossVectors(dir, east);
+  return { east, north };
+}
+
+// Crea la malla con la naturaleza que rodea el campamento. Las alturas se toman del
+// terreno (ya nivelado), así que cada árbol queda apoyado en el suelo.
+function createSurroundings(campDir, campHeight, seed, material) {
+  const rand = seededRandom(seed ^ 0x9e3779b9);
+  const object = new THREE.Object3D();
+  const origin = campDir.clone().multiplyScalar(RADIUS + campHeight);
+  object.position.copy(origin);
+  object.quaternion.setFromUnitVectors(Y_AXIS, campDir);
+  const toLocal = object.quaternion.clone().invert();
+  const { east, north } = tangentBasis(campDir);
+  const parts = new Parts();
+  const dir = new THREE.Vector3();
+
+  for (let attempt = 0; attempt < 700; attempt++) {
+    const angle = rand() * Math.PI * 2;
+    const dist = FLAT_RADIUS + 6 + Math.pow(rand(), 0.8) * 230;
+    // Más denso cerca del claro y cada vez menos hacia fuera.
+    const falloff = 1 - THREE.MathUtils.smoothstep(dist, 90, 240);
+    dir
+      .copy(campDir)
+      .addScaledVector(east, (Math.cos(angle) * dist) / RADIUS)
+      .addScaledVector(north, (Math.sin(angle) * dist) / RADIUS)
+      .normalize();
+    const e = elevation(dir.x, dir.y, dir.z);
+    if (e <= 0.004 || Math.abs(dir.y) > 0.9 || e > 0.62) continue;
+
+    const m = moisture(dir.x, dir.y, dir.z);
+    const desert = m < -0.12 && Math.abs(dir.y) < 0.55;
+    const mountain = e > 0.45;
+    const forest = m > 0.08;
+    const density = desert ? 0.25 : mountain ? 0.35 : forest ? 0.95 : 0.55;
+    if (rand() > density * falloff) continue;
+
+    const h = surfaceHeight(dir);
+    const p = dir.clone().multiplyScalar(RADIUS + h).sub(origin).applyQuaternion(toLocal);
+    const s = 0.8 + rand() * 0.55;
+    const roll = rand();
+    if (desert) {
+      if (roll < 0.55) addRock(parts, p, s * 1.3, rand);
+      else addBush(parts, p, s * 0.7, rand, '#8a8f4a');
+    } else if (mountain) {
+      if (roll < 0.5) addPine(parts, p, s, rand);
+      else addRock(parts, p, s * 1.6, rand);
+    } else if (forest) {
+      if (roll < 0.5) addPine(parts, p, s * 1.1, rand);
+      else if (roll < 0.85) addBroadleaf(parts, p, s, rand);
+      else addBush(parts, p, s, rand);
+    } else {
+      if (roll < 0.35) addBroadleaf(parts, p, s, rand);
+      else if (roll < 0.5) addPine(parts, p, s, rand);
+      else if (roll < 0.85) addBush(parts, p, s, rand);
+      else addRock(parts, p, s, rand);
+    }
+  }
+  if (parts.list.length) object.add(parts.mesh(material));
+  return object;
 }
 
 // Versión semitransparente del modelo para la vista previa.
@@ -202,34 +571,42 @@ export function pickSurface(ray, startHeight = 0) {
   return { dir, height, point: dir.clone().multiplyScalar(radius) };
 }
 
-function tangentBasis(dir) {
-  const east = new THREE.Vector3().crossVectors(Y_AXIS, dir);
-  if (east.lengthSq() < 1e-10) east.set(1, 0, 0);
-  east.normalize();
-  const north = new THREE.Vector3().crossVectors(dir, east);
-  return { east, north };
-}
-
 // Devuelve null si se puede fundar en esa dirección, o el motivo si no.
 export function campProblem(dir) {
   const e = elevation(dir.x, dir.y, dir.z);
   if (e <= 0) return 'No se puede fundar en el agua';
   if (Math.abs(dir.y) > 0.9 || e > 0.62) return 'Hace demasiado frío (hielo o nieve)';
 
-  // Pendiente: desnivel entre puntos a 30 m a cada lado.
-  const step = 30;
   const { east, north } = tangentBasis(dir);
-  const sample = (v, s) => surfaceHeight(dir.clone().addScaledVector(v, s / RADIUS).normalize());
-  const dEast = (sample(east, step) - sample(east, -step)) / (2 * step);
-  const dNorth = (sample(north, step) - sample(north, -step)) / (2 * step);
-  if (Math.hypot(dEast, dNorth) > MAX_SLOPE) return 'El terreno es demasiado empinado';
+  const around = (angle, dist) =>
+    dir
+      .clone()
+      .addScaledVector(east, (Math.cos(angle) * dist) / RADIUS)
+      .addScaledVector(north, (Math.sin(angle) * dist) / RADIUS)
+      .normalize();
+
+  // Todo el círculo que se va a nivelar tiene que ser tierra firme.
+  for (let i = 0; i < 12; i++) {
+    const p = around((i / 12) * Math.PI * 2, FLAT_RADIUS + BLEND_RADIUS);
+    if (elevation(p.x, p.y, p.z) <= 0.002) return 'Demasiado cerca del agua';
+  }
+  // Pendiente: desnivel respecto al centro a 30 m en 8 direcciones.
+  const h0 = naturalSurfaceHeight(dir);
+  for (let i = 0; i < 8; i++) {
+    const h = naturalSurfaceHeight(around((i / 8) * Math.PI * 2, FLAT_RADIUS));
+    if (Math.abs(h - h0) / FLAT_RADIUS > MAX_SLOPE) return 'El terreno es demasiado empinado';
+  }
   return null;
 }
 
 function orientOnSurface(object, dir, height, yaw) {
-  object.position.copy(dir).multiplyScalar(RADIUS + height - 0.3);
+  object.position.copy(dir).multiplyScalar(RADIUS + height);
   object.quaternion.setFromUnitVectors(Y_AXIS, dir);
   object.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(Y_AXIS, yaw));
+}
+
+function seedFromDir(dir) {
+  return Math.floor(Math.abs(Math.sin(dir.x * 91.7 + dir.y * 47.3 + dir.z * 13.9)) * 4294967295) >>> 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,28 +614,31 @@ function orientOnSurface(object, dir, height, yaw) {
 // ---------------------------------------------------------------------------
 
 export class CampSystem {
-  constructor({ scene, camera, canvas, controls, ui }) {
+  constructor({ scene, camera, canvas, controls, terrain, ui }) {
     this.scene = scene;
     this.camera = camera;
     this.canvas = canvas;
     this.controls = controls;
+    this.terrain = terrain;
     this.ui = ui;
 
-    this.camp = null; // { object, dir, height, yaw }
+    this.camp = null; // { object, surroundings, zone, dir, height, yaw }
     this.placing = false;
     this.pointer = null; // última posición del ratón sobre el lienzo
     this.pressed = null;
     this.candidate = null;
     this.time = 0;
 
+    this.natureMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 });
+
     this.ghost = makeGhost(createCampModel());
     this.ghost.visible = false;
     this.ring = new THREE.Mesh(
-      new THREE.RingGeometry(CAMP_RADIUS - 3, CAMP_RADIUS, 40),
-      new THREE.MeshBasicMaterial({ color: '#5fe08a', transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }),
+      new THREE.RingGeometry(FLAT_RADIUS - 2.5, FLAT_RADIUS, 48),
+      new THREE.MeshBasicMaterial({ color: '#5fe08a', transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }),
     );
     this.ring.rotation.x = -Math.PI / 2;
-    this.ring.position.y = 0.6;
+    this.ring.position.y = 0.8;
     this.ghost.add(this.ring);
     scene.add(this.ghost);
 
@@ -312,22 +692,43 @@ export class CampSystem {
     this.refreshUi();
   }
 
-  found({ dir, height }) {
+  found({ dir }) {
     const yaw = Math.random() * Math.PI * 2;
-    this.setCamp(dir, height, yaw);
+    this.setCamp(dir, naturalSurfaceHeight(dir), yaw);
     this.save();
     this.stopPlacing();
     this.flyToCamp();
   }
 
+  removeCamp() {
+    if (!this.camp) return;
+    this.scene.remove(this.camp.object, this.camp.surroundings);
+    this.camp.object.traverse((o) => o.geometry?.dispose());
+    this.camp.surroundings.traverse((o) => o.geometry?.dispose());
+    removeTerrainZone(this.camp.zone);
+    this.terrain.invalidateZone(this.camp.zone);
+    this.camp = null;
+  }
+
   setCamp(dir, height, yaw) {
-    if (this.camp) {
-      this.scene.remove(this.camp.object);
-    }
-    const object = createCampModel();
+    this.removeCamp();
+    // Nivelar el terreno y pintar el claro; los trozos de terreno afectados se regeneran.
+    const zone = addTerrainZone({
+      dir: dir.clone(),
+      height,
+      flatRadius: FLAT_RADIUS,
+      blendRadius: BLEND_RADIUS,
+      clearRadius: CLEAR_RADIUS,
+      detailRadius: DETAIL_RADIUS,
+    });
+    this.terrain.invalidateZone(zone);
+
+    const seed = seedFromDir(dir);
+    const object = createCampModel(seed);
     orientOnSurface(object, dir, height, yaw);
-    this.scene.add(object);
-    this.camp = { object, dir: dir.clone(), height, yaw };
+    const surroundings = createSurroundings(dir, height, seed, this.natureMaterial);
+    this.scene.add(object, surroundings);
+    this.camp = { object, surroundings, zone, dir: dir.clone(), height, yaw };
   }
 
   flyToCamp() {
@@ -336,9 +737,9 @@ export class CampSystem {
 
   save() {
     if (!this.camp) return;
-    const { dir, yaw } = this.camp;
+    const { dir, yaw, height } = this.camp;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ x: dir.x, y: dir.y, z: dir.z, yaw }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ x: dir.x, y: dir.y, z: dir.z, yaw, height }));
     } catch {
       // Sin almacenamiento (ventana privada, etc.): el campamento dura sólo esta sesión.
     }
@@ -353,7 +754,8 @@ export class CampSystem {
     }
     if (!data || !Number.isFinite(data.x)) return;
     const dir = new THREE.Vector3(data.x, data.y, data.z).normalize();
-    this.setCamp(dir, Math.max(0, surfaceHeight(dir)), data.yaw || 0);
+    const height = Number.isFinite(data.height) ? data.height : naturalSurfaceHeight(dir);
+    this.setCamp(dir, height, data.yaw || 0);
   }
 
   refreshUi() {
@@ -409,19 +811,39 @@ export class CampSystem {
       }
     }
 
-    if (this.camp) this.animateCamp();
+    if (this.camp) this.animateCamp(this.camp.object, this.time);
+    if (this.ghost.visible) this.animateCamp(this.ghost, this.time);
     this.updateMarker();
   }
 
-  animateCamp() {
-    const { fire, banner } = this.camp.object.userData;
-    const t = this.time;
+  animateCamp(object, t) {
+    const { fire, flag } = object.userData;
+    // Llamas que titilan.
+    fire.userData.flames.forEach((flame, i) => {
+      const f = 1 + Math.sin(t * (11 + i * 3) + i) * 0.1 + Math.sin(t * (6.7 + i * 2.1)) * 0.07;
+      flame.scale.set(1 + (f - 1) * 0.4, f, 1 + (f - 1) * 0.4);
+      flame.position.y = (flame.userData.height * f) / 2 + 0.2;
+      flame.rotation.y = t * (0.6 + i * 0.4);
+    });
     const flicker = 1 + Math.sin(t * 13) * 0.08 + Math.sin(t * 7.3) * 0.06;
-    fire.userData.flame.scale.set(1, flicker, 1);
-    fire.userData.flame.rotation.y = t * 0.8;
-    fire.userData.inner.scale.set(1, 2 - flicker, 1);
-    fire.userData.light.intensity = 120 * flicker;
-    banner.userData.flag.rotation.y = Math.sin(t * 1.7) * 0.25;
+    fire.userData.light.intensity = 140 * flicker;
+    // Humo: cada bolita sube, crece, se desplaza con el viento y se desvanece.
+    for (const puff of fire.userData.smoke) {
+      const k = (t * 0.22 + puff.userData.phase) % 1;
+      puff.position.set(k * 2.2 + Math.sin(k * 6 + puff.userData.phase * 9) * 0.3, 2.2 + k * 9, k * 0.8);
+      puff.scale.setScalar(0.35 + k * 1.3);
+      puff.material.opacity = 0.55 * (1 - k) * Math.min(1, k * 6);
+    }
+    // Bandera ondeando.
+    const pos = flag.geometry.attributes.position;
+    const base = flag.userData.base;
+    for (let i = 0; i < pos.count; i++) {
+      const x = base[i * 3] - 0.1;
+      const w = Math.max(0, x) / 2.7;
+      pos.setZ(i, Math.sin(x * 2.3 - t * 4.2) * 0.22 * w + Math.sin(x * 4.1 - t * 6.1) * 0.06 * w);
+      pos.setY(i, base[i * 3 + 1] - w * w * 0.25);
+    }
+    pos.needsUpdate = true;
   }
 
   // Etiqueta "Campamento" sobre la pantalla para encontrarlo desde lejos.

@@ -64,6 +64,7 @@ const camps = new CampSystem({
   camera,
   canvas,
   controls,
+  terrain: planet.terrain,
   ui: {
     foundButton: document.getElementById('found-camp'),
     goButton: document.getElementById('go-camp'),

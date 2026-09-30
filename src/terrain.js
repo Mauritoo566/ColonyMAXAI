@@ -1,5 +1,17 @@
 import * as THREE from 'three';
-import { RADIUS, MAX_LAND_HEIGHT, elevation, heightFromElevation, moisture } from './elevation.js';
+import {
+  RADIUS,
+  MAX_LAND_HEIGHT,
+  SEED,
+  elevation,
+  heightFromElevation,
+  moisture,
+  applyTerrainZones,
+  terrainZones,
+  zoneGround,
+  zoneDistance,
+} from './elevation.js';
+import { createNoise3D } from './noise.js';
 import { createTerrainMaterial, setChunkWaveOffset, WAVE_TILE } from './water.js';
 
 // Terreno con nivel de detalle (LOD): la esfera se forma con las 6 caras de un cubo
@@ -7,7 +19,8 @@ import { createTerrainMaterial, setChunkWaveOffset, WAVE_TILE } from './water.js
 // más detallados; los lejanos se quedan con pocos polígonos.
 
 const RESOLUTION = 24; // celdas por lado en cada trozo
-const MAX_LEVEL = 15; // en el nivel 15 cada celda mide ~25 m
+const MAX_LEVEL = 15; // en el nivel 15 cada celda mide ~13 m
+const DETAIL_MAX_LEVEL = 17; // cerca de un campamento: celdas de ~3 m
 const SPLIT_THRESHOLD = 0.3; // tamaño del trozo / distancia a la cámara
 const MERGE_THRESHOLD = SPLIT_THRESHOLD * 0.8; // histéresis para evitar parpadeos
 const BUILD_BUDGET_MS = 8;
@@ -31,7 +44,14 @@ const COLORS = {
   oceanDeep: new THREE.Color('#123f75'),
   oceanShallow: new THREE.Color('#2f7fbf'),
   ice: new THREE.Color('#e8f2f8'),
+  grassDry: new THREE.Color('#8fa64a'),
+  grassDark: new THREE.Color('#2e5f2a'),
+  dirt: new THREE.Color('#8a6a45'),
+  trampled: new THREE.Color('#6f8c40'),
 };
+
+// Ruido para las manchas de color del pasto (de cerca el verde uniforme se ve plano).
+const patchNoise = createNoise3D(SEED + 6);
 
 // Punto del cubo [-1,1]^3 -> dirección unitaria. Esta fórmula reparte las celdas
 // de forma más uniforme que normalizar directamente.
@@ -70,11 +90,26 @@ function faceColor(e, dir, slope, out) {
     return out.copy(COLORS.oceanShallow).lerp(COLORS.oceanDeep, depth);
   }
   if (lat > 0.9 || e > 0.62) return out.copy(COLORS.snow);
-  if (slope > 0.3 || e > 0.45) return out.copy(COLORS.rock);
-  if (e < 0.02) return out.copy(COLORS.sand);
-  const m = moisture(dir[0], dir[1], dir[2]);
-  if (m < -0.12 && lat < 0.55) return out.copy(COLORS.desert);
-  return out.copy(m > 0.08 ? COLORS.forest : COLORS.grass);
+  if (slope > 0.3 || e > 0.45) out.copy(COLORS.rock);
+  else if (e < 0.02) out.copy(COLORS.sand);
+  else {
+    const m = moisture(dir[0], dir[1], dir[2]);
+    if (m < -0.12 && lat < 0.55) out.copy(COLORS.desert);
+    else {
+      out.copy(m > 0.08 ? COLORS.forest : COLORS.grass);
+      // Manchas de pasto más seco o más oscuro, de ~300 m y de ~40 m.
+      const [x, y, z] = dir;
+      const p = patchNoise(x * 21_000, y * 21_000, z * 21_000) * 0.65 + patchNoise(x * 160_000, y * 160_000, z * 160_000) * 0.35;
+      out.lerp(p > 0 ? COLORS.grassDry : COLORS.grassDark, Math.min(1, Math.abs(p) * 0.9) * 0.45);
+    }
+  }
+  // Claro del campamento: tierra pisada en el centro y pasto pisado alrededor.
+  if (terrainZones().length) {
+    const g = zoneGround(dir[0], dir[1], dir[2]);
+    if (g.trampled > 0) out.lerp(COLORS.trampled, g.trampled * 0.35);
+    if (g.dirt > 0) out.lerp(COLORS.dirt, g.dirt);
+  }
+  return out;
 }
 
 const tmpDir = [0, 0, 0];
@@ -96,7 +131,8 @@ class Node {
 
     faceDirection(face, a + size / 2, b + size / 2, tmpDir);
     const h = heightFromElevation(elevation(tmpDir[0], tmpDir[1], tmpDir[2], 8));
-    this.center = new THREE.Vector3(tmpDir[0], tmpDir[1], tmpDir[2]).multiplyScalar(RADIUS + h);
+    this.dir = new THREE.Vector3(tmpDir[0], tmpDir[1], tmpDir[2]).normalize();
+    this.center = this.dir.clone().multiplyScalar(RADIUS + h);
     // Longitud aproximada del lado del trozo en metros (una cara del cubo mide ~R·π/2).
     this.worldSize = (size * RADIUS * Math.PI) / 4;
   }
@@ -141,7 +177,7 @@ class Node {
         const k = j * n + i;
         faceDirection(this.face, this.a + (this.size * i) / res, this.b + (this.size * j) / res, tmpDir);
         const e = elevation(tmpDir[0], tmpDir[1], tmpDir[2], octaves);
-        const r = RADIUS + heightFromElevation(e);
+        const r = RADIUS + applyTerrainZones(tmpDir[0], tmpDir[1], tmpDir[2], heightFromElevation(e));
         dirs[k * 3] = tmpDir[0];
         dirs[k * 3 + 1] = tmpDir[1];
         dirs[k * 3 + 2] = tmpDir[2];
@@ -306,7 +342,6 @@ class Node {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.copy(this.center);
     mesh.receiveShadow = true; // recibe la sombra de las nubes
-    mesh.userData.level = this.level;
     mesh.onBeforeRender = (renderer, scene, camera, geometry, mat) => {
       setChunkWaveOffset(mat, this.center, waveOrigin);
     };
@@ -346,8 +381,31 @@ export class Terrain {
     this.processQueue();
   }
 
+  // Nivel máximo de detalle: más alto cerca de las zonas que lo piden (campamento).
+  maxLevelFor(node) {
+    for (const zone of terrainZones()) {
+      if (!zone.detailRadius) continue;
+      const d = zoneDistance(zone, node.dir.x, node.dir.y, node.dir.z) - node.worldSize * 0.75;
+      if (d < zone.detailRadius) return DETAIL_MAX_LEVEL;
+    }
+    return MAX_LEVEL;
+  }
+
+  // Marca para regenerar los trozos que tocan una zona (al fundar o mover el
+  // campamento). Se siguen viendo los viejos hasta que los nuevos estén listos.
+  invalidateZone(zone) {
+    const reach = zone.flatRadius + zone.blendRadius + 20;
+    const visit = (node) => {
+      const d = zoneDistance(zone, node.dir.x, node.dir.y, node.dir.z) - node.worldSize * 0.75;
+      if (d > reach) return;
+      if (node.mesh) node.stale = true;
+      if (node.children) for (const c of node.children) visit(c);
+    };
+    for (const root of this.roots) visit(root);
+  }
+
   wantsSplit(node) {
-    if (node.level >= MAX_LEVEL) return false;
+    if (node.level >= this.maxLevelFor(node)) return false;
     const centerDistance = this.camera.distanceTo(node.center);
     if (centerDistance - node.worldSize > this.horizon) return false;
     const distance = Math.max(1, centerDistance - node.worldSize * 0.7);
@@ -383,6 +441,10 @@ export class Terrain {
     node.wantedFrame = this.frame;
     if (node.mesh) {
       node.mesh.visible = true;
+      if (node.stale && !node.queued) {
+        node.queued = true;
+        this.queue.push(node);
+      }
       return true;
     }
     if (!node.queued) {
@@ -412,8 +474,17 @@ export class Terrain {
     while (this.queue.length > 0 && performance.now() - start < BUILD_BUDGET_MS) {
       const node = this.queue.shift();
       node.queued = false;
-      if (node.disposed || node.mesh) continue;
-      this.object.add(node.build(this.material));
+      if (node.disposed || (node.mesh && !node.stale)) continue;
+      const old = node.mesh;
+      const mesh = node.build(this.material);
+      node.stale = false;
+      if (old) {
+        // Reemplazo de un trozo desactualizado sin que parpadee.
+        mesh.visible = old.visible;
+        old.removeFromParent();
+        old.geometry.dispose();
+      }
+      this.object.add(mesh);
     }
   }
 

@@ -44,10 +44,75 @@ export function heightFromElevation(e) {
   return e > 0 ? e * MAX_LAND_HEIGHT : 0;
 }
 
-export function surfaceHeight(dir, octaves) {
+// Altura del terreno tal como es, sin nivelaciones.
+export function naturalSurfaceHeight(dir, octaves) {
   return heightFromElevation(elevation(dir.x, dir.y, dir.z, octaves));
+}
+
+// Altura del terreno teniendo en cuenta las zonas niveladas (p. ej. el campamento).
+export function surfaceHeight(dir, octaves) {
+  return applyTerrainZones(dir.x, dir.y, dir.z, naturalSurfaceHeight(dir, octaves));
 }
 
 export function moisture(x, y, z) {
   return fbm(moistureNoise, x * 1.8, y * 1.8, z * 1.8, 3);
+}
+
+// ---------------------------------------------------------------------------
+// Zonas de terreno modificado
+// ---------------------------------------------------------------------------
+// Una zona nivela el terreno en un círculo (flatRadius) y lo une con el terreno natural
+// con una pendiente suave (blendRadius). También pinta un claro de tierra (clearRadius)
+// y pide más detalle de malla alrededor (detailRadius). Todo en metros.
+//   { dir: Vector3 unitario, height, flatRadius, blendRadius, clearRadius, detailRadius }
+
+const zones = [];
+const edgeNoise = createNoise3D(SEED + 5);
+
+export function addTerrainZone(zone) {
+  zones.push(zone);
+  return zone;
+}
+
+export function removeTerrainZone(zone) {
+  const i = zones.indexOf(zone);
+  if (i >= 0) zones.splice(i, 1);
+}
+
+export function terrainZones() {
+  return zones;
+}
+
+// Distancia en metros sobre la superficie (la cuerda: a estas distancias es igual al arco).
+export function zoneDistance(zone, x, y, z) {
+  const dx = x - zone.dir.x;
+  const dy = y - zone.dir.y;
+  const dz = z - zone.dir.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz) * RADIUS;
+}
+
+export function applyTerrainZones(x, y, z, height) {
+  for (const zone of zones) {
+    const d = zoneDistance(zone, x, y, z);
+    const outer = zone.flatRadius + zone.blendRadius;
+    if (d >= outer) continue;
+    const t = 1 - THREE.MathUtils.smoothstep(d, zone.flatRadius, outer);
+    height += (zone.height - height) * t;
+  }
+  return height;
+}
+
+// Cuánto de "tierra pisada" (dirt) y de "pasto pisado" (trampled) hay en un punto, de 0 a 1.
+export function zoneGround(x, y, z) {
+  let dirt = 0;
+  let trampled = 0;
+  for (const zone of zones) {
+    const d = zoneDistance(zone, x, y, z);
+    if (d > zone.flatRadius + zone.blendRadius) continue;
+    // Borde irregular: el radio varía unos metros con un ruido de ~15 m.
+    const wobble = edgeNoise(x * 420_000, y * 420_000, z * 420_000) * 5;
+    dirt = Math.max(dirt, 1 - THREE.MathUtils.smoothstep(d + wobble, zone.clearRadius * 0.7, zone.clearRadius));
+    trampled = Math.max(trampled, 1 - THREE.MathUtils.smoothstep(d + wobble, zone.clearRadius, zone.flatRadius + 6));
+  }
+  return { dirt, trampled };
 }
