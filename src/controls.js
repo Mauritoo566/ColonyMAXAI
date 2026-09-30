@@ -38,6 +38,8 @@ export class PlanetControls {
     this.lowness = 0; // 0 = mirando desde el espacio, 1 = a ras de suelo
 
     this.flight = null; // vuelo animado en curso (flyTo)
+    this.follow = null; // función que devuelve la dirección de lo que se sigue (o null)
+    this.onFollowEnd = null;
     this.viewClearance = null; // altura para la inclinación durante un vuelo
     this.pointers = new Map();
     this.pinch = null;
@@ -67,6 +69,7 @@ export class PlanetControls {
 
   pan(dx, dy) {
     this.cancelFlight();
+    this.stopFollow();
     const angle = this.metersPerPixel() / RADIUS;
     const forward = dy * angle;
     const right = -dx * angle;
@@ -197,6 +200,30 @@ export class PlanetControls {
     };
   }
 
+  // Seguir algo que se mueve (un colono): la cámara lo mantiene en el centro. Se deja
+  // de seguir al arrastrar el mapa.
+  startFollow(getDirection) {
+    this.follow = getDirection;
+  }
+
+  stopFollow() {
+    if (!this.follow) return;
+    this.follow = null;
+    this.onFollowEnd?.();
+  }
+
+  // Coloca el objetivo de la cámara para que un punto quede en el centro de la pantalla.
+  aimAt(dir) {
+    const clearance = Math.max(1, this.target.altitude - this.groundHeight);
+    const lat = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
+    const lon = Math.atan2(dir.x, dir.z);
+    const back = clearance * Math.tan(tiltFor(clearance));
+    const h = this.target.heading;
+    this.target.lat = THREE.MathUtils.clamp(lat - (back * Math.cos(h)) / RADIUS, -MAX_LAT, MAX_LAT);
+    const tLon = lon - (back * Math.sin(h)) / RADIUS / Math.max(0.05, Math.cos(lat));
+    this.target.lon = this.lon + THREE.MathUtils.euclideanModulo(tLon - this.lon + Math.PI, Math.PI * 2) - Math.PI;
+  }
+
   // El jugador toma el control: la cámara se queda donde está.
   cancelFlight() {
     if (!this.flight) return;
@@ -296,6 +323,11 @@ export class PlanetControls {
       }
       this.placeCamera();
       return;
+    }
+    if (this.follow) {
+      const dir = this.follow();
+      if (dir) this.aimAt(dir);
+      else this.stopFollow();
     }
     const k = 1 - Math.exp(-delta * 8);
     const t = this.target;

@@ -47,9 +47,17 @@ Cada punto de tierra tiene una **temperatura** (baja con la latitud y con la alt
 
 ## Colonos
 
-Al fundar el campamento aparecen 5 colonos (`src/colonists.js`), siempre los mismos para ese lugar: nombre, color de piel, pelo, ropa y altura al azar. Por ahora pasean por el campamento y sus alrededores: esquivan tiendas, fogata, bancos y a los demás, no entran al agua ni a pendientes fuertes, y caminan con brazos y piernas animados. Siguen la velocidad del tiempo (en pausa se quedan quietos). Su nombre se ve sobre la cabeza cuando la cámara está cerca, y el HUD muestra cuántos hay.
+Al fundar el campamento aparecen 5 colonos (`src/colonists.js`), siempre los mismos para ese lugar. Pasean por el campamento esquivando tiendas, fogata y a los demás, sin entrar al agua ni a pendientes fuertes. Todavía no tienen IA: pasean al azar.
 
-Próximos pasos: necesidades (hambre, sed, sueño, calor, ánimo) con una barra general en el HUD, y una IA que elija qué hacer según esas necesidades (por ejemplo, con frío buscar una fuente de calor).
+Cada colono tiene:
+
+- **Necesidades** (`src/needs.js`): comida, agua, descanso, calor y ánimo, de 0 a 100. Bajan despacio (la comida dura unos 4 días de juego, el agua 3). El calor depende del clima del lugar y de la hora; junto a la fogata sube. El ánimo depende de cómo esté y de la compañía.
+- **Salud**: sólo baja si le falta comida, agua o calor; si no, se recupera. Por ahora no mueren.
+- **Genes** (`src/genes.js`): nueve genes con dos alelos cada uno (piel, pelo, estatura, metabolismo, resistencia al frío, constitución, energía, agilidad, longevidad). Deciden su aspecto y cómo le afectan las necesidades, y están preparados para la herencia (`inheritGenome`: un alelo de cada progenitor más alguna mutación).
+- **Personalidad**: dos rasgos (sociable, curioso, optimista, trabajador...) y una biografía.
+- **Registro** de lo que le pasa ("Tiene frío", "Charló un rato con Ana"...).
+
+La interfaz (`src/colonyUI.js`) muestra arriba a la izquierda el **bienestar de la colonia**, la media de cada necesidad y la lista de colonos. Al hacer clic en un colono (en el mundo, en su nombre o en la lista) se abre su **ficha** con tres pestañas: Estado, Genes e Historia, y un botón para seguirlo con la cámara.
 
 ## Recursos naturales
 
@@ -108,7 +116,10 @@ El terreno es un *quadtree* sobre las 6 caras de un cubo proyectado a esfera: ca
 - `src/daynight.js` – ciclo de día y noche y órbita de la Luna
 - `src/sky.js` – el Sol y la Luna que se ven en el cielo
 - `src/water.js` – efecto del agua
-- `src/colonists.js` – colonos: modelo, movimiento y nombres
+- `src/colonists.js` – colonos: modelo, movimiento, selección y nombres
+- `src/needs.js` – necesidades, salud, personalidad e historia
+- `src/genes.js` – genética: alelos, herencia y aspecto
+- `src/colonyUI.js` – interfaz de la colonia y ficha de cada colono
 - `src/camp.js` – campamento inicial: modelo, colocación y guardado
 - `src/resources.js` – recursos naturales: tipos, modelos y generación por baldosas
 - `src/modelKit.js` – herramientas para modelar objetos low poly

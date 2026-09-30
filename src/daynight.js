@@ -12,6 +12,8 @@ export class DayNight {
     // Colocamos el Sol de forma que en "startLon" sean las "startHour".
     this.subsolarLon = startLon - ((startHour - 12) / 24) * Math.PI * 2;
     this.speed = 1;
+    this.elapsed = 0; // segundos de juego desde el comienzo
+    this.startHour = startHour;
     this.sunDirection = new THREE.Vector3();
     // La Luna va algo por detrás del Sol en el cielo: el ángulo entre ambos marca la
     // fase (0 = luna nueva, π = luna llena). Empieza en cuarto creciente avanzado.
@@ -22,6 +24,7 @@ export class DayNight {
   }
 
   update(delta) {
+    this.elapsed += delta * this.speed;
     this.subsolarLon -= ((delta * this.speed) / DAY_LENGTH_SECONDS) * Math.PI * 2;
     this.subsolarLon = THREE.MathUtils.euclideanModulo(this.subsolarLon, Math.PI * 2);
     const c = Math.cos(this.declination);
@@ -41,6 +44,11 @@ export class DayNight {
   // Parte iluminada de la Luna vista desde el planeta (0 = nueva, 1 = llena).
   get moonIllumination() {
     return (1 - Math.cos(this.moonPhase)) / 2;
+  }
+
+  // Número de día (empieza en 1), contado desde la hora inicial.
+  get day() {
+    return 1 + Math.floor((this.elapsed / DAY_LENGTH_SECONDS + this.startHour / 24) % 1e9);
   }
 
   // Hora solar local (0–24) en una longitud dada.

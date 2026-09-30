@@ -10,11 +10,12 @@ import { biomeAt } from './biomes.js';
 import { ResourceSystem } from './resources.js';
 import { createSky } from './sky.js';
 import { ColonySystem } from './colonists.js';
+import { ColonyUI } from './colonyUI.js';
 
 const canvas = document.getElementById('scene');
 const altitudeLabel = document.getElementById('altitude');
 const timeLabel = document.getElementById('time');
-const colonistsLabel = document.getElementById('colonists');
+const dayLabel = document.getElementById('day');
 const biomeLabel = document.getElementById('biome');
 const speedButtons = document.querySelectorAll('[data-speed]');
 
@@ -91,6 +92,8 @@ const camps = new CampSystem({
     marker: document.getElementById('camp-marker'),
   },
 });
+
+const colonyUI = new ColonyUI({ colony, controls, camera, canvas, isBlocked: () => camps.placing });
 
 // Estrellas pegadas a la cámara: siempre están "en el infinito".
 function createStars(count) {
@@ -266,7 +269,14 @@ renderer.setAnimationLoop(() => {
   else resourceFocus.copy(controls.dir);
   resources.update(camera, resourceFocus, clearance, delta);
   camps.update(delta);
-  colony.update(delta, camps.camp, { timeScale: dayNight.speed });
+  const campDir = camps.camp?.dir;
+  colony.update(delta, camps.camp, {
+    timeScale: dayNight.speed,
+    // De noche hace más frío (el calor que siente cada colono depende de esto).
+    isNight: campDir ? campDir.dot(dayNight.sunDirection) < -0.05 : false,
+    timeLabel: () => `Día ${dayNight.day} · ${formatHour(dayNight.localHour(Math.atan2(campDir.x, campDir.z)))}`,
+  });
+  colonyUI.update(delta);
   updateSky(altitude);
 
   labelTimer -= delta;
@@ -274,10 +284,7 @@ renderer.setAnimationLoop(() => {
     labelTimer = 0.1;
     if (altitudeLabel) altitudeLabel.textContent = formatAltitude(clearance);
     if (timeLabel) timeLabel.textContent = formatHour(dayNight.localHour(controls.lon));
-    if (colonistsLabel) {
-      colonistsLabel.parentElement.hidden = colony.count === 0;
-      colonistsLabel.textContent = String(colony.count);
-    }
+    if (dayLabel) dayLabel.textContent = `Día ${dayNight.day}`;
     if (biomeLabel) {
       centerDir.copy(hit).normalize();
       biomeLabel.textContent = centerHit ? biomeAt(centerDir.x, centerDir.y, centerDir.z).name : '–';
