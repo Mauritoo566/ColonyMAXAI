@@ -156,14 +156,22 @@ export function updateNeeds(c, env) {
   const restRate = (100 / (3 * DAY)) * tiredness * (env.walking ? 1 : 0.5);
   n.rest = clamp(n.rest - restRate * dt);
 
-  // Calor: tiende al calor del ambiente (más o menos según la resistencia al frío);
-  // junto a la fogata sube rápido.
-  let target = env.ambient * 100 + (gene(g, 'cold') - 0.5) * 36;
+  // Calor: tiende al calor del ambiente (más o menos según la resistencia al frío). La
+  // ropa de pieles abriga algo aunque haga mucho frío; sin ropa se nota mucho más el
+  // frío. Junto a la fogata sube rápido.
+  const CLOTHES = env.clothed ? 25 : 0;
+  let target = CLOTHES + env.ambient * (100 - CLOTHES) + (gene(g, 'cold') - 0.5) * 30;
   if (env.sheltered) target = Math.max(target, 80); // dentro de la tienda
   if (env.nearFire) target = 100;
   target = clamp(target);
-  const warmRate = target > n.warmth ? (env.nearFire ? 100 / 60 : 100 / (0.3 * DAY)) : 100 / (0.4 * DAY);
-  n.warmth += Math.sign(target - n.warmth) * Math.min(Math.abs(target - n.warmth), warmRate * dt);
+  if (target > n.warmth) {
+    const warmRate = env.nearFire ? 100 / 60 : 100 / (0.3 * DAY);
+    n.warmth = Math.min(target, n.warmth + warmRate * dt);
+  } else {
+    // Se enfría poco a poco: rápido si está muy caliente y cada vez más lento al
+    // acercarse a la temperatura del ambiente (tarda cerca de un día en helarse).
+    n.warmth += (target - n.warmth) * (1 - Math.exp(-dt / (0.45 * DAY)));
+  }
 
   // Ánimo: depende de cómo esté en general y de la compañía.
   const others = (n.food + n.water + n.rest + n.warmth) / 4;

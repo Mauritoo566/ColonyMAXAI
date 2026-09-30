@@ -76,6 +76,11 @@ export function chooseTask(colony, c, env) {
   if (n.warmth < 55) {
     add(urgency(n.warmth) * 1.25 + 0.05, { type: 'warm' });
   }
+  // Sin ropa y con frío: ir a buscar ropa a la pila del campamento (abriga para siempre,
+  // así que lo prefiere a la fogata). Si no tiene frío, no se molesta en ir.
+  if (!c.clothed && colony.clothesLeft > 0 && n.warmth < 70) {
+    add(urgency(n.warmth) * 1.35 + 0.18, { type: 'dress' });
+  }
 
   // Charlar si está desanimado (según su carácter).
   if (n.mood < 60 && !env.isNight) {
@@ -97,9 +102,13 @@ export function chooseTask(colony, c, env) {
     }
     const job = c.job;
     if (job && job.done) add(0.34 * diligence * fine, { type: 'work', building: job, phase: 'start' });
-    // Recolectar lo que el jugador marcó: sobre todo quien no tiene trabajo fijo.
+    // Recolectar lo que el jugador marcó: es una orden, así que va antes que el trabajo
+    // fijo y las obras (las necesidades urgentes siguen primero). La distancia pesa poco.
     const marked = colony.nearestMarked(c.x, c.z, env.gameTime);
-    if (marked) add((job ? 0.3 : 0.38) * diligence * fine * distanceFactor(dist(c, marked)), { type: 'harvest', spot: marked, phase: 'going' });
+    if (marked) {
+      const near = 1 / (1 + dist(c, marked) / 600);
+      add((job ? 0.5 : 0.56) * diligence * fine * near, { type: 'harvest', spot: marked, phase: 'going' });
+    }
   }
 
   // Pasear: lo que hace cuando no necesita nada.
@@ -218,6 +227,14 @@ export function runTask(colony, c, task, dt, env) {
         return 'done';
       }
       return 'running';
+    }
+
+    case 'dress': {
+      if (c.clothed || colony.clothesLeft <= 0) return 'done';
+      if (!go(colony, c, task, colony.clothesSpot, dt, 1.1)) return 'running';
+      colony.faceTowards(c, colony.clothesSpot.x, colony.clothesSpot.z, dt);
+      if (!busy(task, dt, 5)) return 'running';
+      return colony.takeClothes(c) ? 'done' : 'failed';
     }
 
     case 'warm': {
@@ -441,6 +458,8 @@ export function taskActivity(colony, c, task) {
       return c.sleeping ? 'Durmiendo en la tienda' : 'Va a dormir';
     case 'warm':
       return walking ? 'Va a calentarse al fuego' : 'Calentándose junto al fuego';
+    case 'dress':
+      return walking ? 'Tiene frío: va a buscar ropa' : 'Poniéndose ropa de pieles';
     case 'chat':
       return walking ? `Va a charlar con ${task.partner.name}` : `Charlando con ${task.partner.name}`;
     case 'build':
@@ -483,6 +502,8 @@ export function taskLog(c, task) {
       return 'Se fue a dormir';
     case 'warm':
       return 'Fue a calentarse junto al fuego';
+    case 'dress':
+      return 'Se vistió con ropa de pieles';
     case 'build':
       return `Ayudó a ${task.building.upgrading ? 'mejorar' : 'construir'}: ${task.building.name}`;
     case 'work':

@@ -62,8 +62,13 @@ const NAMES = [
   'Lara', 'Mateo', 'Nora', 'Óscar', 'Paula', 'Quique', 'Rosa', 'Santiago', 'Tania', 'Ulises',
   'Valeria', 'Walter', 'Ximena', 'Yago', 'Zoe', 'Lucía', 'Tomás', 'Mara', 'Iván', 'Olga',
 ];
-const SHIRTS = ['#b8452f', '#3f6fa8', '#5f8a3a', '#c89a3a', '#7a4a8a', '#3a8a8a', '#a86a3a', '#d8d0b8'];
-const PANTS = ['#4a3a2a', '#3a3f4a', '#5a4a36', '#2f3a2f', '#6a5a44'];
+// Ropa de pieles (Edad Primitiva): tonos de cuero y piel curtida.
+const SHIRTS = ['#8a5a34', '#a0764a', '#b8905a', '#7a5230', '#9a6a3e', '#c2a06a'];
+const PANTS = ['#5a3a22', '#6b4a2e', '#4a3220', '#7a5a3a'];
+const LOINCLOTH = '#6b4a2e'; // lo único que llevan al llegar
+// Al fundar el campamento hay ropa en el suelo para todos; cada colono va a buscar la
+// suya cuando tiene frío. Sin ropa se enfrían mucho más.
+const CLOTHES_SPOT = { x: Math.cos(0.55) * 7.2, z: Math.sin(0.55) * 7.2 };
 
 // ---------------------------------------------------------------------------
 // Modelo low poly de una persona, con brazos y piernas que se mueven al caminar
@@ -99,8 +104,9 @@ function createPersonModel(look) {
   const body = new THREE.Group(); // se balancea al caminar
   root.add(body);
 
-  body.add(box(0.5, 0.62, 0.28, look.shirt, 0, 1.2, 0)); // torso
-  body.add(box(0.46, 0.14, 0.26, look.pants, 0, 0.86, 0)); // cadera
+  const torso = box(0.5, 0.62, 0.28, look.shirt, 0, 1.2, 0);
+  const hip = box(0.46, 0.14, 0.26, look.pants, 0, 0.86, 0);
+  body.add(torso, hip);
   const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17, 1), material(look.skin));
   head.position.set(0, 1.7, 0);
   body.add(head);
@@ -119,8 +125,35 @@ function createPersonModel(look) {
   root.add(legL, legR);
 
   root.scale.setScalar(look.height);
-  root.userData = { body, armL, armR, legL, legR };
+  root.userData = { body, armL, armR, legL, legR, torso, hip };
   return root;
+}
+
+// Viste o desviste el modelo: sin ropa, torso, brazos y piernas del color de la piel y
+// un taparrabos en la cadera.
+function dressModel(object, look, clothed) {
+  const { torso, hip, armL, armR, legL, legR } = object.userData;
+  torso.material = material(clothed ? look.shirt : look.skin);
+  hip.material = material(clothed ? look.pants : LOINCLOTH);
+  for (const arm of [armL, armR]) arm.children[0].material = material(clothed ? look.shirt : look.skin);
+  for (const leg of [legL, legR]) leg.children[0].material = material(clothed ? look.pants : look.skin);
+}
+
+// Pila de ropa de pieles doblada: una prenda por colono que aún no la recogió.
+function clothesPileMesh(count) {
+  const group = new THREE.Group();
+  const colors = ['#a0764a', '#8a5a34', '#b8905a', '#7a5230', '#c2a06a'];
+  for (let k = 0; k < count; k++) {
+    const piece = box(0.8, 0.12, 0.6, colors[k % colors.length], ((k % 2) - 0.5) * 0.08, 0.08 + k * 0.13, ((k % 3) - 1) * 0.05);
+    piece.rotation.y = (k * 0.7) % 0.6;
+    group.add(piece);
+  }
+  // Una piel extendida debajo, como alfombra.
+  const hide = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.8, 0.03, 7), material('#6b4a2e'));
+  hide.scale.set(1.3, 1, 1);
+  hide.position.y = 0.015;
+  group.add(hide);
+  return group;
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +244,7 @@ export class ColonySystem {
             ambient,
             nearFire: c.nearFire,
             sheltered: c.sleeping,
+            clothed: c.clothed,
             companion: c.companion,
             walking: c.walking,
             time,
@@ -240,6 +274,7 @@ export class ColonySystem {
     this.outdoor = {};
     this.foodBatches = [];
     this.spoiled = 0;
+    this.setClothesLeft(0);
     this.onZonesChange?.();
     this.setAge(1);
     this.sprouts = [];
@@ -269,6 +304,7 @@ export class ColonySystem {
         height: body.height, // un poco más grandes que la realidad, para verlos mejor
       };
       const object = createPersonModel(look);
+      dressModel(object, look, false); // llegan sin ropa
       this.group.add(object);
       // Aparecen alrededor de la fogata.
       const a = (i / START_COLONISTS) * Math.PI * 2 + rand() * 0.5;
@@ -302,12 +338,47 @@ export class ColonySystem {
         lastProgress: 0,
         rand: seededRandom(Math.floor(rand() * 4294967296)),
         activity: 'Descansando un momento',
+        clothed: false,
       };
       label.addEventListener('click', () => this.select(colonist));
       addLog(colonist, 'Día 1', 'Llegó al campamento');
       this.colonists.push(colonist);
     }
+    this.setClothesLeft(START_COLONISTS); // ropa en el suelo para todos
     this.onCampChange?.(camp); // los edificios se cargan cuando ya hay colonos
+  }
+
+  // ---- Ropa --------------------------------------------------------------
+
+  get clothesSpot() {
+    return CLOTHES_SPOT;
+  }
+
+  setClothesLeft(n) {
+    this.clothesLeft = n;
+    if (this.clothesPile) {
+      this.clothesPile.removeFromParent();
+      this.clothesPile.traverse((o) => o.geometry?.dispose());
+      this.clothesPile = null;
+    }
+    if (!this.camp || n <= 0) return;
+    this.clothesPile = clothesPileMesh(n);
+    const { x, z } = CLOTHES_SPOT;
+    this.clothesPile.position.set(x, this.heightAt(x, z) - this.camp.height, z);
+    this.camp.object.add(this.clothesPile);
+  }
+
+  // El colono toma una prenda de la pila y se viste.
+  takeClothes(c) {
+    if (this.clothesLeft <= 0 || c.clothed) return false;
+    this.setClothesLeft(this.clothesLeft - 1);
+    this.setClothed(c, true);
+    return true;
+  }
+
+  setClothed(c, clothed) {
+    c.clothed = clothed;
+    dressModel(c.object, c.look, clothed);
   }
 
   // ---- Selección ---------------------------------------------------------
@@ -991,6 +1062,7 @@ export class ColonySystem {
     return {
       gameTime: this.gameTime,
       age: this.age,
+      clothesLeft: this.clothesLeft,
       colonists: this.colonists.map((c) => ({
         id: c.id,
         needs: c.needs,
@@ -998,6 +1070,7 @@ export class ColonySystem {
         log: c.log,
         flags: c.flags,
         chatCooldown: c.chatCooldown,
+        clothed: c.clothed,
         x: c.x,
         z: c.z,
         facing: c.facing,
@@ -1023,6 +1096,9 @@ export class ColonySystem {
     this.spoiled = data.spoiled || 0;
     this.onZonesChange?.();
     this.setAge(Math.min(AGES.length, Math.max(1, data.age || 1)));
+    // Partidas anteriores a la ropa: queda una prenda por cada colono sin vestir.
+    const naked = (data.colonists || []).filter((s) => !s.clothed).length;
+    this.setClothesLeft(Number.isFinite(data.clothesLeft) ? data.clothesLeft : naked);
     for (const saved of data.colonists || []) {
       const c = this.colonists.find((o) => o.id === saved.id);
       if (!c) continue;
@@ -1031,6 +1107,7 @@ export class ColonySystem {
       c.log = Array.isArray(saved.log) ? saved.log : c.log;
       c.flags = saved.flags || {};
       c.chatCooldown = saved.chatCooldown || 0;
+      this.setClothed(c, !!saved.clothed);
       if (Number.isFinite(saved.x) && this.walkable(saved.x, saved.z, 0.2)) {
         c.x = saved.x;
         c.z = saved.z;

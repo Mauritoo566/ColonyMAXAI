@@ -164,7 +164,7 @@ export class BuildUI {
     for (const b of this.harvestTools.querySelectorAll('[data-harvest-mode]')) b.setAttribute('aria-pressed', String(b.dataset.harvestMode === h.mode));
     this.harvestHint.innerHTML =
       h.mode === 'mark'
-        ? `Arrastra sobre el terreno para marcar un área (o haz clic en un recurso). ${n ? `<strong>${n} marcados</strong>: los colonos disponibles irán a recogerlos.` : 'Los colonos disponibles irán a recolectar árboles, bayas, setas y piedras marcados.'}`
+        ? `Arrastra sobre el terreno para marcar un área (o haz clic en un recurso). ${n ? `<strong>${n} marcados</strong>: los colonos dejan su trabajo para recogerlos (de día y si no tienen hambre, sed, sueño o frío).` : 'Los colonos dejarán su trabajo para recolectar lo marcado: árboles, bayas, setas y piedras (hasta ~230 m del campamento).'}`
         : `Arrastra sobre un área marcada para quitar las marcas. ${n ? `<strong>${n} marcados</strong>.` : ''}`;
   }
 

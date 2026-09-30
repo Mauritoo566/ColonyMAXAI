@@ -260,7 +260,11 @@ function updateSky(altitude) {
     scene.fog.far = horizon * 1.3 + 150_000;
     scene.fog.near = scene.fog.far * 0.15;
     // Lo que la bruma tapa casi del todo no necesita detalle.
-    planet.terrain.detailDistance = scene.fog.far * 0.8;
+    // Cerca del suelo, el detalle fino sólo hace falta en lo cercano: más lejos se ve el
+    // relieve con menos triángulos (la bruma lo disimula). Sin esto, a ras de suelo se
+    // detallaba el terreno hasta 150 km y era lo que más costaba dibujar.
+    const clearance = Math.max(1, altitude - controls.groundHeight);
+    planet.terrain.detailDistance = Math.min(scene.fog.far * 0.8, Math.max(2_500, clearance * 80));
   } else {
     scene.fog.near = scene.fog.far = 1e12;
     planet.terrain.detailDistance = Infinity;

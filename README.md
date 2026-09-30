@@ -59,6 +59,10 @@ Cada colono tiene:
 
 La interfaz (`src/colonyUI.js`) muestra arriba a la izquierda el **bienestar de la colonia**, la media de cada necesidad, el **almacén** (comida, agua, madera, piedra) y la lista de colonos. Al hacer clic en un colono (en el mundo, en su nombre o en la lista) se abre su **ficha** con tres pestañas: Estado (necesidades, trabajo y habilidades), Genes e Historia, y un botón para seguirlo con la cámara.
 
+### Ropa
+
+Los colonos llegan **sin ropa** (sólo un taparrabos) y en el campamento hay una pila de ropa de pieles para todos. No van a buscarla por costumbre: cuando tienen frío, ir a vestirse pasa a ser una necesidad (abriga para siempre, así que la prefieren a la fogata). Sin ropa se enfrían mucho más; con ropa aguantan bastante aunque el lugar sea frío. El frío baja poco a poco (cada vez más lento al acercarse a la temperatura del ambiente).
+
 ### IA de los colonos
 
 Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s puntúa las acciones posibles según sus necesidades, rasgos, la hora y la distancia, y cambia de tarea sólo si hay una bastante mejor. Acciones: comer (bayas y setas cercanas, que vuelven a crecer, o provisiones del almacén), beber (agua cercana, un pozo o las vasijas), dormir en su tienda (sobre todo de noche), calentarse junto a la fogata cuando tiene frío, charlar si está desanimado, construir obras, trabajar en su edificio o pasear. No hay rutina fija: sale de las necesidades.
@@ -79,7 +83,7 @@ Lo que recoge la colonia se guarda en el **almacén del campamento** (las vasija
 
 ### Recolectar y zona de acopio
 
-El botón **Recolectar** (abajo a la derecha, aparte de la construcción) activa una herramienta: se arrastra sobre el terreno para dibujar un rectángulo (alineado con la vista y pegado al relieve, sin límite de tamaño) o se hace clic en un recurso. Sobre cada recurso marcado aparece un pin: **hacha roja** en los árboles, pico en las piedras y cesta en la comida. Los colonos disponibles, sobre todo los que no tienen trabajo fijo, van a recogerlo y lo llevan al almacén. También se puede desmarcar o quitar todas las marcas.
+El botón **Recolectar** (abajo a la derecha, aparte de la construcción) activa una herramienta: se arrastra sobre el terreno para dibujar un rectángulo (alineado con la vista y pegado al relieve, sin límite de tamaño) o se hace clic en un recurso. Sobre cada recurso marcado aparece un pin: **hacha roja** en los árboles, pico en las piedras y cesta en la comida. Es una orden: los colonos dejan su trabajo fijo para recogerlo (de día y si no tienen hambre, sed, sueño o frío) y lo llevan al almacén. También se puede desmarcar o quitar todas las marcas.
 
 En la pestaña Almacenes se dibuja la **zona de acopio** al aire libre: un rectángulo del tamaño que se quiera, con suelo de tierra, cuerda con estacas y un cartel. Hay una sola (dibujar otra la reemplaza). Lo que no cabe en el almacén se amontona ahí (1,5 unidades por m², con montones de troncos, piedras y cestas) en vez de que los colonos dejen de trabajar. La **comida al aire libre se pudre** en día y medio y desaparece; por eso se come primero la de afuera. La ficha del almacén muestra lo de afuera, cuándo se pudre la comida y permite quitar la zona.
 

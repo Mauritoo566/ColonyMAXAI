@@ -10,11 +10,12 @@ import { createTerrainMaterial, setChunkWaveOffset, WAVE_TILE } from './water.js
 
 const MAX_LEVEL = 15; // en el nivel 15 cada celda mide ~13 m
 const DETAIL_MAX_LEVEL = 17; // cerca de un campamento: celdas de ~3 m
-const SPLIT_THRESHOLD = 0.6; // tamaño del trozo / distancia a la cámara (celdas de ~20 px)
+const SPLIT_THRESHOLD = 0.8; // tamaño del trozo / distancia a la cámara (celdas de ~25 px)
 const MERGE_THRESHOLD = SPLIT_THRESHOLD * 0.8; // histéresis para evitar parpadeos
 const BUILD_BUDGET_MS = 5; // sin workers: tiempo máximo por fotograma generando trozos
 const JOBS_PER_WORKER = 2; // trozos encargados a la vez a cada worker
 const SORT_EVERY_FRAMES = 4; // reordenar la cola no hace falta en cada fotograma
+const INSTALLS_PER_FRAME = 4; // trozos nuevos que se suben a la tarjeta gráfica por fotograma
 
 const tmpDir = [0, 0, 0];
 // Origen de las olas del agua: la cámara redondeada a múltiplos de WAVE_TILE.
@@ -185,6 +186,7 @@ export class Terrain {
     this.object.name = 'terrain';
     this.material = createTerrainMaterial();
     this.queue = [];
+    this.arrivals = []; // trozos generados por los workers, esperando a instalarse
     this.camera = new THREE.Vector3();
     this.frustum = new THREE.Frustum();
     this.viewProjection = new THREE.Matrix4();
@@ -234,6 +236,7 @@ export class Terrain {
       Math.sqrt(altitude * (2 * RADIUS + altitude)) + Math.sqrt(MAX_LAND_HEIGHT * (2 * RADIUS + MAX_LAND_HEIGHT));
 
     this.frame++;
+    this.installArrivals();
     for (const root of this.roots) this.updateNode(root);
     this.processQueue();
   }
@@ -366,14 +369,23 @@ export class Terrain {
     }
   }
 
-  // Llega la geometría de un worker.
+  // Llega la geometría de un worker. No se instala en el momento: al hacer zoom llegan
+  // muchos trozos a la vez y subirlos todos a la tarjeta gráfica en el mismo fotograma
+  // daba tirones. Se instalan unos pocos por fotograma (installArrivals).
   receive(node, data) {
-    node.building = false;
-    node.queued = false;
-    if (node.disposed) return;
-    this.install(node, data);
-    // Si mientras tanto cambió una zona (campamento), regenerarlo con los datos nuevos.
-    if (data.zonesVersion !== this.zonesVersion) node.stale = true;
+    this.arrivals.push([node, data]);
+  }
+
+  installArrivals() {
+    const count = Math.min(this.arrivals.length, INSTALLS_PER_FRAME);
+    for (const [node, data] of this.arrivals.splice(0, count)) {
+      node.building = false;
+      node.queued = false;
+      if (node.disposed) continue;
+      this.install(node, data);
+      // Si mientras tanto cambió una zona (campamento), regenerarlo con los datos nuevos.
+      if (data.zonesVersion !== this.zonesVersion) node.stale = true;
+    }
   }
 
   install(node, data) {
@@ -390,6 +402,6 @@ export class Terrain {
   }
 
   get pending() {
-    return this.queue.length + this.pool.jobs.size;
+    return this.queue.length + this.pool.jobs.size + this.arrivals.length;
   }
 }

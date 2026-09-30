@@ -242,6 +242,10 @@ export class ColonyUI {
           <p class="activity-now" data-job></p>
         </section>
         <section class="cp-section">
+          <h3>Ropa</h3>
+          <p class="activity-now" data-clothes></p>
+        </section>
+        <section class="cp-section">
           <h3>Habilidades</h3>
           <ul class="skill-list">
             ${SKILLS.map(
@@ -312,8 +316,15 @@ export class ColonyUI {
     if (this.panel.hidden) return;
     for (const el of this.panel.querySelectorAll('[data-activity]')) el.textContent = c.activity;
     const job = this.panel.querySelector('[data-job]');
-    const jobText = c.job ? `${c.job.def.job} en ${c.job.def.name}` : 'Sin trabajo asignado';
+    const jobText = c.job ? `${c.job.def.job} en ${c.job.name}` : 'Sin trabajo asignado';
     if (job.textContent !== jobText) job.textContent = jobText;
+    const clothes = this.panel.querySelector('[data-clothes]');
+    const clothesText = c.clothed
+      ? 'Ropa de pieles: abriga contra el frío'
+      : this.colony.clothesLeft > 0
+        ? 'Sin ropa (sólo un taparrabos). Irá a buscarla a la pila del campamento cuando tenga frío.'
+        : 'Sin ropa (sólo un taparrabos) y no queda ropa en el campamento.';
+    if (clothes.textContent !== clothesText) clothes.textContent = clothesText;
 
     const health = this.panel.querySelector('[data-health]');
     health.querySelector('[data-value]').textContent = `${Math.round(c.health)}%`;
