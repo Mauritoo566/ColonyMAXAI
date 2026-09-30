@@ -25,7 +25,7 @@ Luego abre <http://localhost:8000>. (Abrir `index.html` directamente con doble c
 
 El Sol gira alrededor del planeta; la hora que se muestra es la hora solar del lugar que estás mirando. De noche una luz de luna azulada y más luz ambiente mantienen el paisaje visible, y el cielo pasa por tonos de atardecer.
 
-Las nubes son cúmulos low poly con la base plana. Hay grandes sistemas nubosos por todo el planeta y, cuando bajas de unos 450 km, aparece un campo de cúmulos pequeños alrededor de la cámara. El Sol proyecta la sombra de las nubes sobre el terreno con un mapa de sombras que se ajusta a la zona que estás mirando.
+Las nubes son cúmulos low poly con la base plana, en dos capas que existen siempre en todo el planeta: grandes sistemas nubosos y cúmulos pequeños repartidos en celdas de 1°. Cada celda genera siempre los mismos cúmulos, así que al acercarte no aparecen nubes nuevas: de lejos cada cúmulo es una sola bola y de cerca se separa en sus bolitas. El Sol proyecta la sombra de las nubes sobre el terreno con un mapa de sombras que se ajusta a la zona que estás mirando.
 
 ## Cómo funciona la escala
 

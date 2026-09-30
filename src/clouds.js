@@ -3,15 +3,19 @@ import { createNoise3D, fbm } from './noise.js';
 import { RADIUS, MAX_LAND_HEIGHT, SEED, surfaceHeight } from './elevation.js';
 
 // Las nubes se forman con "bolitas" low poly (icosaedros con la base aplanada)
-// agrupadas en cúmulos. Hay dos capas:
-//  - Sistemas nubosos grandes, alrededor de todo el planeta, visibles desde el espacio.
-//  - Un campo de cúmulos pequeños que sólo existe alrededor de la cámara cuando está
-//    cerca del suelo, y que se regenera (siempre igual) al moverse.
+// agrupadas en cúmulos. Hay dos capas y las dos existen siempre, en todo el planeta:
+//  - Sistemas nubosos grandes, visibles desde el espacio.
+//  - Cúmulos pequeños repartidos por celdas de 1°. Cada celda genera siempre los
+//    mismos cúmulos, así que al acercarte no aparecen nubes nuevas: de lejos cada
+//    cúmulo se dibuja como una sola bola y de cerca se separa en sus bolitas.
+//    Sólo se omiten los que ocupan menos de un píxel en pantalla.
 
 export const HIGH_CLOUD_ALTITUDE = MAX_LAND_HEIGHT * 1.15;
-const LOCAL_FIELD_RADIUS = 220_000;
-const LOCAL_FIELD_MAX_ALTITUDE = 450_000;
-const LOCAL_CELL = THREE.MathUtils.degToRad(0.16); // ~18 km
+const CELL = THREE.MathUtils.degToRad(1); // ~111 km
+const MAX_CUMULUS_SIZE = 12_000;
+const MIN_PIXELS = 1.5; // por debajo de esto el cúmulo no se ve y no se dibuja
+const DETAIL_PIXELS = 30; // a partir de este tamaño en pantalla se dibuja con todas sus bolitas
+const MAX_CUMULUS_INSTANCES = 60_000;
 
 const weatherNoise = createNoise3D(SEED + 2);
 
@@ -160,58 +164,112 @@ function createHighClouds() {
   return mesh;
 }
 
-class LocalCloudField {
+// Cúmulos de una celda: se calculan una sola vez y se guardan.
+function cellClusters(i, j, lonCells) {
+  const rand = seededRandom((i * 92821) ^ (j * 68917) ^ SEED);
+  const center = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - (i + 0.5) * CELL, (j + 0.5) * CELL);
+  const count = Math.floor(cloudCover(center) * 6 + 1.2 + rand() * 1.6);
+  const clusters = [];
+  for (let c = 0; c < count; c++) {
+    const lat = (i + rand()) * CELL;
+    const lon = ((j + rand()) % lonCells) * CELL;
+    const dir = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - lat, lon);
+    const ground = Math.max(0, surfaceHeight(dir, 10));
+    const base = RADIUS + ground + 1_200 + rand() * 1_800;
+    const size = 3_000 + rand() * (MAX_CUMULUS_SIZE - 3_000);
+    clusters.push({
+      dir,
+      base,
+      size,
+      seed: Math.floor(rand() * 4294967296),
+      position: dir.clone().multiplyScalar(base),
+    });
+  }
+  return clusters;
+}
+
+class CumulusField {
   constructor() {
-    this.mesh = createInstanced(10000);
-    this.lastCenter = null;
-    this.dir = new THREE.Vector3();
+    this.mesh = createInstanced(MAX_CUMULUS_INSTANCES);
+    this.cache = new Map();
+    this.lastPosition = new THREE.Vector3(Infinity, 0, 0);
+    this.lastBuild = 0;
+    this.cameraDir = new THREE.Vector3();
   }
 
-  update(cameraDir, altitude) {
-    const visible = altitude < LOCAL_FIELD_MAX_ALTITUDE;
-    this.mesh.visible = visible;
-    if (!visible) return;
-    if (this.lastCenter && this.lastCenter.angleTo(cameraDir) * RADIUS < 12_000) return;
-    this.lastCenter = cameraDir.clone();
-    this.rebuild(cameraDir);
+  clusters(i, j, lonCells) {
+    const key = i * 100000 + j;
+    let list = this.cache.get(key);
+    if (!list) {
+      if (this.cache.size > 60_000) this.cache.clear();
+      list = cellClusters(i, j, lonCells);
+      this.cache.set(key, list);
+    }
+    return list;
   }
 
-  rebuild(center) {
-    const lat0 = Math.asin(THREE.MathUtils.clamp(center.y, -1, 1));
-    const lon0 = Math.atan2(center.x, center.z);
-    const span = LOCAL_FIELD_RADIUS / RADIUS;
-    const iLat0 = Math.floor((lat0 - span) / LOCAL_CELL);
-    const iLat1 = Math.floor((lat0 + span) / LOCAL_CELL);
-    const lonCells = Math.round((Math.PI * 2) / LOCAL_CELL);
+  update(camera, viewportHeight, now) {
+    const altitude = camera.position.length() - RADIUS;
+    const moved = this.lastPosition.distanceTo(camera.position);
+    // Reconstruir sólo si la cámara se movió lo suficiente como para notarlo.
+    if (moved < Math.max(100, altitude * 0.02) || now - this.lastBuild < 0.1) return;
+    this.lastPosition.copy(camera.position);
+    this.lastBuild = now;
+    this.rebuild(camera, viewportHeight);
+  }
 
-    const origin = center.clone().multiplyScalar(RADIUS);
-    this.mesh.position.copy(origin);
+  rebuild(camera, viewportHeight) {
+    const camPos = camera.position;
+    const camR = camPos.length();
+    const pixelsPerRadian = viewportHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+    const maxDistance = (MAX_CUMULUS_SIZE * pixelsPerRadian) / MIN_PIXELS;
+
     const write = writer(this.mesh);
-    const dir = this.dir;
+    const altitude = camR - RADIUS;
+    if (altitude > maxDistance) {
+      write.done(); // desde muy lejos ningún cúmulo llega a un píxel
+      return;
+    }
 
-    for (let i = iLat0; i <= iLat1; i++) {
-      const lat = (i + 0.5) * LOCAL_CELL;
-      if (Math.abs(lat) > Math.PI / 2) continue;
-      const lonSpan = span / Math.max(0.05, Math.cos(lat));
-      const j0 = Math.floor((lon0 - lonSpan) / LOCAL_CELL);
-      const j1 = Math.floor((lon0 + lonSpan) / LOCAL_CELL);
-      for (let j = j0; j <= j1; j++) {
+    // Región de la superficie a menos de maxDistance de la cámara y antes del horizonte.
+    const cosLimit = (RADIUS * RADIUS + camR * camR - maxDistance * maxDistance) / (2 * RADIUS * camR);
+    const horizonAngle = Math.acos(Math.min(1, RADIUS / camR)) + 0.03;
+    const span = Math.min(horizonAngle, Math.acos(THREE.MathUtils.clamp(cosLimit, -1, 1)));
+
+    const cameraDir = this.cameraDir.copy(camPos).divideScalar(camR);
+    const lat0 = Math.asin(THREE.MathUtils.clamp(cameraDir.y, -1, 1));
+    const lon0 = Math.atan2(cameraDir.x, cameraDir.z);
+    const lonCells = Math.round((Math.PI * 2) / CELL);
+    const iMin = Math.max(Math.floor((lat0 - span) / CELL), -90);
+    const iMax = Math.min(Math.floor((lat0 + span) / CELL), 89);
+    const cosSpan = Math.cos(span + CELL * 1.5);
+
+    const origin = cameraDir.clone().multiplyScalar(RADIUS);
+    this.mesh.position.copy(origin);
+    const horizonDistance = Math.sqrt(Math.max(0, camR * camR - RADIUS * RADIUS));
+
+    for (let i = iMin; i <= iMax; i++) {
+      const latCos = Math.max(0.02, Math.cos((i + 0.5) * CELL));
+      const lonSpan = Math.min(Math.PI, span / latCos + CELL);
+      const j0 = Math.floor((lon0 - lonSpan) / CELL);
+      const j1 = Math.floor((lon0 + lonSpan) / CELL);
+      for (let j = j0; j <= j1 && j < j0 + lonCells; j++) {
         const jw = ((j % lonCells) + lonCells) % lonCells;
-        const rand = seededRandom((i * 92821) ^ (jw * 68917) ^ SEED);
-        dir.setFromSphericalCoords(1, Math.PI / 2 - lat, (jw + 0.5) * LOCAL_CELL);
-        if (dir.angleTo(center) > span) continue;
+        for (const cluster of this.clusters(i, jw, lonCells)) {
+          if (cluster.dir.dot(cameraDir) < cosSpan) continue;
+          const distance = camPos.distanceTo(cluster.position);
+          const pixels = (cluster.size / distance) * pixelsPerRadian;
+          if (pixels < MIN_PIXELS) continue;
+          // Detrás del horizonte (contando la altura de la nube) no se ve.
+          if (distance > horizonDistance + Math.sqrt(cluster.base * cluster.base - RADIUS * RADIUS)) continue;
 
-        // Cuanta más cobertura, más cúmulos en la celda (de 0 a 4). Incluso con
-        // buen tiempo aparece algún cúmulo suelto.
-        const count = Math.floor(cloudCover(dir) * 3.5 + 0.35 + rand() * 0.8);
-        for (let c = 0; c < count; c++) {
-          const cLat = (i + rand()) * LOCAL_CELL;
-          const cLon = (jw + rand()) * LOCAL_CELL;
-          dir.setFromSphericalCoords(1, Math.PI / 2 - cLat, cLon);
-          const ground = Math.max(0, surfaceHeight(dir, 10));
-          const base = RADIUS + ground + 1_200 + rand() * 1_800;
-          const size = 2_000 + rand() * 5_500;
-          addCumulus(write, rand, dir, base, size, 0.6, origin);
+          const grow = THREE.MathUtils.smoothstep(pixels, MIN_PIXELS, MIN_PIXELS * 3);
+          const rand = seededRandom(cluster.seed);
+          if (pixels >= DETAIL_PIXELS) {
+            addCumulus(write, rand, cluster.dir, cluster.base, cluster.size, 0.6, origin);
+          } else {
+            addBlob(write, cluster, grow, origin);
+          }
         }
       }
     }
@@ -219,21 +277,31 @@ class LocalCloudField {
   }
 }
 
+// Un cúmulo lejano dibujado como una sola bola con su tamaño y forma aproximados.
+function addBlob(write, cluster, grow, origin) {
+  const width = cluster.size * 0.85 * grow;
+  const height = cluster.size * 0.45 * grow;
+  tmp.pos.copy(cluster.dir).multiplyScalar(cluster.base + height * 0.25).sub(origin);
+  tmp.quat.setFromUnitVectors(Y_AXIS, cluster.dir);
+  tmp.scale.set(width, height, width * 0.8);
+  tmp.matrix.compose(tmp.pos, tmp.quat, tmp.scale);
+  return write(tmp.matrix);
+}
+
 export function createClouds() {
   const group = new THREE.Group();
   group.name = 'clouds';
   const high = createHighClouds();
-  const local = new LocalCloudField();
-  group.add(high, local.mesh);
+  const cumulus = new CumulusField();
+  group.add(high, cumulus.mesh);
 
-  const cameraDir = new THREE.Vector3();
+  let time = 0;
   return {
     object: group,
-    update(delta, camera) {
+    update(delta, camera, viewportHeight) {
+      time += delta;
       high.rotation.y += delta * 0.0015; // los grandes sistemas derivan despacio
-      const altitude = camera.position.length() - RADIUS;
-      cameraDir.copy(camera.position).normalize();
-      local.update(cameraDir, altitude);
+      cumulus.update(camera, viewportHeight, time);
     },
   };
 }

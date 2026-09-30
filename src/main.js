@@ -170,7 +170,7 @@ renderer.setAnimationLoop(() => {
   const altitude = camera.position.length() - RADIUS;
   const clearance = Math.max(1, altitude - controls.groundHeight);
   updateSun(clearance);
-  planet.update(delta, camera, dayNight.sunDirection);
+  planet.update(delta, camera, dayNight.sunDirection, window.innerHeight);
   updateSky(altitude);
 
   labelTimer -= delta;

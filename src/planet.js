@@ -65,9 +65,9 @@ export function createPlanet() {
   return {
     object: planet,
     terrain,
-    update(delta, camera, sunDirection) {
+    update(delta, camera, sunDirection, viewportHeight) {
       terrain.update(camera.position);
-      clouds.update(delta, camera);
+      clouds.update(delta, camera, viewportHeight);
 
       // Desde dentro de la atmósfera el halo ya no tiene sentido: se desvanece.
       const altitude = camera.position.length() - RADIUS;
