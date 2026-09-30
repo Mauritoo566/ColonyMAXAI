@@ -3,7 +3,6 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   RADIUS,
   elevation,
-  moisture,
   surfaceHeight,
   naturalSurfaceHeight,
   addTerrainZone,
@@ -11,8 +10,8 @@ import {
 } from './elevation.js';
 
 // Campamento inicial de la civilización: el jugador elige dónde fundarlo haciendo clic
-// en el terreno. Al fundarlo el terreno se nivela en un círculo, se pinta un claro de
-// tierra pisada y alrededor crecen árboles, arbustos y rocas según el bioma.
+// en el terreno. Al fundarlo el terreno se nivela en un círculo y se pinta un claro de
+// tierra pisada.
 // Se guarda en el navegador para recuperarlo al volver a abrir el juego.
 
 const STORAGE_KEY = 'colonymaxai.camp';
@@ -422,119 +421,12 @@ export function createCampModel(seed = 1) {
   return camp;
 }
 
-// ---------------------------------------------------------------------------
-// Naturaleza alrededor del campamento: árboles, arbustos y rocas según el bioma
-// ---------------------------------------------------------------------------
-
-function addPine(parts, p, s, rand) {
-  stick(parts, p.clone().setY(p.y - 0.5), p.clone().setY(p.y + 2.4 * s), 0.28 * s, '#5a3b24', 5);
-  const layers = [
-    [2.7, 4.2, 3.4],
-    [2.1, 3.6, 5.6],
-    [1.4, 3.0, 7.7],
-  ];
-  for (const [r, h, y] of layers) {
-    parts.add(new THREE.ConeGeometry(r * s, h * s, 7), vary('#2f5a34', rand, 0.12), mat(p.x, p.y + y * s, p.z, 0, rand() * 6, 0));
-  }
-}
-
-function addBroadleaf(parts, p, s, rand) {
-  stick(parts, p.clone().setY(p.y - 0.5), p.clone().setY(p.y + 3.6 * s), 0.32 * s, '#5e4128', 5);
-  const greens = ['#4f8a3a', '#5c9a42', '#447d36'];
-  for (let i = 0; i < 3; i++) {
-    const a = rand() * Math.PI * 2;
-    const r = 2.1 + rand() * 0.9;
-    parts.add(
-      new THREE.IcosahedronGeometry(1, 0),
-      vary(greens[i], rand),
-      mat(p.x + Math.cos(a) * 1.1 * s, p.y + (4.6 + rand() * 1.2) * s, p.z + Math.sin(a) * 1.1 * s, rand(), rand(), 0, r * s, r * 0.85 * s, r * s),
-    );
-  }
-}
-
-function addBush(parts, p, s, rand, color = '#4e8636') {
-  for (let i = 0; i < 2; i++) {
-    const r = (0.8 + rand() * 0.6) * s;
-    parts.add(
-      new THREE.IcosahedronGeometry(1, 0),
-      vary(color, rand, 0.12),
-      mat(p.x + (rand() - 0.5) * s, p.y + r * 0.55, p.z + (rand() - 0.5) * s, rand(), rand(), 0, r, r * 0.75, r),
-    );
-  }
-}
-
-function addRock(parts, p, s, rand) {
-  parts.add(
-    new THREE.DodecahedronGeometry(1, 0),
-    vary('#8a867e', rand, 0.15),
-    mat(p.x, p.y + 0.25 * s, p.z, rand(), rand() * 6, rand() * 0.4, s * 1.2, s * 0.7, s),
-  );
-}
-
 function tangentBasis(dir, east = new THREE.Vector3(), north = new THREE.Vector3()) {
   east.crossVectors(Y_AXIS, dir);
   if (east.lengthSq() < 1e-10) east.set(1, 0, 0);
   east.normalize();
   north.crossVectors(dir, east);
   return { east, north };
-}
-
-// Crea la malla con la naturaleza que rodea el campamento. Las alturas se toman del
-// terreno (ya nivelado), así que cada árbol queda apoyado en el suelo.
-function createSurroundings(campDir, campHeight, seed, material) {
-  const rand = seededRandom(seed ^ 0x9e3779b9);
-  const object = new THREE.Object3D();
-  const origin = campDir.clone().multiplyScalar(RADIUS + campHeight);
-  object.position.copy(origin);
-  object.quaternion.setFromUnitVectors(Y_AXIS, campDir);
-  const toLocal = object.quaternion.clone().invert();
-  const { east, north } = tangentBasis(campDir);
-  const parts = new Parts();
-  const dir = new THREE.Vector3();
-
-  for (let attempt = 0; attempt < 700; attempt++) {
-    const angle = rand() * Math.PI * 2;
-    const dist = FLAT_RADIUS + 6 + Math.pow(rand(), 0.8) * 230;
-    // Más denso cerca del claro y cada vez menos hacia fuera.
-    const falloff = 1 - THREE.MathUtils.smoothstep(dist, 90, 240);
-    dir
-      .copy(campDir)
-      .addScaledVector(east, (Math.cos(angle) * dist) / RADIUS)
-      .addScaledVector(north, (Math.sin(angle) * dist) / RADIUS)
-      .normalize();
-    const e = elevation(dir.x, dir.y, dir.z);
-    if (e <= 0.004 || Math.abs(dir.y) > 0.9 || e > 0.62) continue;
-
-    const m = moisture(dir.x, dir.y, dir.z);
-    const desert = m < -0.12 && Math.abs(dir.y) < 0.55;
-    const mountain = e > 0.45;
-    const forest = m > 0.08;
-    const density = desert ? 0.25 : mountain ? 0.35 : forest ? 0.95 : 0.55;
-    if (rand() > density * falloff) continue;
-
-    const h = surfaceHeight(dir);
-    const p = dir.clone().multiplyScalar(RADIUS + h).sub(origin).applyQuaternion(toLocal);
-    const s = 0.8 + rand() * 0.55;
-    const roll = rand();
-    if (desert) {
-      if (roll < 0.55) addRock(parts, p, s * 1.3, rand);
-      else addBush(parts, p, s * 0.7, rand, '#8a8f4a');
-    } else if (mountain) {
-      if (roll < 0.5) addPine(parts, p, s, rand);
-      else addRock(parts, p, s * 1.6, rand);
-    } else if (forest) {
-      if (roll < 0.5) addPine(parts, p, s * 1.1, rand);
-      else if (roll < 0.85) addBroadleaf(parts, p, s, rand);
-      else addBush(parts, p, s, rand);
-    } else {
-      if (roll < 0.35) addBroadleaf(parts, p, s, rand);
-      else if (roll < 0.5) addPine(parts, p, s, rand);
-      else if (roll < 0.85) addBush(parts, p, s, rand);
-      else addRock(parts, p, s, rand);
-    }
-  }
-  if (parts.list.length) object.add(parts.mesh(material));
-  return object;
 }
 
 // Versión semitransparente del modelo para la vista previa.
@@ -682,14 +574,12 @@ export class CampSystem {
     this.terrain = terrain;
     this.ui = ui;
 
-    this.camp = null; // { object, surroundings, zone, dir, height, yaw }
+    this.camp = null; // { object, zone, dir, height, yaw }
     this.placing = false;
     this.pointer = null; // última posición del ratón sobre el lienzo
     this.pressed = null;
     this.candidate = null;
     this.time = 0;
-
-    this.natureMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 });
 
     this.ghost = makeGhost(createCampModel());
     this.ghost.visible = false;
@@ -777,9 +667,8 @@ export class CampSystem {
 
   removeCamp() {
     if (!this.camp) return;
-    this.scene.remove(this.camp.object, this.camp.surroundings);
+    this.scene.remove(this.camp.object);
     this.camp.object.traverse((o) => o.geometry?.dispose());
-    this.camp.surroundings.traverse((o) => o.geometry?.dispose());
     removeTerrainZone(this.camp.zone);
     this.terrain.invalidateZone(this.camp.zone);
     this.camp = null;
@@ -801,9 +690,8 @@ export class CampSystem {
     const seed = seedFromDir(dir);
     const object = createCampModel(seed);
     orientOnSurface(object, dir, height, yaw);
-    const surroundings = createSurroundings(dir, height, seed, this.natureMaterial);
-    this.scene.add(object, surroundings);
-    this.camp = { object, surroundings, zone, dir: dir.clone(), height, yaw };
+    this.scene.add(object);
+    this.camp = { object, zone, dir: dir.clone(), height, yaw };
   }
 
   flyToCamp() {
