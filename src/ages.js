@@ -230,7 +230,7 @@ export function nextAgeStatus(colony) {
   }
   for (const [good, n] of Object.entries(req.reserves ?? {})) {
     const have = Math.floor(good === 'water' ? colony.waterReport().stock + colony.waterReport().store : (colony.stock[good] ?? 0));
-    checks.push({ label: `Reserva de ${goodName(good).toLowerCase()} (se conserva)`, have, need: n, ok: have >= n });
+    checks.push({ label: `Reserva de ${goodName(good).toLowerCase()} (se conserva)`, have, need: n, ok: have >= n, hint: have >= n ? undefined : good === 'water' ? colony.waterHint() : 'Marca bayas y setas con «Recolectar» (filtro Comida).' });
   }
   for (const m of req.milestones ?? []) {
     const ok = !!colony.milestones?.has?.(m.id);

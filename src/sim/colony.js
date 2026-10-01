@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RADIUS, surfaceHeight, elevation, addTerrainZone, removeTerrainZone } from '../elevation.js';
+import { RADIUS, surfaceHeight, elevation, naturalSurfaceHeight, addTerrainZone, removeTerrainZone } from '../elevation.js';
 import { DAY_LENGTH_SECONDS } from '../daynight.js';
 import { AGES, ageInfo, nextAgeStatus } from '../ages.js';
 import { insideRect, rectDistance, upgradeRect } from '../rect.js';
@@ -23,7 +23,7 @@ import { generateDeposits, depositAt, updateProduction, updatePower, applyHospit
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
-import { remainingOf, PRIMITIVE_STOCK, PRIMITIVE_COLLECTOR_WATER, DISCOVERY, LEARNABLE, shelterInfo, populationInfo, waterReport, foodReport, alertsOf, discoveryProblem, resourceHelp, harvestBlocker } from './primitive.js';
+import { remainingOf, waterHint, DEW_RATE, RAIN_RATE, PRIMITIVE_STOCK, PRIMITIVE_COLLECTOR_WATER, DISCOVERY, LEARNABLE, shelterInfo, populationInfo, waterReport, foodReport, alertsOf, discoveryProblem, resourceHelp, harvestBlocker } from './primitive.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
 // de acopio, recursos del entorno, edades y guardado. No dibuja nada ni toca la página:
@@ -86,6 +86,47 @@ const SPOT_KINDS = {
   stone: ['stone', 'flint'],
 };
 
+// Recursos naturales REALES alrededor de un lugar (antes de fundar): sale de la misma generación que usa
+// la colonia al fundarse (baldosas del mundo + arboleda del campamento). Devuelve cuántos sitios de comida,
+// madera y piedra hay dentro de cada radio (en metros sobre el terreno).
+export function scanSite(dir, seed, radii = [75, SPOT_RADIUS]) {
+  const lat0 = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
+  const lon0 = Math.atan2(dir.x, dir.z);
+  const lonNorm = lon0 < 0 ? lon0 + Math.PI * 2 : lon0;
+  const span = SPOT_RADIUS / RADIUS;
+  const kinds = {};
+  for (const [kind, ids] of Object.entries(SPOT_KINDS)) for (const id of ids) kinds[id] = kind;
+  const typeIndex = RESOURCE_TYPES.map((t) => kinds[t.id] || null);
+  const origin = new THREE.Vector3().copy(dir).normalize().multiplyScalar(RADIUS + naturalSurfaceHeight(dir));
+  const up = new THREE.Vector3().copy(dir).normalize();
+  const out = radii.map(() => ({ food: 0, wood: 0, stone: 0 }));
+  const v = new THREE.Vector3();
+  const add = (tile, minDistance) => {
+    for (let k = 0; k < tile.count; k++) {
+      const kind = typeIndex[tile.type[k]];
+      if (!kind) continue;
+      v.set(tile.pos[k * 3], tile.pos[k * 3 + 1], tile.pos[k * 3 + 2]).sub(origin);
+      v.addScaledVector(up, -v.dot(up));
+      const d = v.length();
+      if (d < minDistance) continue;
+      radii.forEach((r, i) => {
+        if (d <= r) out[i][kind]++;
+      });
+    }
+  };
+  for (let i = Math.floor((lat0 - span) / TILE_ANGLE); i <= Math.floor((lat0 + span) / TILE_ANGLE); i++) {
+    const lat = (i + 0.5) * TILE_ANGLE;
+    const cols = Math.max(1, Math.floor((Math.PI * 2 * Math.cos(lat)) / TILE_ANGLE));
+    const colAngle = (Math.PI * 2) / cols;
+    const lonSpan = span / Math.max(0.01, Math.cos(lat));
+    const j0 = Math.floor((lonNorm - lonSpan) / colAngle);
+    const j1 = Math.floor((lonNorm + lonSpan) / colAngle);
+    for (let j = j0; j <= j1 && j < j0 + cols; j++) add(generateTile(i, ((j % cols) + cols) % cols, cols), CAMP_CLEAR + 2);
+  }
+  add(generateCampGrove(dir.x, dir.y, dir.z, biomeAt(dir.x, dir.y, dir.z).id, seed), 0);
+  return out;
+}
+
 // Ropa de pieles (Edad Primitiva): tonos de cuero y piel curtida.
 const SHIRTS = ['#8a5a34', '#a0764a', '#b8905a', '#7a5230', '#9a6a3e', '#c2a06a'];
 const PANTS = ['#5a3a22', '#6b4a2e', '#4a3220', '#7a5a3a'];
@@ -132,6 +173,7 @@ export class ColonySim {
     this.flow = { in: {}, out: {} }; // lo que entra y sale del almacén en el tramo actual
     this.flowBuckets = []; // los últimos tramos (para producción y consumo por día)
     this.flowTimer = 0;
+    this.primitiveMigrated = false; // ya tiene lo básico del nuevo inicio de Primitiva
     this.milestones = new Set(); // hitos conseguidos (p. ej. la primera herramienta de piedra)
     this.learned = new Set(); // acciones que el jugador ya aprendió (la guía las reconoce)
     this.discovery = null; // { progress } mientras se fabrica la primera herramienta
@@ -291,6 +333,10 @@ export class ColonySim {
     return foodReport(this);
   }
 
+  waterHint() {
+    return waterHint(this);
+  }
+
   get alerts() {
     return this.alertsView ?? alertsOf(this);
   }
@@ -309,27 +355,58 @@ export class ColonySim {
 
   // Campamento inicial de una partida nueva: un refugio de ramas, el recolector de lluvia ya
   // funcionando y un pequeño acopio. Sólo lo hace el servidor al fundar (no al cargar una partida).
+  // Busca un sitio libre (en la cuadrícula de 4 m) para un edificio inicial y lo deja terminado.
+  placeStarter(def, angle0) {
+    for (let ring = 0; ring < 8; ring++) {
+      for (let k = 0; k < 16; k++) {
+        const a = angle0 + (k / 16) * Math.PI * 2;
+        const r = 16 + ring * 4;
+        const x = Math.round((Math.cos(a) * r) / 4) * 4;
+        const z = Math.round((Math.sin(a) * r) / 4) * 4;
+        if (!this.siteProblem(def, x, z)) return this.createBuilding(def, x, z, Math.atan2(-x, -z), 1, 0, 1);
+      }
+    }
+    return null;
+  }
+
   seedPrimitive() {
     this.stock = { ...PRIMITIVE_STOCK };
     this.clothesLeft = 0;
-    const place = (def, angle0) => {
-      for (let ring = 0; ring < 8; ring++) {
-        for (let k = 0; k < 16; k++) {
-          const a = angle0 + (k / 16) * Math.PI * 2;
-          const r = 16 + ring * 4;
-          const x = Math.round((Math.cos(a) * r) / 4) * 4;
-          const z = Math.round((Math.sin(a) * r) / 4) * 4;
-          if (!this.siteProblem(def, x, z)) return this.createBuilding(def, x, z, Math.atan2(-x, -z), 1, 0, 1);
-        }
-      }
-      return null;
-    };
-    const house = place(BUILDINGS.house, 0.5);
-    const collector = place(BUILDINGS.well, 3.6);
+    const house = this.placeStarter(BUILDINGS.house, 0.5);
+    const collector = this.placeStarter(BUILDINGS.well, 3.6);
     if (collector) collector.store = PRIMITIVE_COLLECTOR_WATER;
+    this.primitiveMigrated = true; // una partida nueva ya empieza completa
     assignHomes(this);
     this.emit('changed');
     return { house, collector };
+  }
+
+  // Aldeas guardadas antes del nuevo inicio de la Edad Primitiva: se les añade sólo lo que les falta
+  // para poder completar la etapa (no el paquete inicial): una plaza de refugio si no tienen ninguna
+  // (antes dormían en los tipis, que ya no existen) y un recolector de lluvia si no tienen ninguna
+  // forma de captar agua. Se conservan colonos, recursos y edificios; no se repite (una marca en la
+  // partida y comprobaciones por contenido) y no se quita a nadie por pasar del límite de diez.
+  migratePrimitive() {
+    if (this.remote || this.age !== 1 || this.primitiveMigrated) return [];
+    const added = [];
+    const has = (pred) => this.buildings.some(pred);
+    if (!has((b) => b.def.levels[0].housing != null)) {
+      if (this.placeStarter(BUILDINGS.house, 0.5)) added.push('un refugio de ramas');
+    }
+    if (!has((b) => b.def.id === 'well')) {
+      const collector = this.placeStarter(BUILDINGS.well, 3.6);
+      if (collector) {
+        collector.store = PRIMITIVE_COLLECTOR_WATER / 2;
+        added.push('un recolector de lluvia');
+      }
+    }
+    this.primitiveMigrated = true;
+    if (added.length) {
+      assignHomes(this);
+      this.emit('notice', `Actualización de la Edad Primitiva: se añadió ${added.join(' y ')} a tu aldea`);
+      this.emit('changed');
+    }
+    return added;
   }
 
   // Acción aprendida: queda reconocida para siempre (la guía no la vuelve a pedir).
@@ -440,6 +517,7 @@ export class ColonySim {
     this.age = 1;
     this.armyUnpaid = false;
     this.nextRaidDay = null;
+    this.primitiveMigrated = false;
     this.milestones = new Set(); // hitos conseguidos (p. ej. la primera herramienta de piedra)
     this.learned = new Set(); // acciones que el jugador ya aprendió (la guía las reconoce)
     this.discovery = null; // { progress } mientras se fabrica la primera herramienta
@@ -1876,7 +1954,7 @@ export class ColonySim {
   updateBuildings(gameDt, rain) {
     for (const b of this.buildings) {
       const lv = b.done && levelOf(b);
-      if (lv?.rainOnly) b.store = Math.min(lv.capacity, b.store + (0.004 + rain * 0.08) * gameDt);
+      if (lv?.rainOnly) b.store = Math.min(lv.capacity, b.store + (DEW_RATE + rain * RAIN_RATE) * gameDt);
     }
     this.assignTimer -= gameDt;
     if (this.assignTimer <= 0) {
@@ -2133,6 +2211,7 @@ export class ColonySim {
         nextRaidDay: this.nextRaidDay,
         armyUnpaid: this.armyUnpaid,
         roads: [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]),
+        primitiveMigrated: !!this.primitiveMigrated,
         milestones: [...this.milestones],
         learned: [...this.learned],
         discovery: this.discovery,
@@ -2227,6 +2306,7 @@ export class ColonySim {
     // Partidas anteriores: las viviendas toman el nivel de la edad (no se quita nada).
     evolveHouses(this);
     this.pruneRoads();
+    this.migratePrimitive();
     this.autoConnect();
     if (data.weather && this.weather?.load) this.weather.load(data.weather);
     this.emit('buildings');
@@ -2642,6 +2722,7 @@ export class ColonySim {
     this.nextRaidDay = Number.isFinite(data.nextRaidDay) ? data.nextRaidDay : null;
     this.armyUnpaid = !!data.armyUnpaid;
     this.roads = new Map((Array.isArray(data.roads) ? data.roads : []).filter((r) => r.length === 3).map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
+    this.primitiveMigrated = !!data.primitiveMigrated;
     this.milestones = new Set(Array.isArray(data.milestones) ? data.milestones.filter((m) => typeof m === 'string') : []);
     this.learned = new Set(Array.isArray(data.learned) ? data.learned.filter((m) => LEARNABLE.concat(['zone_marked', 'food_marked']).includes(m)) : []);
     this.discovery = data.discovery && Number.isFinite(data.discovery.progress) ? { progress: Math.min(1, Math.max(0, data.discovery.progress)) } : null;

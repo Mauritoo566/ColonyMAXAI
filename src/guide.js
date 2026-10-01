@@ -26,7 +26,7 @@ export const GUIDES = {
         id: 'materials',
         kind: 'learned',
         title: 'Recoger materiales',
-        text: 'Con «Recolectar» señala una zona con ramas y fibras (la fibra viene de regalo al recoger comida o madera). No hace falta ninguna herramienta.',
+        text: 'Con «Recolectar» y el filtro «Madera» señala una zona con árboles y ramas. No hay plantas de fibra aparte: la fibra llega sola junto con la madera y con las bayas. No hace falta ninguna herramienta.',
         check: (c) => ({ done: c.learned.has('zone_marked') || (made(c, 'wood') >= 12 && made(c, 'fiber') >= 4), note: `${Math.min(made(c, 'wood'), 12)}/12 de madera recogida` }),
         action: 'Abrir Recolectar',
       },
@@ -34,7 +34,7 @@ export const GUIDES = {
         id: 'food',
         kind: 'learned',
         title: 'Asegurar la comida',
-        text: 'Las bayas y setas silvestres alimentan a la aldea. Señálalas con el filtro «Comida». Los arbustos rebrotan despacio: no son infinitos.',
+        text: 'Las bayas y setas silvestres alimentan a la aldea. Señálalas con el filtro «Comida» (los arbustos de bayas dan además 1 fibra; las setas no). Rebrotan despacio: no son infinitos.',
         check: (c) => ({ done: c.learned.has('food_marked') || made(c, 'food') >= 10, note: `${Math.min(made(c, 'food'), 10)}/10 de comida recogida` }),
         action: 'Marcar comida',
       },
@@ -42,7 +42,7 @@ export const GUIDES = {
         id: 'water',
         kind: 'learned',
         title: 'Entender el agua',
-        text: 'El recolector de lluvia capta agua cuando llueve (con tiempo seco sólo junta rocío). Mira cuánta hay, cuánto cabe y cuántos días dura.',
+        text: 'El recolector de lluvia capta agua cuando llueve; con tiempo seco sólo junta un poco de rocío. Mira cuánta hay, cuánto cabe, cuánto bebe la aldea y cuántos días dura la reserva.',
         check: (c) => ({ done: c.learned.has('water_seen') }),
         action: 'Ver el recolector',
       },
@@ -75,7 +75,8 @@ export const GUIDES = {
           const reserves = st.checks?.filter((k) => k.label.startsWith('Reserva')) ?? [];
           const ok = reserves.every((k) => k.ok) && !(st.missing?.length);
           const missing = st.missing?.map(([k, n]) => `${n} de ${k}`).join(', ');
-          return { done: ok, note: ok ? 'Reservas y materiales listos' : `${reserves.filter((k) => !k.ok).map((k) => `${k.label}: ${k.have}/${k.need}`).join(' · ')}${missing ? ` · faltan ${missing}` : ''}` };
+          const waterBad = reserves.some((k) => !k.ok && /agua/.test(k.label));
+          return { done: ok, note: ok ? 'Reservas y materiales listos' : `${reserves.filter((k) => !k.ok).map((k) => `${k.label}: ${k.have}/${k.need}`).join(' · ')}${missing ? ` · faltan ${missing}` : ''}${waterBad ? ` — ${c.waterHint()}` : ''}` };
         },
       },
       {

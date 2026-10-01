@@ -13,7 +13,8 @@ import { DAY_LENGTH_SECONDS as DAY } from '../../../src/daynight.js';
 import { nextAgeStatus, AGES } from '../../../src/ages.js';
 import { guideState } from '../../../src/guide.js';
 import { maxPopulation, growthBlocker, immigrationBlocker } from '../../../src/sim/family.js';
-import { alertsOf, DISCOVERY, RESERVE } from '../../../src/sim/primitive.js';
+import { alertsOf, DISCOVERY, RESERVE, waterHint } from '../../../src/sim/primitive.js';
+import { scanSite } from '../../../src/sim/colony.js';
 import { AUDIT } from '../../../src/sim/primitiveAudit.js';
 import { Store } from '../store.js';
 import { World } from '../world.js';
@@ -59,7 +60,7 @@ const place = (sim, id) => {
   assert.ok(well.store > 0 && well.store < levelOf(well).capacity);
   assert.equal(sim.buildings.length, 2, 'sólo refugio y recolector');
   assert.equal(sim.age, 1);
-  assert.deepEqual(sim.stock, { food: 18, water: 10, wood: 40, stone: 14, fiber: 14 });
+  assert.deepEqual(sim.stock, { food: 18, water: 12, wood: 40, stone: 14, fiber: 14 });
   assert.ok(sim.shelterInfo().unhoused >= 3, 'tres colonos duermen junto a la fogata');
   assert.ok(alertsOf(sim).some((a) => a.id === 'shelter'), 'la interfaz lo explica');
   assert.equal(maxPopulation(sim), 10);
@@ -107,7 +108,7 @@ const place = (sim, id) => {
   const before = well.store;
   sim.updateBuildings(60, 1);
   assert.ok(well.store > before || before >= levelOf(well).capacity, 'la lluvia llena el recolector');
-  assert.ok(sim.waterReport().capacity >= 14);
+  assert.ok(sim.waterReport().capacity >= 20);
   const water = sim.waterReport().stock + well.store;
   if (water < RESERVE.water) well.store = levelOf(well).capacity;
   const status = nextAgeStatus(sim);
@@ -249,10 +250,151 @@ const place = (sim, id) => {
   assert.equal(world.found(ana, { x: -0.18, y: 0.11, z: 0.977 }), null);
   const again = world.colonies.get(ana).sim;
   assert.equal(again.colonists.length, 5);
-  assert.deepEqual(again.stock, { food: 18, water: 10, wood: 40, stone: 14, fiber: 14 });
+  assert.deepEqual(again.stock, { food: 18, water: 12, wood: 40, stone: 14, fiber: 14 });
   assert.equal(again.defeat, null);
   assert.equal(again.milestones.size, 0);
   console.log('✓ derrota, nueva fundación limpia y sin tocar a otros jugadores');
+}
+
+// 14. Aldeas guardadas antes del nuevo inicio: se adaptan sólo en lo que les falta, sin duplicar.
+{
+  // Aldea antigua: edad I, 5 colonos, sin refugio ni recolector (dormían en los tipis), con sus recursos.
+  const old = new ColonySim();
+  old.weather = new WeatherState(5);
+  old.weather.setPlace(dir);
+  old.setCamp({ dir, height: naturalSurfaceHeight(dir), yaw: 0, seed: 777 }, { ownZone: true });
+  old.timeLabel = () => 'Día 9';
+  old.stock = { food: 31, water: 7, wood: 55, stone: 22, fiber: 12 };
+  old.produced = { wood: 40, food: 20 };
+  const woodcutter = old.createBuilding(BUILDINGS.woodcutter, 24, 12, 0, 1, 0);
+  const save = JSON.parse(JSON.stringify(old.serialize()));
+  delete save.colony.primitiveMigrated;
+  delete save.colony.milestones;
+  delete save.colony.learned;
+  const load = () => {
+    const sim = new ColonySim();
+    sim.weather = new WeatherState(5);
+    sim.weather.setPlace(dir);
+    sim.setCamp({ dir, height: naturalSurfaceHeight(dir), yaw: 0, seed: 777 }, { ownZone: true });
+    assert.equal(sim.restore(JSON.parse(JSON.stringify(save))), true);
+    return sim;
+  };
+  const a = load();
+  const ids = a.buildings.map((b) => b.def.id).sort();
+  assert.deepEqual(ids, ['house', 'well', 'woodcutter'], 'se añade un refugio y un recolector, nada más');
+  assert.equal(a.colonists.length, 5, 'se conservan los colonos');
+  assert.deepEqual(a.stock, old.stock, 'no se regalan recursos');
+  assert.deepEqual(a.produced, old.produced, 'se conserva el progreso');
+  assert.ok(a.buildings.find((b) => b.def.id === 'woodcutter').id === woodcutter.id, 'se conservan los edificios');
+  assert.ok(a.shelterInfo().slots === 2, 'sólo una plaza de refugio, no el paquete completo');
+  assert.ok(a.buildings.find((b) => b.def.id === 'well').store <= 4, 'el recolector llega con la mitad de lo que tiene uno nuevo');
+  // Cargar de nuevo la copia ya migrada (guardar y volver a cargar) no duplica nada.
+  const again = new ColonySim();
+  again.weather = new WeatherState(5);
+  again.weather.setPlace(dir);
+  again.setCamp({ dir, height: naturalSurfaceHeight(dir), yaw: 0, seed: 777 }, { ownZone: true });
+  again.restore(JSON.parse(JSON.stringify(a.serialize())));
+  again.restore(JSON.parse(JSON.stringify(a.serialize())));
+  assert.equal(again.buildings.filter((b) => b.def.id === 'house').length <= 2, true);
+  assert.equal(again.migratePrimitive().length, 0);
+  assert.equal(a.migratePrimitive().length, 0, 'no se repite');
+  // Una aldea antigua que ya tenía refugios y pozo no recibe nada.
+  const rich = new ColonySim();
+  rich.weather = new WeatherState(5);
+  rich.weather.setPlace(dir);
+  rich.setCamp({ dir, height: naturalSurfaceHeight(dir), yaw: 0, seed: 777 }, { ownZone: true });
+  rich.timeLabel = () => 'd';
+  rich.createBuilding(BUILDINGS.house, 20, 8, 0, 1, 0);
+  rich.createBuilding(BUILDINGS.well, -20, -8, 0, 1, 0);
+  const richSave = JSON.parse(JSON.stringify(rich.serialize()));
+  delete richSave.colony.primitiveMigrated;
+  const r2 = new ColonySim();
+  r2.weather = new WeatherState(5);
+  r2.setCamp({ dir, height: naturalSurfaceHeight(dir), yaw: 0, seed: 777 }, { ownZone: true });
+  r2.restore(richSave);
+  assert.equal(r2.buildings.length, 2, 'no se añade nada si ya tenía lo necesario');
+  // Más de diez habitantes: no se echa a nadie; se impide crecer y se muestra.
+  const crowd = load();
+  while (crowd.colonists.length < 12) crowd.colonists.push(crowd.makeColonist({ ...crowd.staticOf(crowd.colonists[0]), id: 300 + crowd.colonists.length, name: `Extra ${crowd.colonists.length}` }, { needs: { ...crowd.colonists[0].needs }, growth: 1 }));
+  crowd.stock.food = 99;
+  crowd.stock.water = 99;
+  assert.equal(crowd.colonists.length, 12);
+  assert.match(growthBlocker(crowd), /Límite de población de la Edad Primitiva: 10/);
+  assert.equal(crowd.populationInfo().cap, 10);
+  t = 0;
+  run(crowd, DAY);
+  assert.equal(crowd.colonists.length, 12, 'nadie se elimina por pasar del límite');
+  console.log('✓ aldeas antiguas: se adaptan sólo en lo necesario, sin duplicar ni echar a nadie');
+}
+
+// 15. Agua: con lluvia normal sobra; con sequía prolongada hay margen para aprender pero no es infinito.
+{
+  const dry = (colony) => {
+    colony.weather.rain = 0;
+    colony.water = null; // sin agua natural cerca: sólo cuenta el recolector
+  };
+  // Sequía con un recolector: se mide cuánto dura la reserva con el consumo real.
+  const one = fresh();
+  dry(one);
+  one.markRect({ cx: 0, cz: 0, hw: 0.1, hd: 0.1, angle: 0 }, false, null);
+  t = 0;
+  let outDay = null;
+  const firstAlert = {};
+  for (let s = 0; s < 20 * DAY && outDay === null; s++) {
+    dry(one);
+    run(one, 1);
+    for (const a of alertsOf(one)) firstAlert[a.id] ??= s / DAY;
+    if (one.waterReport().stock + one.waterReport().store < 0.5) outDay = s / DAY;
+  }
+  assert.ok(outDay !== null && outDay > 3, `con sequía y un recolector la reserva dura ${outDay?.toFixed(1)} días (margen para reaccionar)`);
+  assert.ok(outDay < 8, 'pero se acaba: la sequía es un riesgo real');
+  assert.ok(firstAlert.water !== undefined && firstAlert.water < outDay - 1, 'la alerta avisa con tiempo');
+  const hint = waterHint(one);
+  assert.match(hint, /No llueve/);
+  assert.match(hint, /sólo ayuda cuando llueva/, 'no se vende otro recolector como solución inmediata');
+  // Un segundo recolector no resuelve la sequía (sólo la alarga).
+  const two = fresh();
+  dry(two);
+  place(two, 'well')?.finish(null);
+  t = 0;
+  let outDay2 = null;
+  for (let s = 0; s < 30 * DAY && outDay2 === null; s++) {
+    dry(two);
+    run(two, 1);
+    if (two.waterReport().stock + two.waterReport().store < 0.5) outDay2 = s / DAY;
+  }
+  assert.ok(outDay2 !== null, 'con dos recolectores la sequía sigue acabando con el agua');
+  assert.ok(outDay2 >= outDay, 'el segundo recolector alarga la reserva');
+  // Lluvia normal: se llena y sobra.
+  const wet = fresh();
+  wet.water = null;
+  t = 0;
+  for (let s = 0; s < 4 * DAY; s++) {
+    wet.weather.rain = 0.65;
+    run(wet, 1);
+  }
+  const wr = wet.waterReport();
+  assert.ok(wr.store >= levelOf(wet.buildings.find((b) => b.def.id === 'well')).capacity - 1, 'con lluvia el recolector se llena');
+  assert.ok(wr.days > 3, 'con lluvia la reserva es holgada');
+  assert.match(waterHint(wet), /Está lloviendo/);
+  // Sin agua suficiente: el requisito de Piedra lo explica con la causa.
+  const need = fresh();
+  dry(need);
+  need.stock.water = 0;
+  for (const b of need.buildings) if (b.store != null) b.store = 2;
+  const chk = nextAgeStatus(need).checks.find((c) => /agua/.test(c.label));
+  assert.equal(chk.ok, false);
+  assert.match(chk.hint, /No llueve/);
+  console.log(`✓ agua: sequía con 1 recolector dura ${outDay.toFixed(1)} días; con 2, ${outDay2.toFixed(1)}; con lluvia sobra`);
+}
+
+// 16. Aviso antes de fundar: usa los recursos reales (los mismos que tendrá la colonia).
+{
+  const sim = fresh();
+  const [near, far] = scanSite(dir, 777);
+  for (const kind of ['food', 'wood', 'stone']) assert.equal(far[kind], sim.spots.filter((s) => s.kind === kind).length, `el conteo previo de ${kind} coincide con la colonia`);
+  assert.ok(near.food <= far.food && near.wood <= far.wood);
+  console.log(`✓ el aviso previo cuenta recursos reales: en 75 m ${near.food}/${near.wood}/${near.stone}`);
 }
 
 // 13. La auditoría: cada paso del recorrido se verifica de verdad.

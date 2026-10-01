@@ -119,7 +119,7 @@ add({
   footprint: 1.9,
   stock: 'water',
   levels: [
-    L(1, 'Recolector de lluvia', 'Pieles tensadas que llenan vasijas cuando llueve (y un poco con el rocío). Se puede beber de él y un aguatero lleva el agua al almacén.', 'wellModel1', { yield: 3, rainOnly: true, capacity: 14 }),
+    L(1, 'Recolector de lluvia', 'Pieles tensadas que llenan vasijas cuando llueve (y un poco con el rocío). Se puede beber de él y un aguatero lleva el agua al almacén.', 'wellModel1', { yield: 3, rainOnly: true, capacity: 20 }),
     L(2, 'Pozo simple', 'Un anillo de piedras y un cubo de cuero: da agua siempre, llueva o no. Todos beben de él gratis; el aguatero saca entre 6 y 10 jarras por día para el almacén (la colonia gasta unas 3).', 'wellModel2', { yield: 2, workTime: 60, upgradeCost: { wood: 15, stone: 20, fiber: 5 } }),
     L(5, 'Pozo con noria', 'Una noria de cangilones de cerámica sube el agua sin esfuerzo.', 'gen:well:5', { yield: 4, workTime: 60, upgradeCost: { cut_stone: 10, pottery: 6, wood: 20 } }),
     L(9, 'Bomba eléctrica', 'Una bomba de motor llena el depósito: mucha agua, pero necesita corriente.', 'gen:well:9', { yield: 9, workTime: 60, upgradeCost: { steel: 6, concrete: 10, machinery: 1 }, energy: 1, tech: 'electricity' }),

@@ -10,13 +10,18 @@ import { limitsFor } from './progression.js';
 const DAY = DAY_LENGTH_SECONDS;
 
 // ---- Cantidades (salen de los consumos reales: 5 colonos beben ~2,8 jarras y comen ~2,3 raciones por día) ----
-export const PRIMITIVE_STOCK = { food: 18, water: 10, wood: 40, stone: 14, fiber: 14 };
-export const PRIMITIVE_COLLECTOR_WATER = 6; // lo que ya tiene el recolector de lluvia al fundar
+export const PRIMITIVE_STOCK = { food: 18, water: 12, wood: 40, stone: 14, fiber: 14 };
+export const PRIMITIVE_COLLECTOR_WATER = 8; // lo que ya tiene el recolector de lluvia al fundar
 // Reservas que se conservan (no se gastan al avanzar de edad): unos 4 días de agua y comida para cinco.
 export const RESERVE = { food: 12, water: 10 };
-// Consumo por colono y día (jarras / raciones), según cuánto restaura cada una.
-export const WATER_PER_DAY = 100 / 3 / 60;
-export const FOOD_PER_DAY = 100 / 4 / 55;
+// Consumo por colono y día (jarras / raciones).
+// (medido en la simulación: con el umbral de sed de los colonos cada jarra restaura poco, así que gastan
+// ~1,1 jarras por día y ~0,6 raciones de comida por día cada uno)
+export const WATER_PER_DAY = 1.1;
+export const FOOD_PER_DAY = 0.6;
+// Captación del recolector de lluvia por segundo de juego: rocío con tiempo seco y mucho más con lluvia.
+export const DEW_RATE = 0.0015;
+export const RAIN_RATE = 0.08;
 export const LOW_DAYS = 2; // avisar cuando la reserva dura menos de esto
 
 // La primera herramienta de piedra: se descubre con lo que hay en Primitiva y tarda un rato.
@@ -48,7 +53,22 @@ export function waterReport(colony) {
   const stock = colony.stock.water ?? 0;
   const n = Math.max(1, colony.colonists.length);
   const perDay = n * WATER_PER_DAY;
-  return { stock, store, capacity, perDay, days: (stock + store) / perDay, collectors: collectors.length };
+  const rain = colony.weather?.rain ?? 0;
+  const dewPerDay = collectors.length * DEW_RATE * DAY;
+  const capturePerDay = collectors.length * (DEW_RATE + rain * RAIN_RATE) * DAY;
+  const dry = rain < 0.05;
+  // Duración con la captación de ahora (el rocío) si no llueve; si llueve, sólo con lo almacenado.
+  const days = (stock + store) / Math.max(0.01, perDay - (dry ? dewPerDay : 0));
+  return { stock, store, capacity, perDay, days, collectors: collectors.length, rain, raining: !dry, dewPerDay, capturePerDay, lake: !!colony.waterSpot?.() };
+}
+
+// Explica de dónde viene el agua y por qué puede faltar (sin presentar otro recolector como solución inmediata).
+export function waterHint(colony) {
+  const w = waterReport(colony);
+  const lake = w.lake ? ' Hay agua natural cerca: los colonos también beben de ella (no cuenta como reserva).' : '';
+  if (!w.collectors) return `No hay recolector de lluvia: construye uno.${lake}`;
+  if (w.raining) return `Está lloviendo: el agua sube ~${w.capturePerDay.toFixed(0)} jarras por día.${lake}`;
+  return `No llueve: con tiempo seco sólo se capta rocío (~${w.dewPerDay.toFixed(1)} jarras por día, menos de las ~${w.perDay.toFixed(1)} que bebe la aldea). Otro recolector sólo ayuda cuando llueva; hasta entonces la reserva baja.${lake}`;
 }
 
 export function foodReport(colony) {
@@ -63,7 +83,7 @@ export const NATURAL = {
   food: { name: 'Comida silvestre', where: 'Arbustos de bayas y setas, alrededor del campamento.', order: 'Herramienta «Recolectar» (filtro Comida): arrastra sobre la zona.', use: 'Alimenta a los colonos.' },
   wood: { name: 'Ramas y madera', where: 'Ramas y troncos caídos por el bosque.', order: 'Herramienta «Recolectar» (filtro Madera).', use: 'Refugios, almacén, acopio y construcciones básicas. No hace falta hacha.' },
   stone: { name: 'Piedras sueltas', where: 'Piedras del terreno (sin picar cantera).', order: 'Herramienta «Recolectar» (filtro Piedra).', use: 'Construcciones básicas y descubrir la primera herramienta. No hace falta pico.' },
-  fiber: { name: 'Fibras', where: 'Salen como extra al recoger bayas y madera; las enramadas de recolección también las traen.', order: 'Recolecta comida o madera: la fibra viene de regalo.', use: 'Ataduras, refugios, recipientes y casi toda construcción.' },
+  fiber: { name: 'Fibras', where: 'No hay plantas de fibra aparte: llega junto con otra cosa. Cada arbusto de bayas y cada árbol que se recoge da 1 (las setas y las piedras, no); las enramadas de recolección también la traen.', order: 'No se marca por separado: recoge bayas (filtro Comida) o madera (filtro Madera) y la fibra viene incluida.', use: 'Ataduras, refugios, recipientes y casi toda construcción.' },
   water: { name: 'Agua', where: 'Se capta en el recolector de lluvia (no hace falta un río).', order: 'Los colonos beben solos del recolector; un aguatero lleva el agua al almacén.', use: 'Beber y mantener reservas. Sin lluvia, el recolector sólo junta rocío.' },
 };
 
@@ -116,7 +136,7 @@ export function alertsOf(colony) {
   if (!colony.camp || !colony.colonists.length) return out;
   const w = waterReport(colony);
   const f = foodReport(colony);
-  if (w.days < LOW_DAYS) out.push({ id: 'water', level: w.days < 1 ? 'bad' : 'warn', text: `Agua para ~${Math.max(0, w.days).toFixed(1)} días`, hint: w.collectors ? 'Espera lluvia o construye otro recolector de lluvia.' : 'Construye un recolector de lluvia.' });
+  if (w.days < LOW_DAYS) out.push({ id: 'water', level: w.days < 1 ? 'bad' : 'warn', text: `Agua para ~${Math.max(0, w.days).toFixed(1)} días`, hint: waterHint(colony) });
   if (f.days < LOW_DAYS) out.push({ id: 'food', level: f.days < 1 ? 'bad' : 'warn', text: `Comida para ~${Math.max(0, f.days).toFixed(1)} días`, hint: 'Marca una zona con bayas y setas con «Recolectar».' });
   const hungry = colony.colonists.filter((c) => c.needs.food < 20).length;
   const thirsty = colony.colonists.filter((c) => c.needs.water < 20).length;

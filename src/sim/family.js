@@ -78,8 +78,9 @@ const defExists = (id) => !!BUILDINGS[id];
 
 // Qué impide que la población crezca (texto) o null: plazas libres, abastecimiento y servicios.
 export function growthBlocker(colony) {
-  if (colony.age === 1 && colony.colonists.some((c) => isAdult(c) && c.home == null)) return 'Hay colonos sin refugio: construye refugios (cada uno aloja a 2)';
   const n = colony.colonists.length + pregnantCount(colony);
+  if (n >= limitsFor(colony.age).popCap) return `Límite de población de la ${ageName(colony.age)}: ${limitsFor(colony.age).popCap}${n > limitsFor(colony.age).popCap ? ` (la aldea ya tiene ${n}: nadie se va, pero no nacerán más)` : ''}`;
+  if (colony.age === 1 && colony.colonists.some((c) => isAdult(c) && c.home == null)) return 'Hay colonos sin refugio: construye refugios (cada uno aloja a 2)';
   if (maxPopulation(colony) - n <= 0) return n >= limitsFor(colony.age).popCap ? `Límite de población de la ${ageName(colony.age)}: ${limitsFor(colony.age).popCap}` : 'Sin plazas: construye más viviendas';
   const need = Math.ceil(n * SUPPLY_PER_COLONIST);
   if ((colony.stock.food ?? 0) < need) return `Faltan reservas de comida (${Math.floor(colony.stock.food ?? 0)}/${need})`;

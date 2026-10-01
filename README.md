@@ -107,7 +107,7 @@ Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s 
 - Aldeas guardadas antes de estas mejoras: al cargarlas las viviendas toman el aspecto de la edad real (sin coste ni recursos duplicados) y los tipis iniciales desaparecen cuando todos viven en casas. El contador de vivienda cuenta sólo adultos (los niños viven con su madre): antes mostraba «4/3».
 
 ### Edad Primitiva (la primera etapa, de principio a fin)
-- **Fundar:** fogata, 5 colonos, un refugio de ramas (2 plazas), un recolector de lluvia ya funcionando y un acopio inicial pequeño (18 comida, 10 agua, 40 madera, 14 piedra, 14 fibra). Antes de fundar, el puntero dice si la zona es fértil, moderada o difícil.
+- **Fundar:** fogata, 5 colonos, un refugio de ramas (2 plazas), un recolector de lluvia ya funcionando y un acopio inicial pequeño (18 comida, 12 agua, 40 madera, 14 piedra, 14 fibra). Antes de fundar, el puntero dice si la zona es fértil, moderada o difícil.
 - **Sin herramientas:** ramas, piedras sueltas, fibras (vienen de regalo al recoger comida o madera) y comida silvestre se recogen con «Recolectar» o solos. El agua sale del recolector de lluvia: no hace falta un río. Pasa el cursor sobre cada recurso para ver dónde se consigue, cómo se ordena, para qué sirve, cuánto queda y por qué no se recoge.
 - **Refugio:** cada choza aloja a 2 adultos. Quien no tiene plaza duerme junto a la fogata (tumbado, descansa un 45 % peor). La tarjeta de la colonia separa población actual (máx. 10 en esta edad), plazas de refugio y el motivo por el que no hay nacimientos.
 - **Población:** sólo por nacimientos (sin inmigración); no nacen niños mientras haya adultos sin refugio.

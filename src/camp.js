@@ -8,6 +8,7 @@ import {
   removeTerrainZone,
 } from './elevation.js';
 import { biomeAt, BIOMES } from './biomes.js';
+import { scanSite } from './sim/colony.js';
 import { Parts, mat, stick, v, triangle, seededRandom, vary } from './modelKit.js';
 import { FLAGS_BY_ID, DEFAULT_FLAG, drawFlag } from './flags.js';
 import {
@@ -491,24 +492,20 @@ export function campProblem(dir, otherCamps = []) {
   );
 }
 
-// Qué tan buena es la ubicación para sobrevivir: mira el bioma del lugar y de su entorno (~60 m).
+// Qué hay de verdad cerca del lugar elegido: cuenta los recursos naturales reales (los mismos que tendrá
+// la colonia al fundarse) dentro del territorio inicial (75 m) y en la zona de recolección (230 m).
 // Devuelve { level: 'good' | 'ok' | 'hard', text }. Es una orientación, no una prohibición.
-const FERTILE = new Set(['grassland', 'forest', 'rainforest', 'savanna', 'jungle']);
+const SITE_NEEDS = { food: 12, wood: 20, stone: 6 }; // lo mínimo cómodo dentro del territorio inicial
 export function siteReport(dir) {
-  const e = elevation(dir.x, dir.y, dir.z);
-  tangentBasis(dir, siteTmp.east, siteTmp.north);
-  const biomes = [biomeAt(dir.x, dir.y, dir.z)];
-  for (let i = 0; i < 8; i++) {
-    const p = pointAround(dir, (i / 8) * Math.PI * 2, 60, siteTmp.p);
-    biomes.push(biomeAt(p.x, p.y, p.z));
-  }
-  const green = biomes.filter((b) => b.vegetated).length / biomes.length;
-  const lush = biomes.filter((b) => FERTILE.has(b.id) || /forest|grass|jungle|rain/.test(b.id)).length / biomes.length;
-  const here = biomes[0];
-  const harsh = ['snow', 'ice', 'mountain', 'tundra', 'desert', 'beach'].includes(here.id);
-  if (green >= 0.7 && lush >= 0.4 && !harsh) return { level: 'good', text: `Zona fértil (${here.name}): hay vegetación cerca para comida y ramas.` };
-  if (green >= 0.35 && !['snow', 'ice'].includes(here.id)) return { level: 'ok', text: `Zona moderada (${here.name}): algo de vegetación; la supervivencia exigirá buscar.` };
-  return { level: 'hard', text: `Zona difícil (${here.name}): poca vegetación cerca. Comida y ramas escasas; puedes fundar aquí, pero será duro.` };
+  const seed = seedFromDir(dir);
+  const [near, far] = scanSite(dir, seed);
+  const lacking = Object.entries(SITE_NEEDS).filter(([k, n]) => near[k] < n).map(([k]) => ({ food: 'comida', wood: 'madera', stone: 'piedra' }[k]));
+  const dead = Object.entries(near).filter(([, n]) => n < 3).map(([k]) => ({ food: 'comida', wood: 'madera', stone: 'piedra' }[k]));
+  const counts = `En 75 m: ${near.food} de comida, ${near.wood} de madera y ${near.stone} de piedra (en 230 m: ${far.food}/${far.wood}/${far.stone}).`;
+  const biome = biomeAt(dir.x, dir.y, dir.z).name;
+  if (dead.length) return { level: 'hard', text: `${biome}. Zona difícil: casi no hay ${dead.join(' ni ')} cerca. ${counts}` };
+  if (lacking.length) return { level: 'ok', text: `${biome}. Recursos justos (poca ${lacking.join(' y ')}). ${counts}` };
+  return { level: 'good', text: `${biome}. Recursos suficientes cerca. ${counts}` };
 }
 
 const yawQuat = new THREE.Quaternion();
@@ -739,7 +736,13 @@ export class CampSystem {
     if (!hit) return;
     const problem =
       this.clearance() > MAX_PICK_CLEARANCE ? 'Acércate más para elegir el lugar' : campProblem(hit.dir, this.otherCamps());
-    const report = !problem && this.clearance() <= MAX_PICK_CLEARANCE ? siteReport(hit.dir) : null;
+    // El conteo de recursos reales se recalcula sólo si el puntero se movió más de ~20 m.
+    let report = null;
+    if (!problem && this.clearance() <= MAX_PICK_CLEARANCE) {
+      const cache = this.siteCache;
+      if (!cache || cache.dir.angleTo(hit.dir) * RADIUS > 20) this.siteCache = { dir: hit.dir.clone(), report: siteReport(hit.dir) };
+      report = this.siteCache.report;
+    }
     this.candidate = { dir: hit.dir, height: hit.height, point: hit.point, problem, report };
   }
 

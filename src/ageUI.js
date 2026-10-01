@@ -142,7 +142,7 @@ export class AgeUI {
       const cost = status.next.requires.cost;
       const checks = [
         ...status.checks.map(
-          (c) => `<div class="age-check ${c.ok ? 'is-ok' : ''}"><span>${c.label}</span><strong>${Math.min(c.have, c.need)}/${c.need}</strong></div>`,
+          (c) => `<div class="age-check ${c.ok ? 'is-ok' : ''}"><span>${c.label}</span><strong>${Math.min(c.have, c.need)}/${c.need}</strong></div>${c.hint ? `<p class="reason age-hint">${c.hint}</p>` : ''}`,
         ),
         ...Object.entries(cost).map(
           ([k, n]) => `

@@ -559,7 +559,7 @@ export class BuildUI {
     // Clave para no redibujar si nada cambió.
     const site = b.done ? null : colony.siteInfo(b);
     const siteKey = site ? [site.state, site.why, (site.ids ?? []).join(), (site.ordered ?? []).join(), b.priority, b.paused, colony.colonists.map((c) => (c.growth ?? 1) < 1 || c.soldier ? '' : c.id).join('.')].join('~') : '';
-    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -600,7 +600,15 @@ export class BuildUI {
           ${recipeHtml}
           ${b.cycle != null && level.recipe ? `<div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.cycle * 100)}%"></i></div>` : ''}
           <div class="stat-line"><span>Ha producido</span><strong>${produced}</strong></div>
-          ${stored !== null ? `<div class="stat-line"><span>Agua en las vasijas</span><strong>${stored} / ${level.capacity}</strong></div><div class="stat-line"><span>Consumo de la aldea</span><strong>~${colony.waterReport().perDay.toFixed(1)} jarras por día</strong></div><div class="stat-line"><span>La reserva total dura</span><strong>~${colony.waterReport().days.toFixed(1)} días</strong></div><p class="reason">Con lluvia se llena rápido; con tiempo seco sólo junta un poco de rocío. Conviene tener reserva para los periodos secos.</p>` : ''}
+          ${stored !== null ? (() => {
+            const w = colony.waterReport();
+            return `<div class="stat-line"><span>Agua almacenada (este recolector)</span><strong>${stored} / ${level.capacity}</strong></div>
+              <div class="stat-line"><span>Reserva de la aldea (todos los recolectores y el acopio)</span><strong>${Math.floor(w.stock + w.store)} jarras · capacidad de captación ${w.capacity}</strong></div>
+              <div class="stat-line"><span>Consumo de la aldea</span><strong>~${w.perDay.toFixed(1)} jarras por día</strong></div>
+              <div class="stat-line"><span>Captación ahora (${w.raining ? 'llueve' : 'sin lluvia'})</span><strong>~${w.capturePerDay.toFixed(1)} jarras por día</strong></div>
+              <div class="stat-line"><span>La reserva dura</span><strong>~${w.days.toFixed(1)} días${w.raining ? ' (mejora mientras llueva)' : ' con el rocío de ahora'}</strong></div>
+              <p class="reason">${escapeHtml(colony.waterHint())}</p>`;
+          })() : ''}
         </section>`
       : '';
     const effectsHtml = !needed && !isHouse && !isStorage ? this.effectsHtml(b, level) : '';

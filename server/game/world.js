@@ -34,6 +34,8 @@ export class World {
     this.playersKey = '';
     this.clock = new DayNight({ startLon: 0, startHour: 12 });
     // El segundo 0 del mundo se fija la primera vez y queda guardado.
+    // Sólo para pruebas: GAME_SPEED=30 hace que el mundo corra 30 veces más rápido (el reloj y la simulación).
+    this.speed = Math.min(60, Math.max(1, Number(process.env.GAME_SPEED) || 1));
     this.epoch = Number(store.meta('epoch')) || Date.now();
     store.setMeta('epoch', this.epoch);
     for (const p of store.sql.allPlayers.all()) this.names.set(p.id, p.name);
@@ -42,7 +44,7 @@ export class World {
 
   // Segundos de juego desde que existe el mundo.
   get elapsed() {
-    return (Date.now() - this.epoch) / 1000;
+    return ((Date.now() - this.epoch) / 1000) * this.speed;
   }
 
   // ---- Colonias ---------------------------------------------------------------------
@@ -214,7 +216,7 @@ export class World {
     const elapsed = this.elapsed;
     for (const colony of this.colonies.values()) {
       try {
-        this.step(colony, TICK_MS / 1000, elapsed, !this.isOnline(colony.playerId));
+        this.step(colony, (TICK_MS / 1000) * this.speed, elapsed, !this.isOnline(colony.playerId));
       } catch (err) {
         this.log(`Error simulando la colonia de ${this.names.get(colony.playerId)}: ${err.stack ?? err}`);
       }
