@@ -196,7 +196,13 @@
           <button type="button" class="btn" id="logout">Cerrar sesión</button>
         </div>
       </div>
-      <button type="button" id="help-toggle" class="panel icon-button" aria-expanded="false" aria-controls="help-card" title="Controles">?</button>
+      <div class="help-buttons">
+        <button type="button" id="settings-toggle" class="panel icon-button" aria-haspopup="dialog" title="Configuración" aria-label="Configuración">⚙</button>
+        <button type="button" id="help-toggle" class="panel icon-button" aria-expanded="false" aria-controls="help-card" title="Controles">?</button>
+      </div>
+    </div>
+    <div class="age-modal" id="settings-modal" hidden>
+      <section class="panel age-panel settings-panel" id="settings-panel" role="dialog" aria-modal="true" aria-label="Configuración"></section>
     </div>
   </div>
 

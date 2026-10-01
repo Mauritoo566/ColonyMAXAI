@@ -163,6 +163,22 @@ export class World {
     this.playersKey = '';
   }
 
+  // Borrar a un jugador: se cierra su sesión en todas sus conexiones, desaparece su colonia del
+  // mundo y de la base de datos (la cuenta y las sesiones caen en cascada).
+  removePlayer(playerId) {
+    for (const c of [...this.clients]) {
+      if (c.player.id !== playerId) continue;
+      this.clients.delete(c);
+      c.send({ t: 'accountDeleted' });
+      c.close?.();
+    }
+    this.colonies.delete(playerId);
+    this.names.delete(playerId);
+    this.store.sql.deletePlayer.run(playerId);
+    this.playersKey = '';
+    this.log(`Cuenta borrada (jugador ${playerId})`);
+  }
+
   command(client, name, args) {
     const colony = this.colonies.get(client.player.id);
     if (!colony || typeof name !== 'string' || !Array.isArray(args)) return;

@@ -24,6 +24,8 @@ En el servidor de producción el juego corre como servicio de systemd detrás de
 
 ## Cuentas y mundo compartido
 
+El botón ⚙ (abajo a la derecha) abre la **Configuración**: cerrar sesión y **Eliminar cuenta** (pide la contraseña; borra para siempre la cuenta, el campamento y todo lo suyo en el servidor, y el nombre queda libre).
+
 Al abrir el juego hay que **iniciar sesión o crear una cuenta** (`src/auth.js`). La cuenta vive en el servidor: nombre único y contraseña, que se guarda como huella scrypt (nunca en claro). El navegador guarda un token de sesión para entrar solo la próxima vez. Hay límite de intentos de inicio de sesión.
 
 El planeta es uno solo para todos. El servidor (`server/game/world.js`) simula **todas las colonias todo el tiempo**, estén o no conectados sus dueños, y a cada jugador le manda:

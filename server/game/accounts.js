@@ -95,6 +95,20 @@ export class Accounts {
     if (typeof token === 'string') this.store.sql.dropSession.run(tokenHash(token));
   }
 
+  // Borrar la cuenta (pide la contraseña). Las sesiones y la colonia se van con ella (ON DELETE CASCADE).
+  async deleteAccount(playerId, password, ip) {
+    const player = this.store.sql.playerById.get(playerId);
+    const keys = [[`name:${player?.name_lc}`, MAX_PER_NAME], [`ip:${ip}`, MAX_PER_IP]];
+    if (!player) throw new AccountError('La cuenta ya no existe.');
+    if (this.limited(keys)) throw new AccountError('Demasiados intentos. Espera unos minutos.');
+    const hash = await hashPassword(String(password ?? '').slice(0, 200), player.salt);
+    if (!timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(player.hash, 'hex'))) {
+      this.limited(keys, true);
+      throw new AccountError('La contraseña no es correcta.');
+    }
+    return player;
+  }
+
   // Para el administrador (admin.js): nueva contraseña y cierra todas sus sesiones.
   async resetPassword(name, password) {
     const player = this.store.sql.playerByName.get(String(name).trim().toLowerCase());

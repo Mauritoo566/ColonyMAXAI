@@ -19,6 +19,7 @@ import { AgeUI } from './ageUI.js';
 import { HarvestTool } from './harvest.js';
 import { Connection } from './net.js';
 import { requireLogin, logout } from './auth.js';
+import { SettingsUI } from './settingsUI.js';
 import { setStorageUser } from './storage.js';
 import { GROVE_KEY, SPROUT_KEY } from './resourceGen.js';
 import { OtherCamps } from './world.js';
@@ -294,6 +295,7 @@ const lastView = new THREE.Vector3();
 
 // Sesión.
 document.getElementById('player-name').textContent = player.name;
+new SettingsUI({ net, playerName: player.name });
 document.getElementById('logout').addEventListener('click', () => logout(net));
 
 // Estrellas pegadas a la cámara: siempre están "en el infinito".

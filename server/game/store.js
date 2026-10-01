@@ -54,6 +54,7 @@ export class Store {
       session: q('SELECT * FROM sessions WHERE token_hash = ?'),
       touchSession: q('UPDATE sessions SET last_used = ? WHERE token_hash = ?'),
       dropSession: q('DELETE FROM sessions WHERE token_hash = ?'),
+      deletePlayer: q('DELETE FROM players WHERE id = ?'),
       dropPlayerSessions: q('DELETE FROM sessions WHERE player_id = ?'),
       dropOldSessions: q('DELETE FROM sessions WHERE last_used < ?'),
       colonies: q('SELECT * FROM colonies'),

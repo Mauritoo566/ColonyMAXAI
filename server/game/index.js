@@ -129,6 +129,9 @@ wss.on('connection', (ws, req) => {
     send(msg) {
       this.sendRaw(JSON.stringify(msg));
     },
+    close() {
+      setTimeout(() => ws.close(1000, 'Cuenta borrada'), 200);
+    },
   };
   let budget = MAX_MESSAGES_PER_SECOND;
   const refill = setInterval(() => (budget = MAX_MESSAGES_PER_SECOND), 1000);
@@ -191,6 +194,17 @@ wss.on('connection', (ws, req) => {
           accounts.logout(client.token);
           ws.close(1000, 'Sesión cerrada');
           break;
+        case 'deleteAccount': {
+          try {
+            await accounts.deleteAccount(client.player.id, msg.password, ip);
+          } catch (err) {
+            if (!(err instanceof AccountError)) throw err;
+            client.send({ t: 'error', message: err.message, about: 'deleteAccount' });
+            break;
+          }
+          world.removePlayer(client.player.id);
+          break;
+        }
         case 'ping':
           client.send({ t: 'pong' });
           break;

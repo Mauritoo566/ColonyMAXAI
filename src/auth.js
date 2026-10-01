@@ -12,7 +12,7 @@ export function savedToken() {
   }
 }
 
-function saveToken(token) {
+export function saveToken(token) {
   try {
     if (token) localStorage.setItem(TOKEN_KEY, token);
     else localStorage.removeItem(TOKEN_KEY);
