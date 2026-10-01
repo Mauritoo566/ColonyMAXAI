@@ -1315,10 +1315,18 @@ export class ColonySim {
     if (def.deposit && !depositAt(this, def.deposit, x, z)) return `Aquí no hay yacimiento de ${GOOD_NAMES[def.deposit]}: busca las manchas del color del mineral`;
     const cost = buildCostOf(def, this.age);
     if (!this.canAfford(cost)) return `Faltan ${this.missing(cost).join(' y ')}`;
+    return this.siteProblem(def, x, z);
+  }
+
+  // Lo que depende sólo del lugar (yacimiento, territorio, choques, terreno). "self": un edificio
+  // que se está moviendo, que no choca consigo mismo.
+  siteProblem(def, x, z, self = null) {
+    if (def.deposit && !depositAt(this, def.deposit, x, z)) return `Aquí no hay yacimiento de ${GOOD_NAMES[def.deposit]}: busca las manchas del color del mineral`;
     const radius = radiusOf(this);
     if (Math.hypot(x, z) > radius) return `Fuera del territorio de la aldea (${radius} m; se amplía con la edad y comprando territorio)`;
     const r = def.footprint;
     for (const o of this.obstacles) {
+      if (self && o.kind === 'building' && o.x === self.x && o.z === self.z) continue;
       if (Math.hypot(x - o.x, z - o.z) < o.r + r + 0.8) return 'Choca con otra construcción';
     }
     for (const zone of this.zones) {
@@ -1353,6 +1361,91 @@ export class ColonySim {
     const b = this.createBuilding(def, x, z, Math.atan2(-x, -z), 0, 0, buildLevelFor(def, this.age));
     this.emit('changed');
     return { building: b };
+  }
+
+  // ---- Demoler y mover -------------------------------------------------------------------
+
+  // Lo que devolvería demoler: la mitad (hacia abajo) de lo que costó construirlo y mejorarlo.
+  demolishRefund(b) {
+    const total = {};
+    const add = (cost) => {
+      for (const [k, n] of Object.entries(cost ?? {})) total[k] = (total[k] ?? 0) + n;
+    };
+    const def = b.def;
+    add(def.autoLevel ? (def.levels[b.level - 1].buildCost ?? def.cost) : (def.levels[0].buildCost ?? def.cost));
+    if (!def.autoLevel) {
+      for (let i = 1; i < b.level; i++) add(def.levels[i].upgradeCost);
+      if (b.upgrading) add(levelOf(b, 1)?.upgradeCost);
+    }
+    const refund = {};
+    for (const [k, n] of Object.entries(total)) if (Math.floor(n / 2) > 0) refund[k] = Math.floor(n / 2);
+    return refund;
+  }
+
+  // Quitar un edificio de la aldea (libera a sus trabajadores y vecinos).
+  detachBuilding(b) {
+    b.removed = true;
+    removeTerrainZone(b.zone);
+    this.buildings = this.buildings.filter((o) => o !== b);
+    for (const c of this.colonists) {
+      if (c.job === b) c.job = null;
+      if (c.home === b.id) c.home = null;
+      if (c.order?.kind === 'build' && c.order.building === b.id) c.order = null;
+      if (c.task?.building === b) {
+        endTask(this, c, c.task);
+        c.task = null;
+      }
+    }
+    this.heights.clear();
+    this.refreshObstacles();
+  }
+
+  demolish(b) {
+    if (!b || b.removed) return false;
+    if (this.remote) {
+      this.remote('demolish', [b.id]);
+      return true;
+    }
+    const refund = this.demolishRefund(b);
+    const name = b.name;
+    this.detachBuilding(b);
+    for (const [k, n] of Object.entries(refund)) this.addStock(k, n);
+    const text = Object.entries(refund).map(([k, n]) => `${n} ${GOOD_NAMES[k] ?? k}`).join(', ');
+    this.emit('notice', `Demolido: ${name}${text ? ` · devuelve ${text}` : ''}`);
+    this.emit('buildings');
+    this.emit('changed');
+    return true;
+  }
+
+  // Por qué no se puede mover "b" a (x, z), o null.
+  moveProblem(b, x, z) {
+    if (!b || b.removed) return 'Ese edificio ya no existe';
+    return this.siteProblem(b.def, x, z, b);
+  }
+
+  // Mover un edificio: queda igual (nivel, obra, dotación) en otro sitio y sin coste. Recibe un id
+  // nuevo para que todas las copias lo redibujen en su sitio.
+  moveBuilding(b, x, z) {
+    const problem = this.moveProblem(b, x, z);
+    if (problem) return problem;
+    if (this.remote) {
+      this.remote('moveBuilding', [b.id, x, z]);
+      return null;
+    }
+    const old = { workers: [...b.workers], residents: this.colonists.filter((c) => c.home === b.id), orders: this.colonists.filter((c) => c.order?.kind === 'build' && c.order.building === b.id) };
+    this.detachBuilding(b);
+    const nb = this.createBuilding(b.def, x, z, Math.atan2(-x, -z), b.done ? 0 : b.progress, b.produced, b.level);
+    Object.assign(nb, { upgrading: b.upgrading, store: b.store, cycle: b.cycle, cycleActive: b.cycleActive, priority: b.priority, paused: b.paused, buildTime: b.buildTime });
+    for (const w of old.workers) {
+      w.job = nb;
+      nb.workers.push(w);
+    }
+    if (b.done) this.finishBuilding(nb, null, true);
+    for (const c of old.residents) c.home = nb.id;
+    for (const c of old.orders) c.order = { kind: 'build', building: nb.id };
+    this.emit('buildings');
+    this.emit('changed');
+    return null;
   }
 
   createBuilding(def, x, z, yaw, progress, produced, level = 1, id = null) {
@@ -1890,6 +1983,13 @@ export class ColonySim {
       case 'cancelOrder': {
         const c = this.colonist(args[0]);
         return !!c && this.cancelOrder(c);
+      }
+      case 'demolish':
+        return this.demolish(this.building(args[0]));
+      case 'moveBuilding': {
+        const b = this.building(args[0]);
+        if (!b || num(args[1], 500) === null || num(args[2], 500) === null) return false;
+        return this.moveBuilding(b, args[1], args[2]) === null;
       }
       case 'advanceAge':
         return this.advanceAge();

@@ -191,6 +191,7 @@ export class BuildingSystem {
   stopPlacing() {
     if (!this.placing && !this.ghost.visible) return;
     this.placing = null;
+    this.moving = null;
     this.candidate = null;
     this.ghost.visible = false;
     this.canvas.classList.remove('is-placing');
@@ -208,10 +209,30 @@ export class BuildingSystem {
     const hit = pickSurface(this.raycaster.ray, this.sim.camp.height);
     if (!hit) return;
     const local = this.sim.toLocal(hit.point, this.tmp);
-    this.candidate = { x: local.x, z: local.z, problem: this.sim.buildProblem(this.placing, local.x, local.z) };
+    this.candidate = { x: local.x, z: local.z, problem: this.moving ? this.sim.moveProblem(this.moving, local.x, local.z) : this.sim.buildProblem(this.placing, local.x, local.z) };
+  }
+
+  // Mover un edificio: se elige el nuevo sitio como al construir (sin coste).
+  startMoving(b) {
+    this.startPlacing(b.def.id);
+    this.moving = b;
+    this.ghost.remove(...this.ghost.children.filter((o) => o !== this.ghostRing));
+    const model = levelModel(levelOf(b).model);
+    model.material = material.clone();
+    model.material.transparent = true;
+    model.material.opacity = 0.55;
+    model.material.depthWrite = false;
+    this.ghost.add(model);
   }
 
   place({ x, z }) {
+    if (this.moving) {
+      const b = this.moving;
+      const why = this.sim.moveBuilding(b, x, z);
+      this.stopPlacing();
+      if (why) this.sim.emit('notice', why);
+      return;
+    }
     const { building } = this.sim.build(this.placing.id, x, z);
     this.stopPlacing();
     if (building) this.select(building);

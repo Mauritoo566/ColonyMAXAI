@@ -142,4 +142,27 @@ const site = (sim, id, x, z) => {
   run(sim, 40);
   assert.ok(other.progress > 0 || other.done, 'ayuda en la obra en vez de esperar');
 }
+// Demoler devuelve la mitad; mover conserva nivel y dotación y valida el sitio.
+{
+  const sim = colony();
+  const b = sim.createBuilding(BUILDINGS.gatherer, 22, 10, 0, 1, 0);
+  const w = sim.colonists.find((c) => !c.soldier && (c.growth ?? 1) >= 1);
+  sim.setWorker(b, w);
+  assert.match(sim.moveProblem(b, 0, 0), /Choca/);
+  assert.equal(sim.moveBuilding(b, -22, 14), null);
+  const moved = sim.buildings.find((o) => o.def.id === 'gatherer');
+  assert.equal(sim.buildings.length, 1);
+  assert.ok(Math.abs(moved.x + 22) < 1e-9 && moved.done);
+  assert.equal(w.job, moved);
+  assert.deepEqual(moved.workers, [w]);
+  const cost = moved.def.levels[0].buildCost ?? moved.def.cost;
+  sim.stock.wood = 20;
+  sim.stock.fiber = 5;
+  const before = { ...sim.stock };
+  assert.equal(sim.applyCommand('demolish', [moved.id]), true);
+  assert.equal(sim.buildings.length, 0);
+  assert.equal(w.job, null);
+  for (const [k, n] of Object.entries(cost)) assert.equal(sim.stock[k] - before[k], Math.floor(n / 2), `devuelve la mitad de ${k}`);
+  assert.equal(sim.applyCommand('demolish', [moved.id]), false);
+}
 console.log('tasks.test ✓');

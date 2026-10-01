@@ -2634,3 +2634,4 @@ canvas.is-harvesting {
 .cand-name small { opacity: 0.65; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .candidate.is-assigned { background: rgba(216, 162, 74, 0.14); border-radius: 8px; }
 .site-candidates .candidate { grid-template-columns: 26px minmax(0, 1fr) auto; padding: 3px 4px; }
+.btn--danger { border-color: rgba(229, 100, 90, 0.6); color: #ffb3ab; }

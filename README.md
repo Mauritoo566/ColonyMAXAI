@@ -104,6 +104,9 @@ Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s 
 - La ficha separa **oficio fijo**, **orden actual**, **actividad ahora** y **disponibilidad**; la lista agrupa por oficio fijo («Sin oficio fijo» no significa que esté parado).
 - Aldeas guardadas antes de estas mejoras: al cargarlas las viviendas toman el aspecto de la edad real (sin coste ni recursos duplicados) y los tipis iniciales desaparecen cuando todos viven en casas. El contador de vivienda cuenta sólo adultos (los niños viven con su madre): antes mostraba «4/3».
 
+### Mover y demoler
+En la ficha de cualquier edificio: **Mover** (gratis; se elige el nuevo sitio con las mismas reglas de lugar, y conserva nivel, obra y dotación) y **Demoler** (pide confirmar; devuelve la mitad, redondeada hacia abajo, de lo gastado en construirlo y mejorarlo; los vecinos y trabajadores quedan libres). Lo valida el servidor.
+
 ### Construcción y trabajo
 
 La **barra de construcción** (abajo) está ordenada por categorías (Producción, Vivienda, Almacenes, Decoración y Defensa; las que aún no tienen edificios dicen "próximamente") y permite encargar edificios (`src/buildings.js`). En Producción están choza de recolección (comida), cabaña del leñador (madera), cantera (piedra) y pozo (agua). Se elige dónde (hasta 75 m de la fogata; no sobre agua, pendientes fuertes ni encima de otra cosa) y los materiales se pagan al encargarlo. Los colonos construyen de día; los más hábiles en construcción avanzan más rápido. Al terminar, la colonia asigna el trabajo al **colono libre más capacitado** según sus habilidades (que salen de sus genes, su oficio anterior y su actitud). La ficha del edificio explica por qué lo eligió, muestra el ranking de candidatos y permite cambiarlo. Los árboles talados y las piedras picadas desaparecen del mundo.

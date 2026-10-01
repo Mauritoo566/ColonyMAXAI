@@ -518,7 +518,7 @@ export class BuildUI {
     // Clave para no redibujar si nada cambió.
     const site = b.done ? null : colony.siteInfo(b);
     const siteKey = site ? [site.state, site.why, (site.ids ?? []).join(), (site.ordered ?? []).join(), b.priority, b.paused, colony.colonists.map((c) => (c.growth ?? 1) < 1 || c.soldier ? '' : c.id).join('.')].join('~') : '';
-    const key = [state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -586,6 +586,8 @@ export class BuildUI {
               : `<p class="reason">${escapeHtml(upgradeProblem ?? '')}</p>`
           }
         </section>`;
+    const refund = colony.demolishRefund(b);
+    const refundText = Object.entries(refund).map(([k, n]) => `${n} ${STOCK_NAMES[k] ?? k}`).join(', ') || 'nada';
     const siteHtml = () => {
       const stateClass = { building: 'ok', going: 'ok', waiting: 'warn', blocked: 'bad', paused: 'warn' }[site.state] ?? 'ok';
       const verb = b.upgrading ? 'mejora' : 'obra';
@@ -664,12 +666,37 @@ export class BuildUI {
         </section>`
             : ''
         }
+        <section class="cp-section">
+          <h3>Estructura</h3>
+          <div class="order-buttons">
+            <button type="button" class="btn" data-move>Mover</button>
+            <button type="button" class="btn btn--danger" data-demolish>${this.confirmDemolish === b.id ? '¿Seguro? Pulsa otra vez' : 'Demoler'}</button>
+          </div>
+          <p class="reason">Demoler devuelve ${escapeHtml(refundText)} (la mitad de lo gastado). Mover es gratis: pasa a otro lugar con su nivel, obra y dotación.</p>
+        </section>
       </div>`;
     for (const el of this.panel.querySelectorAll('[data-avatar]')) {
       const who = colony.colonists.find((c) => c.id === Number(el.dataset.avatar));
       if (who) paintAvatar(el, who.look);
     }
     this.panel.querySelector('[data-close]').addEventListener('click', () => this.buildings.select(null));
+    this.panel.querySelector('[data-move]')?.addEventListener('click', () => this.buildings.startMoving(b));
+    this.panel.querySelector('[data-demolish]')?.addEventListener('click', () => {
+      if (this.confirmDemolish !== b.id) {
+        // Primer clic: pide confirmar (se anula solo a los 4 s).
+        this.confirmDemolish = b.id;
+        this.renderedFor = null;
+        clearTimeout(this.confirmTimer);
+        this.confirmTimer = setTimeout(() => {
+          this.confirmDemolish = null;
+          this.renderedFor = null;
+        }, 4000);
+        return;
+      }
+      this.confirmDemolish = null;
+      this.buildings.select(null);
+      colony.demolish(b);
+    });
     for (const button of this.panel.querySelectorAll('[data-prio]')) button.addEventListener('click', () => colony.setPriority(b, button.dataset.prio));
     this.panel.querySelector('[data-pause]')?.addEventListener('click', () => colony.pauseSite(b, !b.paused));
     for (const button of this.panel.querySelectorAll('[data-site-assign]')) {
