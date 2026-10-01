@@ -590,10 +590,18 @@ export class BuildUI {
       const stateClass = { building: 'ok', going: 'ok', waiting: 'warn', blocked: 'bad', paused: 'warn' }[site.state] ?? 'ok';
       const verb = b.upgrading ? 'mejora' : 'obra';
       const names = (ids) => ids.map((id) => colony.colonist(id)?.name).filter(Boolean);
-      const eligible = colony.colonists.filter((c) => !(c.growth < 1) && !c.soldier);
+      const eligible = colony.colonists.filter((c) => !(c.growth < 1) && !c.soldier).sort((x, y) => colony.skillOf(y, 'building') - colony.skillOf(x, 'building'));
       const blockedOnes = colony.colonists.filter((c) => c.growth < 1 || c.soldier);
-      const opts = eligible.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}${site.ordered?.includes(c.id) ? ' (ya asignado)' : ''}</option>`).join('')
-        + blockedOnes.map((c) => `<option value="" disabled>${escapeHtml(c.name)} — ${c.soldier ? 'es soldado' : 'es un niño'}</option>`).join('');
+      const rows = eligible.map((c) => {
+        const mine = site.ordered?.includes(c.id);
+        const role = mine ? 'Asignado a esta obra' : c.order ? 'Con otra orden' : c.job ? c.job.def.job : 'Libre';
+        return `<li class="candidate ${mine ? 'is-assigned' : ''}">
+          <span class="avatar" data-avatar="${c.id}"></span>
+          <span class="cand-name">${escapeHtml(c.name)}<small>${escapeHtml(role)} · construcción ${colony.skillOf(c, 'building')}/10</small></span>
+          ${mine ? `<button type="button" data-site-free="${c.id}">Quitar</button>` : `<button type="button" data-site-assign="${c.id}">Asignar</button>`}
+        </li>`;
+      }).join('');
+      const blockedHtml = blockedOnes.length ? `<p class="reason">No pueden construir: ${escapeHtml(blockedOnes.map((c) => `${c.name} (${c.soldier ? 'soldado' : 'niño'})`).join(', '))}.</p>` : '';
       return `
         <p class="site-state site-state--${stateClass}"><strong>${site.label}</strong></p>
         <p class="reason">${escapeHtml(site.why)}</p>
@@ -603,11 +611,10 @@ export class BuildUI {
           ${['low', 'normal', 'high'].map((p) => `<button type="button" class="seg ${b.priority === p ? 'is-on' : ''}" data-prio="${p}" aria-pressed="${b.priority === p}">${PRIORITY_NAMES[p]}</button>`).join('')}
           <button type="button" class="seg" data-pause>${b.paused ? 'Reanudar' : 'Pausar'}</button>
         </div>
-        <div class="order-box">
-          <label class="order-label">Asignar constructor<select data-site-pick>${opts}</select></label>
-          <div class="order-buttons"><button type="button" class="btn" data-site-assign>Asignar constructor</button></div>
-          <p class="order-msg" data-site-msg role="status"></p>
-        </div>`;
+        <h4 class="site-sub">Asignar constructor</h4>
+        <ul class="candidate-list site-candidates">${rows}</ul>
+        ${blockedHtml}
+        <p class="order-msg" data-site-msg role="status"></p>`;
     };
     this.panel.innerHTML = `
       <header class="cp-head">
@@ -665,12 +672,21 @@ export class BuildUI {
     this.panel.querySelector('[data-close]').addEventListener('click', () => this.buildings.select(null));
     for (const button of this.panel.querySelectorAll('[data-prio]')) button.addEventListener('click', () => colony.setPriority(b, button.dataset.prio));
     this.panel.querySelector('[data-pause]')?.addEventListener('click', () => colony.pauseSite(b, !b.paused));
-    this.panel.querySelector('[data-site-assign]')?.addEventListener('click', () => {
-      const id = Number(this.panel.querySelector('[data-site-pick]').value);
-      const c = colony.colonist(id);
-      const msg = this.panel.querySelector('[data-site-msg]');
-      msg.textContent = c ? colony.orderColonist(c, 'build', b) ?? `${c.name} recibió la orden de construir.` : 'Elige un colono.';
-    });
+    for (const button of this.panel.querySelectorAll('[data-site-assign]')) {
+      button.addEventListener('click', () => {
+        const c = colony.colonist(Number(button.dataset.siteAssign));
+        const msg = this.panel.querySelector('[data-site-msg]');
+        const why = c ? colony.orderColonist(c, 'build', b) : 'Elige un colono.';
+        if (msg) msg.textContent = why ?? `${c.name} recibió la orden de construir.`;
+        this.renderedFor = null;
+      });
+    }
+    for (const button of this.panel.querySelectorAll('[data-site-free]')) {
+      button.addEventListener('click', () => {
+        colony.cancelOrder(colony.colonist(Number(button.dataset.siteFree)));
+        this.renderedFor = null;
+      });
+    }
     this.panel.querySelector('[data-upgrade]')?.addEventListener('click', () => this.buildings.upgrade(b));
     for (const button of this.panel.querySelectorAll('[data-see-worker]')) {
       button.addEventListener('click', () => this.onFocusColonist?.(colony.colonist(Number(button.dataset.seeWorker))));

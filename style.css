@@ -2626,3 +2626,11 @@ canvas.is-harvesting {
 .build-list::-webkit-scrollbar { display: none; }
 .build-list.is-dragging { cursor: grabbing; }
 .build-list.is-dragging .build-item { pointer-events: none; }
+
+/* Lista de constructores de una obra */
+.site-sub { margin: 10px 0 4px; font-size: 13px; }
+.site-candidates { max-height: 220px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.cand-name { display: grid; min-width: 0; }
+.cand-name small { opacity: 0.65; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.candidate.is-assigned { background: rgba(216, 162, 74, 0.14); border-radius: 8px; }
+.site-candidates .candidate { grid-template-columns: 26px minmax(0, 1fr) auto; padding: 3px 4px; }
