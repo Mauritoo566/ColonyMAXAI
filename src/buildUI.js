@@ -109,8 +109,29 @@ export class BuildUI {
       const on = !(harvest.active && harvest.mode === 'zone');
       harvest.setActive(on, on ? 'zone' : 'mark');
     });
+    // Franja de detalle: descripción, coste y motivo completo de lo que esté señalado o elegido.
+    this.detail = document.createElement('p');
+    this.detail.className = 'build-detail';
+    this.detail.hidden = true;
+    this.list.after(this.detail);
+    const showDetail = (button) => {
+      const def = BUILDING_TYPES.find((d) => d.id === button?.dataset.build);
+      if (!def) {
+        this.detail.hidden = true;
+        return;
+      }
+      const level = def.levels[Math.min(def.levels.length, def.autoLevel ? this.colony.age : 1) - 1];
+      const cost = Object.entries(this.colony.costOf(def)).map(([k, n]) => `${n} ${STOCK_NAMES[k]}`).join(', ') || 'gratis';
+      this.detail.hidden = false;
+      this.detail.innerHTML = `<strong>${escapeHtml(def.autoLevel ? level.name : def.name)}</strong> · ${escapeHtml(def.autoLevel ? level.desc : def.desc)} <em>Cuesta ${cost}.</em>${button.dataset.problem ? ` <span class="build-detail-problem">${escapeHtml(button.dataset.problem)}</span>` : ''}`;
+    };
+    this.list.addEventListener('pointerover', (e) => showDetail(e.target.closest('[data-build]')));
+    this.list.addEventListener('focusin', (e) => showDetail(e.target.closest('[data-build]')));
+    this.list.addEventListener('pointerleave', () => showDetail(this.pinned ?? null));
     for (const button of this.list.querySelectorAll('[data-build]')) {
       button.addEventListener('click', () => {
+        this.pinned = button;
+        showDetail(button);
         const def = BUILDING_TYPES.find((d) => d.id === button.dataset.build);
         if (buildings.placing === def) buildings.stopPlacing();
         else if (!buildings.blocker(def) && buildings.canAfford(def)) buildings.startPlacing(def.id);
@@ -293,8 +314,11 @@ export class BuildUI {
       const desc = def.autoLevel ? level.desc : def.desc;
       button.title = blocker ? `${desc} Bloqueado: ${blocker}.` : affordable ? `${desc} Haz clic y elige dónde construirlo.` : `${desc} Faltan ${this.buildings.missing(def).join(' y ')}.`;
       const lock = button.querySelector('.build-lock');
-      lock.hidden = !blocker;
-      if (blocker && lock.textContent !== blocker) lock.textContent = blocker;
+      // En la tarjeta sólo un estado corto; el motivo completo está en la franja de detalle.
+      const state = blocker ? 'Bloqueado' : !affordable ? 'Faltan recursos' : '';
+      lock.hidden = !state;
+      if (lock.textContent !== state) lock.textContent = state;
+      button.dataset.problem = blocker ? `Bloqueado: ${blocker}.` : !affordable ? `Faltan ${this.buildings.missing(def).join(' y ')}.` : '';
       button.querySelector('.build-name').textContent = def.autoLevel ? level.name : def.name;
       const cost = costHtml({ cost: this.colony.costOf(def) }, stock);
       const el = button.querySelector('.build-cost');

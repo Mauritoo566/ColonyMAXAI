@@ -16,7 +16,9 @@ export { BUILDING_TYPES, BUILD_CATEGORIES, BUILDINGS, STOCK_NAMES, levelOf } fro
 export { buildingModel } from './buildingModels.js';
 
 const CLICK_TOLERANCE = 6;
-const LABEL_DISTANCE = 260;
+const LABEL_DISTANCE = 260; // metros: lo que pide atención se ve así de lejos
+const LABEL_NEAR = 70; // y lo demás sólo así de cerca
+const LABEL_MAX = 12;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 export class BuildingSystem {
@@ -402,27 +404,45 @@ export class BuildingSystem {
     return 'En servicio';
   }
 
+  // Etiquetas con jerarquía: el edificio elegido siempre; luego los que piden atención (obras,
+  // detenidos, sin personal); los demás sólo cuando la cámara está cerca. Con muchas a la vista
+  // se muestran las más importantes (LABEL_MAX).
   updateLabels() {
     const rect = this.canvas.getBoundingClientRect();
     const views = [...this.entries.values()];
     if (this.store) views.push(this.store);
+    const shown = [];
     for (const view of views) {
       const b = view.b ?? view;
-      const label = view.label;
+      view.label.hidden = true;
       const p = this.tmp.copy(view.object.position).addScaledVector(b.dir, b.isStore ? 2.4 : b.done ? 4.6 : 3.4);
       const dist = this.camera.position.distanceTo(p);
+      const selected = this.selected === b;
+      const needed = b.isStore ? 0 : this.sim.crewNeeded(b);
+      const attention = !b.isStore && (!b.done || !!b.status || (needed > 0 && b.workers.length < needed));
+      const rank = selected ? 3 : attention && dist < LABEL_DISTANCE ? 2 : dist < LABEL_NEAR ? 1 : 0;
+      if (!rank) continue;
       p.project(this.camera);
-      const visible = dist < LABEL_DISTANCE && p.z < 1 && Math.abs(p.x) < 1.05 && Math.abs(p.y) < 1.05;
-      label.hidden = !visible;
-      if (!visible) continue;
+      if (p.z >= 1 || Math.abs(p.x) > 1.05 || Math.abs(p.y) > 1.05) continue;
+      shown.push({ view, b, rank, dist, x: p.x, y: p.y, selected, attention });
+    }
+    shown.sort((a, c) => c.rank - a.rank || a.dist - c.dist);
+    for (const [i, s] of shown.entries()) {
+      if (i >= LABEL_MAX && !s.selected) break;
+      const { view, b } = s;
+      const label = view.label;
+      label.hidden = false;
+      label.classList.toggle('is-minor', !s.selected && !s.attention);
+      label.style.zIndex = String(s.rank);
       const sub = label.querySelector('.building-label-sub');
       const bar = label.querySelector('.building-label-bar');
-      const text = b.isStore ? `${Math.round(this.sim.storeFill() * 100)}% lleno` : b.done ? this.labelOf(b) : `${b.upgrading ? 'Mejorando' : 'En obra'} · ${Math.round(b.progress * 100)}%`;
+      const site = !b.isStore && !b.done ? this.sim.siteInfo(b) : null;
+      const text = b.isStore ? `${Math.round(this.sim.storeFill() * 100)}% lleno` : b.done ? this.labelOf(b) : `${b.upgrading ? 'Mejora' : 'Obra'} · ${site?.label ?? ''} · ${Math.round(b.progress * 100)}%`;
       if (sub.textContent !== text) sub.textContent = text;
       bar.hidden = b.done;
       if (!b.done) bar.firstChild.style.width = `${Math.round(b.progress * 100)}%`;
-      const x = rect.left + ((p.x + 1) / 2) * rect.width;
-      const y = rect.top + ((1 - p.y) / 2) * rect.height;
+      const x = rect.left + ((s.x + 1) / 2) * rect.width;
+      const y = rect.top + ((1 - s.y) / 2) * rect.height;
       label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
     }
   }

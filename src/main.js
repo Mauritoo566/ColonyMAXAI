@@ -24,6 +24,7 @@ import { GROVE_KEY, SPROUT_KEY } from './resourceGen.js';
 import { OtherCamps } from './world.js';
 import { FlagUI } from './flagUI.js';
 import { VillageUI } from './villageUI.js';
+import { makeFoldable } from './panelFold.js';
 import { MilitaryUI } from './militaryUI.js';
 import { RoadSystem } from './roads.js';
 import { ensureIcons } from './icons.js';
@@ -154,6 +155,8 @@ colony.on('resources', () => {
 });
 const militaryUI = new MilitaryUI({ colony, button: document.getElementById('military-button'), panel: document.getElementById('military-panel') });
 militaryUI.onOpen = () => villageUI.toggle(false);
+makeFoldable(document.getElementById('colony-card'), { startFoldedOnSmall: true });
+for (const id of ['colonist-panel', 'building-panel', 'world-panel']) makeFoldable(document.getElementById(id));
 const villageUI = new VillageUI({ colony, button: document.getElementById('village-button'), panel: document.getElementById('village-panel') });
 villageUI.onOpen = () => militaryUI.toggle(false);
 colony.on('flag', () => camps.setFlag(colony.flag));

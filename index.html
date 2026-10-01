@@ -86,15 +86,15 @@
 
     <div class="age-wrap" id="age-wrap" hidden>
       <button type="button" class="age-bar" id="age-bar" aria-expanded="false" aria-controls="age-panel" title="Edades de la colonia">
-        <svg class="age-flourish" aria-hidden="true"><use href="#i-flourish" /></svg>
         <span class="age-medal" id="age-numeral">I</span>
         <span class="age-text">
           <span class="age-name" id="age-name">Edad Primitiva</span>
           <span class="age-progress"><span class="age-progress-label" id="age-progress-label">–</span><span class="age-progress-bar"><i id="age-progress-fill"></i></span></span>
         </span>
-        <svg class="age-flourish age-flourish--right" aria-hidden="true"><use href="#i-flourish" /></svg>
       </button>
-      <section class="panel age-panel" id="age-panel" hidden aria-label="Edades"></section>
+    </div>
+    <div class="age-modal" id="age-modal" hidden>
+      <section class="panel age-panel" id="age-panel" role="dialog" aria-modal="true" aria-label="Edades de la colonia"></section>
     </div>
 
     <section id="build-bar" class="panel build-bar" hidden aria-label="Construir">

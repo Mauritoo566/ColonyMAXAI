@@ -12,7 +12,9 @@ import { outfitFor } from './outfits.js';
 // lo que hacen sale de la simulación.
 
 const WALK_SPEED = 1.4; // m/s (para el ritmo de las piernas)
-const LABEL_DISTANCE = 170; // metros: más lejos no se muestra el nombre
+const LABEL_DISTANCE = 170; // metros: más lejos no se muestra ni el aviso de problema
+const LABEL_NEAR = 50; // metros: el nombre de un colono sano sólo se ve así de cerca
+const LABEL_MAX = 10; // etiquetas a la vez (además del elegido)
 const FAR_DISTANCE = 90; // metros: más lejos se dibuja la versión simple del colono
 const PICK_RADIUS_PX = 26; // tolerancia al hacer clic sobre un colono
 const LOINCLOTH = '#6b4a2e'; // lo único que llevan al llegar
@@ -525,29 +527,46 @@ export class ColonyView {
     this.center.group.removeFromParent();
   }
 
-  // Nombres sobre la cabeza cuando la cámara está cerca.
+  // Nombres sobre la cabeza con jerarquía: el elegido siempre; luego quienes tienen un problema
+  // (salud o una necesidad muy baja); luego los que están muy cerca de la cámara. Con muchos
+  // colonos a la vista sólo se muestran los más importantes (LABEL_MAX).
   updateLabels() {
     const cam = this.camera;
     const rect = this.canvas.getBoundingClientRect();
     const p = this.tmp.proj;
-    for (const { c, object, label } of this.entries.values()) {
+    const shown = [];
+    for (const e of this.entries.values()) {
+      const { c, object, label } = e;
+      label.hidden = true;
+      if (c.sleeping || c.inside) continue;
       // Un poco por encima de la cabeza.
       p.copy(object.position);
       p.add(this.tmp.local.copy(p).normalize().multiplyScalar(2.3 * c.look.height * childScale(c.growth ?? 1)));
       const dist = cam.position.distanceTo(p);
+      const selected = this.selected === c;
+      const alert = c.health < 35 || Math.min(c.needs.food, c.needs.water, c.needs.rest, c.needs.warmth) < 15;
+      const rank = selected ? 3 : alert && dist < LABEL_DISTANCE ? 2 : dist < LABEL_NEAR ? 1 : 0;
+      if (!rank) continue;
       p.project(cam);
-      const visible = !c.sleeping && !c.inside && dist < LABEL_DISTANCE && p.z < 1 && Math.abs(p.x) < 1.05 && Math.abs(p.y) < 1.05;
-      label.hidden = !visible;
-      if (visible) {
-        const hp = label.lastChild.firstChild;
-        const width = `${Math.round(c.health)}%`;
-        if (hp.style.width !== width) hp.style.width = width;
-        label.classList.toggle('is-hurt', c.health < 50);
-        const x = rect.left + ((p.x + 1) / 2) * rect.width;
-        const y = rect.top + ((1 - p.y) / 2) * rect.height;
-        label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
-        label.style.opacity = String(Math.min(1, (LABEL_DISTANCE - dist) / 40));
-      }
+      if (p.z >= 1 || Math.abs(p.x) > 1.05 || Math.abs(p.y) > 1.05) continue;
+      shown.push({ e, rank, dist, x: p.x, y: p.y, selected, alert });
+    }
+    shown.sort((a, b) => b.rank - a.rank || a.dist - b.dist);
+    for (const [i, s] of shown.entries()) {
+      if (i >= LABEL_MAX && !s.selected) break;
+      const { c, label } = s.e;
+      label.hidden = false;
+      const hp = label.lastChild.firstChild;
+      const width = `${Math.round(c.health)}%`;
+      if (hp.style.width !== width) hp.style.width = width;
+      label.classList.toggle('is-hurt', c.health < 50);
+      label.classList.toggle('is-alert', s.alert);
+      label.classList.toggle('is-minor', !s.selected && !s.alert);
+      const x = rect.left + ((s.x + 1) / 2) * rect.width;
+      const y = rect.top + ((1 - s.y) / 2) * rect.height;
+      label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
+      label.style.opacity = s.selected || s.alert ? '1' : String(Math.min(1, (LABEL_NEAR - s.dist) / 15));
+      label.style.zIndex = String(s.rank);
     }
   }
 }
