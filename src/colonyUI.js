@@ -142,7 +142,7 @@ export class ColonyUI {
   tradeOf(c) {
     if ((c.growth ?? 1) < 1) return 'Niños';
     if (c.soldier) return 'Ejército';
-    return c.job?.def?.job ?? 'Sin trabajo';
+    return c.job?.def?.job ?? 'Sin oficio fijo';
   }
 
   buildRoster(groups = '') {
@@ -158,7 +158,7 @@ export class ColonyUI {
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(c);
     }
-    const order = [...grouped.keys()].sort((a, b) => (a === 'Sin trabajo') - (b === 'Sin trabajo') || (a === 'Niños') - (b === 'Niños') || a.localeCompare(b));
+    const order = [...grouped.keys()].sort((a, b) => (a === 'Sin oficio fijo') - (b === 'Sin oficio fijo') || (a === 'Niños') - (b === 'Niños') || a.localeCompare(b));
     const list = order.flatMap((k) => (grouped.size > 1 ? [{ header: k, n: grouped.get(k).length }] : []).concat(grouped.get(k)));
     for (const c of list) {
       if (c.header) {
@@ -196,7 +196,7 @@ export class ColonyUI {
       // Si algo le urge, se muestra con su ícono en lugar de la actividad.
       const worst = NEEDS.reduce((a, b) => (c.needs[b.id] < c.needs[a.id] ? b : a));
       const activity = li.querySelector('.roster-activity');
-      const html = c.needs[worst.id] < 30 ? `${icon(worst.id)}${escapeHtml(worst.low)}` : escapeHtml(c.activity);
+      const html = c.needs[worst.id] < 30 ? `${icon(worst.id)}${escapeHtml(worst.low)}` : `${c.order ? '<b class="order-tag">Orden</b> ' : ''}${escapeHtml(c.activity)}`;
       if (activity.dataset.html !== html) {
         activity.innerHTML = html;
         activity.dataset.html = html;
@@ -275,8 +275,20 @@ export class ColonyUI {
           <p class="activity-now" data-family></p>
         </section>
         <section class="cp-section">
-          <h3>Trabajo</h3>
+          <h3>Oficio y órdenes</h3>
           <p class="activity-now" data-job></p>
+          <p class="activity-now" data-order></p>
+          <p class="activity-now" data-avail></p>
+          <div class="order-box" data-orderbox>
+            <label class="order-label">Asignar tarea
+              <select data-order-pick></select>
+            </label>
+            <div class="order-buttons">
+              <button type="button" class="btn" data-order-go>Asignar</button>
+              <button type="button" class="btn" data-order-cancel>Cancelar orden</button>
+            </div>
+            <p class="order-msg" data-order-msg role="status"></p>
+          </div>
         </section>
         <section class="cp-section">
           <h3>Ropa</h3>
@@ -335,6 +347,25 @@ export class ColonyUI {
     for (const tab of this.panel.querySelectorAll('[data-tab]')) {
       tab.addEventListener('click', () => this.showTab(tab.dataset.tab));
     }
+    this.orderOptionsKey = null;
+    const msg = this.panel.querySelector('[data-order-msg]');
+    this.panel.querySelector('[data-order-go]').addEventListener('click', () => {
+      const [kind, id] = this.panel.querySelector('[data-order-pick]').value.split(':');
+      if (!kind) return;
+      if (kind === 'work') {
+        const b = this.colony.building(Number(id));
+        const why = !b || !b.done ? 'Ese edificio no está disponible.' : !this.colony.available(c) ? 'No puede trabajar: es un niño o soldado.' : null;
+        if (!why) this.colony.setWorker(b, c);
+        msg.textContent = why ?? `Ahora trabaja en: ${b.name}.`;
+        return;
+      }
+      const why = this.colony.orderColonist(c, kind, kind === 'build' ? this.colony.building(Number(id)) : null);
+      msg.textContent = why ?? 'Orden dada.';
+    });
+    this.panel.querySelector('[data-order-cancel]').addEventListener('click', () => {
+      msg.textContent = c.order ? 'Orden cancelada: vuelve a decidir solo.' : 'No tiene ninguna orden.';
+      this.colony.cancelOrder(c);
+    });
     this.showTab(this.tab);
     this.setFollowing(this.following);
     this.logFor = null;
@@ -370,8 +401,20 @@ export class ColonyUI {
     const familyText = parts.filter(Boolean).join(' ');
     if (family.textContent !== familyText) family.textContent = familyText;
     const job = this.panel.querySelector('[data-job]');
-    const jobText = c.job ? `${c.job.def.job} en ${c.job.name}` : 'Sin trabajo asignado';
+    const jobText = c.job ? `Oficio fijo: ${c.job.def.job} en ${c.job.name}` : 'Oficio fijo: ninguno (hace lo que más falta)';
     if (job.textContent !== jobText) job.textContent = jobText;
+    const orderEl = this.panel.querySelector('[data-order]');
+    const target = c.order?.kind === 'build' ? this.colony.building(c.order.building) : null;
+    const orderText = !c.order
+      ? 'Orden actual: ninguna'
+      : `Orden actual: ${c.order.kind === 'build' ? `construir ${target?.name ?? 'obra'}` : 'recolectar lo marcado'} · ${c.order.state === 'interrupted' ? 'en pausa por una necesidad urgente' : 'en curso'}`;
+    if (orderEl.textContent !== orderText) orderEl.textContent = orderText;
+    const unavailable = (c.growth ?? 1) < 1 ? 'Es un niño: no recibe órdenes de trabajo.' : c.soldier ? 'Es soldado: monta guardia.' : null;
+    const avail = this.panel.querySelector('[data-avail]');
+    const availText = unavailable ?? (c.order || c.job ? 'Disponibilidad: con tareas asignadas' : 'Disponibilidad: libre');
+    if (avail.textContent !== availText) avail.textContent = availText;
+    this.panel.querySelector('[data-orderbox]').hidden = !!unavailable;
+    this.refreshOrderOptions(c);
     const clothes = this.panel.querySelector('[data-clothes]');
     const clothesText = c.clothed
       ? 'Ropa de pieles: abriga contra el frío'
@@ -406,6 +449,25 @@ export class ColonyUI {
         .map((entry) => `<li><time>${escapeHtml(entry.time)}</time><span>${escapeHtml(entry.text)}</span></li>`)
         .join('');
     }
+  }
+
+  // Opciones del selector "Asignar tarea": obras en curso, edificios con puesto y recolección.
+  refreshOrderOptions(c) {
+    const sites = this.colony.buildings.filter((b) => !b.done && !b.paused);
+    const posts = this.colony.buildings.filter((b) => b.done && b.def.skill && this.colony.crewNeeded(b) > 0);
+    const hasMarks = this.colony.spots.some((sp) => sp.marked && !sp.gone);
+    const key = `${sites.map((b) => b.id).join()}|${posts.map((b) => `${b.id}:${b.workers.length}`).join()}|${hasMarks}`;
+    if (key === this.orderOptionsKey) return;
+    this.orderOptionsKey = key;
+    const pick = this.panel.querySelector('[data-order-pick]');
+    const keep = pick.value;
+    const opt = (v, t) => `<option value="${v}">${escapeHtml(t)}</option>`;
+    pick.innerHTML =
+      (sites.length ? `<optgroup label="Construir">${sites.map((b) => opt(`build:${b.id}`, `${b.upgrading ? 'Mejorar' : 'Construir'}: ${b.name}`)).join('')}</optgroup>` : '') +
+      (hasMarks ? `<optgroup label="Recolectar">${opt('harvest:', 'Recolectar lo marcado')}</optgroup>` : '') +
+      (posts.length ? `<optgroup label="Puesto de trabajo">${posts.map((b) => opt(`work:${b.id}`, `${b.def.job} en ${b.name} (${b.workers.length}/${this.colony.crewNeeded(b)})`)).join('')}</optgroup>` : '');
+    if (!pick.options.length) pick.innerHTML = opt('', 'No hay obras ni puestos disponibles');
+    if (keep) pick.value = keep;
   }
 
   // ---- Seguir con la cámara --------------------------------------------------

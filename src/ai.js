@@ -29,6 +29,104 @@ function dist(c, p) {
 }
 
 // ---------------------------------------------------------------------------
+// Obras: prioridad, constructores y estado
+// ---------------------------------------------------------------------------
+
+export const PRIORITY = { low: 0.55, normal: 1, high: 1.8 };
+export const PRIORITY_NAMES = { low: 'Baja', normal: 'Normal', high: 'Alta' };
+const ORDER_SITE_MAX = 6;
+
+// Cuántos colonos tienen esa obra como tarea (en camino o trabajando).
+export function builders(colony, b) {
+  let n = 0;
+  for (const c of colony.colonists) if (c.task?.type === 'build' && c.task.building === b) n++;
+  return n;
+}
+
+function siteCap(b) {
+  return b.priority === 'high' ? 5 : 3;
+}
+
+// ¿Puede este colono construir? (null = sí; si no, el motivo)
+export function builderProblem(colony, c) {
+  if ((c.growth ?? 1) < 1) return 'Es un niño';
+  if (c.soldier) return 'Es soldado';
+  return null;
+}
+
+// Estado de una obra para mostrarlo: { state, label, why }.
+export function siteStatus(colony, b, isNight = false) {
+  if (b.done) return null;
+  const info = siteState(colony, b, isNight);
+  info.ids = colony.colonists.filter((c) => c.task?.type === 'build' && c.task.building === b).map((c) => c.id);
+  info.ordered = colony.colonists.filter((c) => c.order?.kind === 'build' && c.order.building === b.id).map((c) => c.id);
+  return info;
+}
+
+function siteState(colony, b, isNight) {
+  const verb = b.upgrading ? 'mejora' : 'obra';
+  if (b.paused) return { state: 'paused', label: 'Pausada', why: `La ${verb} está pausada: nadie trabaja en ella hasta que la reanudes.` };
+  let going = 0;
+  let working = 0;
+  for (const c of colony.colonists) {
+    if (c.task?.type !== 'build' || c.task.building !== b) continue;
+    if (c.working) working++;
+    else going++;
+  }
+  if (working) return { state: 'building', label: `Construyendo (${working})`, why: `${working} colono${working > 1 ? 's' : ''} trabajando en ella.` };
+  if (going) return { state: 'going', label: 'Constructores en camino', why: `${going} colono${going > 1 ? 's' : ''} va${going > 1 ? 'n' : ''} hacia la ${verb}.` };
+  const adults = colony.colonists.filter((c) => !builderProblem(colony, c));
+  if (!adults.length) return { state: 'blocked', label: 'Bloqueada', why: 'No hay colonos adultos que puedan construir (niños y soldados no construyen).' };
+  if (isNight) return { state: 'waiting', label: 'Esperando constructor', why: 'Es de noche: los colonos descansan y construirán de día.' };
+  if (b.priority === 'low') return { state: 'waiting', label: 'Esperando constructor', why: 'Prioridad baja: sólo la hacen los colonos que no tienen nada mejor. Sube la prioridad o asigna un constructor.' };
+  if (adults.every((c) => c.task && c.task.type !== 'wander')) return { state: 'waiting', label: 'Esperando constructor', why: 'Todos los colonos están ocupados (necesidades, trabajo u otras obras). Sube la prioridad o asigna un constructor.' };
+  return { state: 'waiting', label: 'Esperando constructor', why: 'Ningún colono libre la ha tomado todavía.' };
+}
+
+// ---------------------------------------------------------------------------
+// Órdenes directas del jugador
+// ---------------------------------------------------------------------------
+// c.order = { kind: 'build', building: id } | { kind: 'harvest' }. Se guardan con la partida,
+// se cumplen aunque sea de noche, y sólo las frena una necesidad crítica (la ficha lo dice).
+
+// Motivo por el que no se puede dar esa orden (null = se puede).
+export function orderProblem(colony, c, kind, building) {
+  const why = builderProblem(colony, c);
+  if (why) return `${c.name}: ${why.toLowerCase()}; no puede recibir esa orden.`;
+  if (kind === 'build') {
+    if (!building || building.removed || building.done) return 'Esa obra ya no existe o ya está terminada.';
+    if (building.paused) return 'La obra está pausada: reanúdala primero.';
+    const already = colony.colonists.filter((o) => o !== c && o.order?.kind === 'build' && o.order.building === building.id).length;
+    if (already >= ORDER_SITE_MAX) return `Ya hay ${ORDER_SITE_MAX} constructores asignados a esa obra.`;
+    return null;
+  }
+  if (kind === 'harvest') return colony.spots.some((s) => s.marked && !s.gone) ? null : 'No hay recursos marcados para recolectar.';
+  return 'Orden desconocida.';
+}
+
+function orderTask(colony, c, env) {
+  const o = c.order;
+  if (!o) return null;
+  if (o.kind === 'build') {
+    const b = colony.building(o.building);
+    if (!b || b.done || b.removed || b.paused) {
+      colony.finishOrder(c, b && !b.removed && b.done ? 'terminó la obra' : 'la obra ya no está disponible');
+      return null;
+    }
+    return { type: 'build', building: b, ordered: true };
+  }
+  if (o.kind === 'harvest') {
+    const marked = colony.nearestMarked(c.x, c.z, env.gameTime);
+    if (!marked) {
+      colony.finishOrder(c, 'no queda nada marcado');
+      return null;
+    }
+    return { type: 'harvest', spot: marked, phase: 'going', ordered: true };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Elegir
 // ---------------------------------------------------------------------------
 
@@ -100,15 +198,27 @@ export function chooseTask(colony, c, env) {
   // Los soldados montan guardia en torno a sus puestos (cuarteles, torres, fuertes) o al campamento.
   if (c.soldier && !env.isNight) add(0.3, { type: 'guard', phase: 'going' });
 
+  // Orden directa del jugador: va antes que todo lo normal; sólo una necesidad crítica la frena.
+  const order = orderTask(colony, c, env);
+  if (order) add(0.95, order);
+
   // Trabajo: construir obras y trabajar en su edificio, de día y con lo básico cubierto
   // (los niños no trabajan: juegan, comen y duermen; los soldados montan guardia).
   if (!env.isNight && !isChild(c) && !c.soldier) {
     const diligence = hasTrait(c, 'hardworking') ? 1.3 : hasTrait(c, 'lazy') ? 0.6 : 1;
     const fine = Math.min(n.food, n.water, n.rest, n.warmth) > 30 ? 1 : 0.4;
     for (const b of colony.buildings) {
-      if (b.done) continue;
+      if (b.done || b.paused) continue;
       const skill = c.skills.building / 10;
-      add((0.3 + skill * 0.15) * diligence * fine * distanceFactor(dist(c, b)), { type: 'build', building: b });
+      const mine = c.task?.type === 'build' && c.task.building === b;
+      // Cuántos otros ya están en esa obra: se reparten entre las obras en vez de amontonarse.
+      const others = builders(colony, b) - (mine ? 1 : 0);
+      if (others >= siteCap(b) && !mine) continue;
+      const crowd = 1 / (1 + 0.7 * others);
+      // La prioridad manda: la alta gana al trabajo fijo, la baja sólo la hacen los que no tienen nada mejor.
+      let score = (0.42 + skill * 0.12) * diligence * fine * (1 / (1 + dist(c, b) / 400)) * (PRIORITY[b.priority] ?? 1) * crowd;
+      if (mine) score *= 1.15; // no cambia de obra por un empate
+      add(score - b.id * 1e-5, { type: 'build', building: b });
     }
     const job = c.job;
     if (job && job.done) add(0.34 * diligence * fine, { type: 'work', building: job, phase: 'start' });
@@ -149,6 +259,14 @@ export function taskKey(task) {
 
 // ¿Conviene cambiar de tarea? Sólo si la nueva es bastante mejor (evita que dude).
 export function shouldSwitch(current, next) {
+  // Una orden directa sólo la interrumpe una necesidad crítica; y la orden vuelve a ganar después.
+  if (current.ordered && !next.ordered) return next.score > 1.05;
+  if (current.ordered && next.ordered) return current.type !== next.type || (current.building && current.building !== next.building);
+  if (next.ordered) {
+    const same = current.type === next.type && (current.building ?? current.spot) === (next.building ?? next.spot);
+    if (same) current.ordered = true;
+    return !same;
+  }
   if (current.type === next.type && current.type !== 'build' && current.type !== 'eat') return false;
   if (current.type === 'sleep' && current.phase === 'sleeping') return next.score > current.score * 1.6 + 0.2;
   if (current.type === 'love' && current.phase === 'inside') return next.score > 1.1;

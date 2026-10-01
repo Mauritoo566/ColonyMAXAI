@@ -8,7 +8,7 @@ import { createProfile, updateNeeds, hasTrait, wellbeing, addLog, SKILLS, TRAITS
 import { appearanceFromGenes, gene } from '../genes.js';
 import { RESOURCE_TYPES } from '../resourceTypes.js';
 import { TILE_ANGLE, generateTile, generateCampGrove, GROVE_KEY, SPROUT_KEY, sproutItem, tileFromItems } from '../resourceGen.js';
-import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, taskKey } from '../ai.js';
+import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, taskKey, siteStatus, orderProblem, PRIORITY } from '../ai.js';
 import { campLayout, campObstacles, campZone } from './campLayout.js';
 import { BUILDINGS, levelOf } from './buildingTypes.js';
 const STOCK_NAMES = GOOD_NAMES;
@@ -193,6 +193,7 @@ export class ColonySim {
     const gameDt = delta * timeScale;
     if (gameDt <= 0) return;
     const time = timeLabel();
+    this.nightNow = isNight;
     const env = { isNight, time, gameTime: this.gameTime };
     const rain = this.weather?.rain ?? 0;
     const ambient = Math.min(1, Math.max(0, (this.campTemperature - (isNight ? 0.3 : 0) - 0.12 - rain * 0.12) * 1.6));
@@ -699,6 +700,64 @@ export class ColonySim {
       }
     }
     c.activity = c.task ? taskActivity(this, c, c.task) : 'Descansando un momento';
+    c.orderState = !c.order ? null : c.task?.ordered ? 'active' : 'interrupted';
+    if (c.orderState === 'interrupted') c.activity += ' (orden en pausa: necesidad urgente)';
+  }
+
+  // ---- Obras y órdenes directas ----------------------------------------------------------
+
+  // Estado visible de una obra: { state, label, why } (se calcula aquí o llega del servidor).
+  siteInfo(b) {
+    return b.site ?? siteStatus(this, b, this.nightNow);
+  }
+
+  setPriority(b, level) {
+    if (this.remote) return this.remote('setPriority', [b.id, level]);
+    if (!PRIORITY[level] || b.done) return false;
+    b.priority = level;
+    this.emit('buildings');
+    return true;
+  }
+
+  // Pausar o reanudar una obra: pausada, nadie la construye (las órdenes sobre ella se cancelan).
+  pauseSite(b, paused) {
+    if (this.remote) return this.remote('pauseSite', [b.id, !!paused]);
+    if (b.done) return false;
+    b.paused = !!paused;
+    if (b.paused) for (const c of this.colonists) if (c.order?.kind === 'build' && c.order.building === b.id) this.finishOrder(c, 'la obra se pausó');
+    this.emit('buildings');
+    return true;
+  }
+
+  // Dar una orden a un colono: { kind: 'build', building } o { kind: 'harvest' }.
+  orderColonist(c, kind, building = null) {
+    const why = orderProblem(this, c, kind, building);
+    if (why) return why;
+    if (this.remote) {
+      this.remote('orderColonist', [c.id, kind, building?.id ?? null]);
+      return null;
+    }
+    c.order = kind === 'build' ? { kind, building: building.id } : { kind };
+    addLog(c, this.timeLabel(), kind === 'build' ? `Recibió la orden de construir: ${building.name}` : 'Recibió la orden de recolectar lo marcado');
+    c.thinkTimer = 0;
+    this.emit('buildings');
+    return null;
+  }
+
+  cancelOrder(c) {
+    if (this.remote) return this.remote('cancelOrder', [c.id]);
+    if (!c.order) return false;
+    this.finishOrder(c, 'el jugador canceló la orden');
+    return true;
+  }
+
+  // Terminada o cancelada la orden, el colono vuelve a decidir solo.
+  finishOrder(c, why) {
+    if (!c.order) return;
+    c.order = null;
+    c.orderState = null;
+    if (c.task?.ordered) c.task.ordered = false;
+    addLog(c, this.timeLabel(), `Terminó su orden (${why})`);
   }
 
   startTask(c, task, env) {
@@ -1333,6 +1392,8 @@ export class ColonySim {
       get name() {
         return this.def.levels[this.level - 1].name;
       },
+      priority: 'normal', // prioridad de la obra (baja, normal, alta)
+      paused: false, // obra pausada por el jugador
       workers: [], // la dotación (varios colonos en los edificios que lo piden)
       get worker() {
         return this.workers[0] ?? null;
@@ -1697,6 +1758,7 @@ export class ColonySim {
           mate: c.mate,
           pregnant: c.pregnant,
           home: c.home,
+          order: c.order ?? null,
           age: c.age,
           soldier: c.soldier,
           static: c.id >= START_COLONISTS ? this.staticOf(c) : undefined, // los nacidos o llegados no salen de la semilla
@@ -1721,6 +1783,8 @@ export class ColonySim {
         produced: b.produced,
         level: b.level,
         upgrading: b.upgrading,
+        priority: b.priority,
+        paused: b.paused,
         store: b.store,
         worker: b.worker ? b.worker.id : null,
         workers: b.workers.map((w) => w.id),
@@ -1740,6 +1804,8 @@ export class ColonySim {
       const level = Math.min(def.levels.length, Math.max(1, s.level || 1));
       const b = this.createBuilding(def, s.x, s.z, s.yaw, s.upgrading ? 1 : s.progress, s.produced || 0, level, s.id);
       b.store = s.store || 0;
+      if (PRIORITY[s.priority]) b.priority = s.priority;
+      b.paused = !!s.paused && !b.done;
       b.cycle = Number.isFinite(s.cycle) ? s.cycle : 0;
       b.cycleActive = !!s.cycleActive;
       if (s.upgrading && levelOf(b, 1)) {
@@ -1800,6 +1866,23 @@ export class ColonySim {
         if (!b || !c || !b.workers.includes(c)) return false;
         this.releaseWorker(b, c);
         return true;
+      }
+      case 'setPriority': {
+        const b = this.building(args[0]);
+        return !!b && typeof args[1] === 'string' && this.setPriority(b, args[1]);
+      }
+      case 'pauseSite': {
+        const b = this.building(args[0]);
+        return !!b && this.pauseSite(b, args[1]);
+      }
+      case 'orderColonist': {
+        const c = this.colonist(args[0]);
+        const b = args[2] != null ? this.building(args[2]) : null;
+        return !!c && typeof args[1] === 'string' && this.orderColonist(c, args[1], b) === null;
+      }
+      case 'cancelOrder': {
+        const c = this.colonist(args[0]);
+        return !!c && this.cancelOrder(c);
       }
       case 'advanceAge':
         return this.advanceAge();
@@ -1898,6 +1981,7 @@ export class ColonySim {
         mate: c.mate,
         pregnant: c.pregnant?.due ?? null,
         home: c.home,
+        order: c.order ? { ...c.order, state: c.orderState } : null,
         age: c.age,
         sd: c.soldier ? c.soldier.unit : null,
         x: r2(c.x),
@@ -1922,6 +2006,9 @@ export class ColonySim {
         cycle: r2(b.cycle),
         pf: r2(b.pf),
         op: b.operating,
+        prio: b.priority,
+        paused: b.paused,
+        site: b.done ? undefined : siteStatus(this, b, this.nightNow),
         reason: b.reason,
         status: b.status,
       })),
@@ -1973,6 +2060,8 @@ export class ColonySim {
       c.mate = row.mate ?? null;
       c.pregnant = row.pregnant != null ? { due: row.pregnant } : null;
       c.home = row.home ?? null;
+      c.order = row.order ?? null;
+      c.orderState = row.order?.state ?? null;
       c.soldier = row.sd && UNITS_BY_ID[row.sd] ? { unit: row.sd, tier: UNITS_BY_ID[row.sd].age } : null;
       if (row.age != null) c.age = row.age;
     }
@@ -2041,6 +2130,9 @@ export class ColonySim {
         reason: row.reason,
         status: row.status,
         cycle: row.cycle ?? 0,
+        priority: row.prio ?? 'normal',
+        paused: !!row.paused,
+        site: row.site ?? null,
         pf: row.pf ?? 1,
         operating: !!row.op,
       });
@@ -2125,6 +2217,7 @@ export class ColonySim {
       c.mate = saved.mate ?? null;
       c.pregnant = saved.pregnant && Number.isFinite(saved.pregnant.due) ? saved.pregnant : null;
       c.home = saved.home ?? null;
+      c.order = saved.order?.kind === 'build' ? { kind: 'build', building: saved.order.building } : saved.order?.kind === 'harvest' ? { kind: 'harvest' } : null;
       c.soldier = saved.soldier && UNITS_BY_ID[saved.soldier.unit] ? { unit: saved.soldier.unit, tier: saved.soldier.tier ?? UNITS_BY_ID[saved.soldier.unit].age } : null;
       if (Number.isFinite(saved.age)) c.age = saved.age;
       Object.assign(c.needs, saved.needs);

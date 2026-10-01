@@ -4,6 +4,7 @@ import { TECHS } from './sim/techs.js';
 import { tradeQuota, tradeValue } from './sim/economy.js';
 import { defImplemented, minAgeOf, levelBenefits } from './sim/progression.js';
 import { ageInfo } from './ages.js';
+import { PRIORITY_NAMES } from './ai.js';
 import { FOOD_SPOIL_SECONDS, zoneCapacity } from './sim/colony.js';
 import { storageKey } from './storage.js';
 import { DAY_LENGTH_SECONDS } from './daynight.js';
@@ -385,6 +386,30 @@ export class BuildUI {
     const key = ['store', piles, JSON.stringify(visibleGoods(colony).map((r) => [r.id, Math.floor(colony.stock[r.id] ?? 0), colony.capacity(r.id), Math.floor(colony.outdoor[r.id] ?? 0)])), JSON.stringify(colony.zones), Math.floor(colony.spoiled), Math.floor(((colony.foodBatches[0]?.expires ?? 0) - colony.gameTime) / 15)].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
+
+    const siteHtml = () => {
+      const stateClass = { building: 'ok', going: 'ok', waiting: 'warn', blocked: 'bad', paused: 'warn' }[site.state] ?? 'ok';
+      const verb = b.upgrading ? 'mejora' : 'obra';
+      const names = (ids) => ids.map((id) => colony.colonist(id)?.name).filter(Boolean);
+      const eligible = colony.colonists.filter((c) => !(c.growth < 1) && !c.soldier);
+      const blockedOnes = colony.colonists.filter((c) => c.growth < 1 || c.soldier);
+      const opts = eligible.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}${site.ordered?.includes(c.id) ? ' (ya asignado)' : ''}</option>`).join('')
+        + blockedOnes.map((c) => `<option value="" disabled>${escapeHtml(c.name)} — ${c.soldier ? 'es soldado' : 'es un niño'}</option>`).join('');
+      return `
+        <p class="site-state site-state--${stateClass}"><strong>${site.label}</strong></p>
+        <p class="reason">${escapeHtml(site.why)}</p>
+        ${site.ids?.length ? `<p class="reason">En la ${verb}: ${escapeHtml(names(site.ids).join(', '))}${site.ordered?.length ? ` · con orden directa: ${escapeHtml(names(site.ordered).join(', '))}` : ''}.</p>` : ''}
+        <div class="prio-row" role="group" aria-label="Prioridad de la ${verb}">
+          <span>Prioridad</span>
+          ${['low', 'normal', 'high'].map((p) => `<button type="button" class="seg ${b.priority === p ? 'is-on' : ''}" data-prio="${p}" aria-pressed="${b.priority === p}">${PRIORITY_NAMES[p]}</button>`).join('')}
+          <button type="button" class="seg" data-pause>${b.paused ? 'Reanudar' : 'Pausar'}</button>
+        </div>
+        <div class="order-box">
+          <label class="order-label">Asignar constructor<select data-site-pick>${opts}</select></label>
+          <div class="order-buttons"><button type="button" class="btn" data-site-assign>Asignar constructor</button></div>
+          <p class="order-msg" data-site-msg role="status"></p>
+        </div>`;
+    };
     this.panel.innerHTML = `
       <header class="cp-head">
         <span class="bp-icon">${icon('wood')}</span>
@@ -448,8 +473,7 @@ export class BuildUI {
     const age = ageInfo(level.age);
     const crew = b.workers;
     const stateText = () => {
-      if (b.upgrading) return `Mejorando · ${Math.round(b.progress * 100)}%`;
-      if (!b.done) return `En construcción · ${Math.round(b.progress * 100)}%`;
+      if (!b.done) return `${b.upgrading ? 'Mejora' : 'Obra'} · ${colony.siteInfo(b)?.label ?? ''} · ${Math.round(b.progress * 100)}%`;
       if (isHouse) return `${colony.colonists.filter((c) => c.home === b.id).length}/${level.housing} vecinos`;
       if (needed) return crew.length === 0 ? 'Sin trabajador' : crew.length < needed ? `Falta personal · ${crew.length}/${needed}` : b.status ? 'Detenido' : 'Funcionando';
       return 'En uso';
@@ -459,7 +483,9 @@ export class BuildUI {
     const upgradeProblem = this.buildings.upgradeProblem(b);
     const stored = level.rainOnly ? Math.floor(b.store) : null;
     // Clave para no redibujar si nada cambió.
-    const key = [state, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const site = b.done ? null : colony.siteInfo(b);
+    const siteKey = site ? [site.state, site.why, (site.ids ?? []).join(), (site.ordered ?? []).join(), b.priority, b.paused, colony.colonists.map((c) => (c.growth ?? 1) < 1 || c.soldier ? '' : c.id).join('.')].join('~') : '';
+    const key = [state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -543,12 +569,14 @@ export class BuildUI {
             ? `<section class="cp-section">
                 <h3>Mejora a ${next.name}</h3>
                 <div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.progress * 100)}%"></i></div>
-                <p class="reason">Los constructores trabajan en la mejora. Mientras tanto no se produce nada${crew.length ? `; al terminar, ${escapeHtml(crew.map((w) => w.name).join(', '))} vuelve${crew.length > 1 ? 'n' : ''} a su trabajo` : ''}.</p>
+                <p class="reason">Mientras tanto no se produce nada${crew.length ? `; al terminar, ${escapeHtml(crew.map((w) => w.name).join(', '))} vuelve${crew.length > 1 ? 'n' : ''} a su trabajo` : ''}.</p>
+                ${siteHtml()}
               </section>`
             : !b.done
               ? `<section class="cp-section">
                   <h3>Obra</h3>
                   <div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.progress * 100)}%"></i></div>
+                  ${siteHtml()}
                   <p class="reason">Los colonos construyen de día cuando tienen lo básico cubierto. Quien sabe más de construcción avanza más rápido. ${isHouse ? 'Al terminar, la colonia admitirá más colonos y quienes vivan aquí dormirán bajo techo.' : isStorage ? 'Al terminar, el almacén de la colonia podrá guardar más.' : needed ? `Al terminar, la colonia elegirá a las personas más capacitadas en ${skill.name.toLowerCase()} para trabajar aquí.` : 'Al terminar, entrará en servicio.'}</p>
                 </section>`
               : `${isHouse ? this.houseHtml(b, level, next) : isStorage ? this.storageAddsHtml(level, next) : ''}${crewHtml}${serviceHtml}${effectsHtml}${upgradeHtml}`
@@ -579,6 +607,14 @@ export class BuildUI {
       if (who) paintAvatar(el, who.look);
     }
     this.panel.querySelector('[data-close]').addEventListener('click', () => this.buildings.select(null));
+    for (const button of this.panel.querySelectorAll('[data-prio]')) button.addEventListener('click', () => colony.setPriority(b, button.dataset.prio));
+    this.panel.querySelector('[data-pause]')?.addEventListener('click', () => colony.pauseSite(b, !b.paused));
+    this.panel.querySelector('[data-site-assign]')?.addEventListener('click', () => {
+      const id = Number(this.panel.querySelector('[data-site-pick]').value);
+      const c = colony.colonist(id);
+      const msg = this.panel.querySelector('[data-site-msg]');
+      msg.textContent = c ? colony.orderColonist(c, 'build', b) ?? `${c.name} recibió la orden de construir.` : 'Elige un colono.';
+    });
     this.panel.querySelector('[data-upgrade]')?.addEventListener('click', () => this.buildings.upgrade(b));
     for (const button of this.panel.querySelectorAll('[data-see-worker]')) {
       button.addEventListener('click', () => this.onFocusColonist?.(colony.colonist(Number(button.dataset.seeWorker))));

@@ -2552,3 +2552,22 @@ canvas.is-harvesting {
   opacity: 0.4;
   cursor: default;
 }
+
+/* Órdenes directas a colonos */
+.order-box { margin-top: 8px; display: grid; gap: 6px; }
+.order-label { display: grid; gap: 4px; font-size: 12px; opacity: 0.85; }
+.order-label select { width: 100%; padding: 6px; border-radius: 6px; background: rgba(255, 255, 255, 0.08); color: inherit; border: 1px solid rgba(255, 255, 255, 0.18); }
+.order-label select option, .order-label select optgroup { color: #111; }
+.order-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+.order-msg { margin: 0; font-size: 12px; opacity: 0.8; min-height: 1em; }
+.order-tag { font-size: 10px; text-transform: uppercase; padding: 1px 5px; border-radius: 4px; background: #d8a24a; color: #231a08; }
+
+/* Estado, prioridad y pausa de una obra */
+.site-state { margin: 6px 0 2px; }
+.site-state--ok strong { color: #7bd88f; }
+.site-state--warn strong { color: #e6b450; }
+.site-state--bad strong { color: #ef7b6f; }
+.prio-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin: 8px 0; font-size: 12px; }
+.prio-row > span { margin-right: 4px; opacity: 0.8; }
+.seg { padding: 4px 9px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.06); color: inherit; cursor: pointer; font: inherit; }
+.seg.is-on { background: #d8a24a; color: #231a08; border-color: #d8a24a; }

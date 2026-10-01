@@ -1,0 +1,101 @@
+// Obras y órdenes: las obras avanzan, la prioridad se nota, las órdenes directas se cumplen
+// (y se rechazan con motivo), pausar detiene y todo se guarda.
+// Uso: node server/game/test/tasks.test.js
+
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { ColonySim } from '../../../src/sim/colony.js';
+import { WeatherState } from '../../../src/sim/weather.js';
+import { BUILDINGS } from '../../../src/sim/buildingTypes.js';
+import { naturalSurfaceHeight } from '../../../src/elevation.js';
+import { DAY_LENGTH_SECONDS as DAY } from '../../../src/daynight.js';
+
+const dir = new THREE.Vector3(-0.8984470605519815, 0.4271785546817849, 0.10154487582091702).normalize();
+function colony() {
+  const sim = new ColonySim();
+  sim.weather = new WeatherState(5);
+  sim.weather.setPlace(dir);
+  sim.setCamp({ dir, height: naturalSurfaceHeight(dir), yaw: 0, seed: 777 }, { ownZone: true });
+  sim.clothesLeft = 0;
+  sim.colonists.forEach((c) => (c.clothed = true));
+  sim.stock = { food: 900, water: 900, wood: 900, stone: 600, fiber: 300 };
+  sim.timeLabel = () => 'Día 1';
+  return sim;
+}
+const run = (sim, seconds, night = false) => {
+  for (let t = 0; t < seconds; t += 0.5) {
+    for (const k of ['food', 'water']) sim.stock[k] = Math.max(sim.stock[k], 900);
+    sim.update(0.5, { timeScale: 1, isNight: night, timeLabel: () => 'Día 1' });
+  }
+};
+const site = (sim, id, x, z) => {
+  const b = sim.createBuilding(BUILDINGS[id], x, z, 0, 0, 0);
+  b.done = false;
+  b.progress = 0;
+  return b;
+};
+
+// Una obra normal avanza (ya no se queda en 0 %) y informa su estado.
+{
+  const sim = colony();
+  const b = site(sim, 'stockpile', 24, 12);
+  assert.equal(sim.siteInfo(b).state, 'waiting');
+  run(sim, 40);
+  assert.ok(b.progress > 0 || b.done, 'la obra avanza');
+}
+
+// Prioridad: la alta se construye antes que la baja cuando hay una sola mano libre.
+{
+  const sim = colony();
+  const low = site(sim, 'stockpile', 24, 12);
+  const high = site(sim, 'stockpile', -24, 12);
+  assert.equal(sim.setPriority(low, 'low'), true);
+  assert.equal(sim.setPriority(high, 'high'), true);
+  assert.equal(sim.setPriority(high, 'inventada'), false);
+  run(sim, 60);
+  assert.ok(high.progress > low.progress, `alta ${high.progress} > baja ${low.progress}`);
+}
+
+// Pausada: nadie la toca; reanudada, avanza.
+{
+  const sim = colony();
+  const b = site(sim, 'stockpile', 24, 12);
+  sim.pauseSite(b, true);
+  assert.equal(sim.siteInfo(b).state, 'paused');
+  run(sim, 40);
+  assert.equal(b.progress, 0);
+  sim.pauseSite(b, false);
+  run(sim, 40);
+  assert.ok(b.progress > 0 || b.done);
+}
+
+// Órdenes: se rechazan niños, soldados, obras terminadas; se cumplen aunque sea de noche
+// y al terminar la obra el colono vuelve a decidir solo.
+{
+  const sim = colony();
+  const b = site(sim, 'stockpile', 24, 12);
+  const adult = sim.colonists.find((c) => !c.soldier && (c.growth ?? 1) >= 1);
+  const child = { ...adult, id: 999, name: 'Peque', growth: 0.2, soldier: null };
+  assert.match(sim.orderColonist(child, 'build', b), /niño/);
+  const sold = { ...adult, id: 998, name: 'Guardia', soldier: { unit: 'club', tier: 0 } };
+  assert.match(sim.orderColonist(sold, 'build', b), /soldado/);
+  assert.match(sim.orderColonist(adult, 'harvest'), /marcados/);
+  assert.equal(sim.orderColonist(adult, 'build', b), null);
+  assert.deepEqual(adult.order, { kind: 'build', building: b.id });
+  run(sim, 30, true);
+  assert.ok(b.progress > 0, 'la orden se cumple de noche');
+  assert.ok(sim.siteInfo(b).ordered.includes(adult.id));
+  // Guardado y restauración conservan prioridad, pausa y orden.
+  sim.setPriority(b, 'high');
+  const saved = JSON.parse(JSON.stringify(sim.serialize()));
+  const again = colony();
+  assert.equal(again.restore(saved), true);
+  const b2 = again.buildings.find((o) => o.id === b.id);
+  assert.equal(b2.priority, 'high');
+  assert.equal(again.colonist(adult.id).order.building, b.id);
+  run(sim, 600);
+  assert.ok(b.done, 'termina');
+  assert.equal(adult.order, null, 'la orden termina con la obra');
+  assert.match(sim.orderColonist(adult, 'build', b), /terminada|existe/);
+}
+console.log('tasks.test ✓');
