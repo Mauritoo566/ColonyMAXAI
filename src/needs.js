@@ -102,7 +102,8 @@ function createSkills(genome, past, rand) {
     building: g('vigor') * 2 + g('agility') * 2 + g('stamina') * 1,
   };
   const skills = {};
-  for (const s of SKILLS) {
+  // Sólo las cinco habilidades originales salen del azar de la semilla (las demás se completan aparte).
+  for (const s of SKILLS.slice(0, 5)) {
     const value = base[s.id] + (past.skills[s.id] || 0) + rand() * 3;
     skills[s.id] = Math.max(1, Math.min(10, Math.round(value)));
   }

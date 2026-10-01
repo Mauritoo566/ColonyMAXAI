@@ -59,7 +59,7 @@ export const SERVICE_RULES = [
 // Habitantes que cubren los edificios de un servicio (la suma de su capacidad).
 export function serviceCoverage(colony, id) {
   let n = 0;
-  for (const b of colony.buildings) if (b.def.id === id && b.done) n += levelOf(b).population ?? 0;
+  for (const b of colony.buildings) if (b.def.id === id && b.done && (!colony.crewNeeded(b) || b.operating)) n += levelOf(b).population ?? 0;
   return n;
 }
 

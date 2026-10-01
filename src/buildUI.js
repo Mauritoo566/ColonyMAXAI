@@ -1,5 +1,7 @@
 import { BUILDING_TYPES, BUILD_CATEGORIES, STOCK_NAMES, levelOf } from './buildings.js';
-import { GOODS, BASE_GOODS } from './sim/goods.js';
+import { GOODS, BASE_GOODS, TRADE_VALUE } from './sim/goods.js';
+import { TECHS } from './sim/techs.js';
+import { tradeQuota, tradeValue } from './sim/economy.js';
 import { defImplemented, minAgeOf, levelBenefits } from './sim/progression.js';
 import { ageInfo } from './ages.js';
 import { FOOD_SPOIL_SECONDS, zoneCapacity } from './sim/colony.js';
@@ -40,7 +42,8 @@ function costHtml(def, stock) {
 }
 
 export class BuildUI {
-  constructor({ buildings, colony, harvest, onFocusColonist }) {
+  constructor({ buildings, colony, harvest, roads, onFocusColonist }) {
+    this.roads = roads;
     this.buildings = buildings;
     this.harvest = harvest;
     this.colony = colony;
@@ -80,6 +83,26 @@ export class BuildUI {
         <span class="build-name">Zona de acopio</span>
         <span class="build-cost"><span>Gratis</span></span>
       </button>`;
+    this.list.insertAdjacentHTML('beforeend', `
+      <button type="button" class="build-item" data-road data-cat="infrastructure" aria-pressed="false" title="Arrastra sobre el terreno para pintar caminos: se camina más rápido por ellos.">
+        <span class="build-icon">${icon('train')}</span>
+        <span class="build-name">Caminos</span>
+        <span class="build-cost" data-road-cost></span>
+        <span class="build-lock" hidden></span>
+      </button>
+      <button type="button" class="build-item" data-road-upgrade data-cat="infrastructure" aria-pressed="false" title="Mejora todos los caminos al tipo que permite la edad (se paga cada casilla).">
+        <span class="build-icon">${icon('hammer')}</span>
+        <span class="build-name">Mejorar caminos</span>
+        <span class="build-cost" data-road-upgrade-cost></span>
+        <span class="build-lock" hidden></span>
+      </button>`);
+    this.list.querySelector('[data-road]').addEventListener('click', () => {
+      if (buildings.placing) buildings.stopPlacing();
+      harvest.setActive(false);
+      roads.setActive(!roads.active);
+    });
+    this.list.querySelector('[data-road-upgrade]').addEventListener('click', () => colony.upgradeRoads());
+    roads.onChange = () => (this.timer = 0);
     this.list.querySelector('[data-zone]').addEventListener('click', () => {
       if (buildings.placing) buildings.stopPlacing();
       const on = !(harvest.active && harvest.mode === 'zone');
@@ -231,6 +254,22 @@ export class BuildUI {
       if (!off) counts[def.category] = (counts[def.category] ?? 0) + 1;
     }
     counts.storage = (counts.storage ?? 0) + 1; // la zona de acopio
+    const road = this.colony.roadInfo;
+    const roadOff = road.level <= 0 ? '1' : '0';
+    for (const el of this.list.querySelectorAll('[data-road], [data-road-upgrade]')) el.dataset.off = roadOff;
+    if (road.level > 0) counts.infrastructure = (counts.infrastructure ?? 0) + 2;
+    if (road.level > 0) {
+      const lv = road.levels[road.level - 1];
+      const costText = Object.entries(lv.cost).map(([k, n]) => `<span>${icon(k)}${n}/casilla</span>`).join('');
+      this.list.querySelector('[data-road-cost]').innerHTML = costText;
+      const roadBtn = this.list.querySelector('[data-road]');
+      roadBtn.setAttribute('aria-pressed', String(this.roads.active));
+      roadBtn.title = `${lv.name}: se camina ×${lv.speed}. Llevas ${road.count} de ${road.cap} casillas.${this.roads.message ? ` ${this.roads.message}.` : ''}`;
+      const stale = [...this.colony.roads.values()].filter((l) => l < road.level).length;
+      const up = this.list.querySelector('[data-road-upgrade]');
+      up.setAttribute('aria-disabled', String(stale === 0));
+      this.list.querySelector('[data-road-upgrade-cost]').innerHTML = stale ? Object.entries(lv.cost).map(([k, n]) => `<span>${icon(k)}${n * stale}</span>`).join('') : '<span>Al día</span>';
+    }
     for (const tab of this.tabs.children) {
       const n = counts[tab.dataset.cat] ?? 0;
       tab.hidden = n === 0;
@@ -420,7 +459,7 @@ export class BuildUI {
     const upgradeProblem = this.buildings.upgradeProblem(b);
     const stored = level.rainOnly ? Math.floor(b.store) : null;
     // Clave para no redibujar si nada cambió.
-    const key = [state, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, colony.age, Math.floor((b.cycle ?? 0) * 20), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [state, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -463,6 +502,7 @@ export class BuildUI {
         </section>`
       : '';
     const effectsHtml = !needed && !isHouse && !isStorage ? this.effectsHtml(b, level) : '';
+    const serviceHtml = b.done && !b.upgrading ? (def.id === 'market' ? this.marketHtml(b) : def.id === 'academy' ? this.researchHtml() : this.serviceNote(b, level)) : '';
     const levels = def.levels;
     const nextBenefits = next ? levelBenefits(def, level, next) : [];
     const upgradeHtml = def.autoLevel
@@ -511,7 +551,7 @@ export class BuildUI {
                   <div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.progress * 100)}%"></i></div>
                   <p class="reason">Los colonos construyen de día cuando tienen lo básico cubierto. Quien sabe más de construcción avanza más rápido. ${isHouse ? 'Al terminar, la colonia admitirá más colonos y quienes vivan aquí dormirán bajo techo.' : isStorage ? 'Al terminar, el almacén de la colonia podrá guardar más.' : needed ? `Al terminar, la colonia elegirá a las personas más capacitadas en ${skill.name.toLowerCase()} para trabajar aquí.` : 'Al terminar, entrará en servicio.'}</p>
                 </section>`
-              : `${isHouse ? this.houseHtml(b, level, next) : isStorage ? this.storageAddsHtml(level, next) : ''}${crewHtml}${effectsHtml}${upgradeHtml}`
+              : `${isHouse ? this.houseHtml(b, level, next) : isStorage ? this.storageAddsHtml(level, next) : ''}${crewHtml}${serviceHtml}${effectsHtml}${upgradeHtml}`
         }
         ${
           needed && b.done
@@ -543,6 +583,15 @@ export class BuildUI {
     for (const button of this.panel.querySelectorAll('[data-see-worker]')) {
       button.addEventListener('click', () => this.onFocusColonist?.(colony.colonist(Number(button.dataset.seeWorker))));
     }
+    for (const button of this.panel.querySelectorAll('[data-trade]')) {
+      button.addEventListener('click', () => {
+        const [good, mode, qty] = button.dataset.trade.split('|');
+        colony.trade(good, Number(qty), mode);
+      });
+    }
+    for (const button of this.panel.querySelectorAll('[data-research]')) {
+      button.addEventListener('click', () => colony.research(button.dataset.research));
+    }
     for (const button of this.panel.querySelectorAll('[data-release]')) {
       button.addEventListener('click', () => colony.releaseWorker(b, colony.colonist(Number(button.dataset.release))));
     }
@@ -552,6 +601,51 @@ export class BuildUI {
         this.buildings.setWorker(b, c);
       });
     }
+  }
+
+  // Mercado: cupo diario y compra/venta de bienes.
+  marketHtml(b) {
+    const colony = this.colony;
+    const quota = tradeQuota(colony);
+    const used = Math.floor(colony.tradeUsed ?? 0);
+    const rows = GOODS.filter((g) => TRADE_VALUE[g.id] != null && g.age <= colony.age && g.id !== 'coin' && ((colony.stock[g.id] ?? 0) > 0 || BASE_GOODS.includes(g.id) || (colony.produced?.[g.id] ?? 0) > 0)).map((g) => {
+      const v = TRADE_VALUE[g.id];
+      const qty = v < 4 ? 10 : v < 10 ? 5 : 2;
+      const sellP = colony.tradeProblem(g.id, qty, 'sell');
+      const buyP = colony.tradeProblem(g.id, qty, 'buy');
+      return `<li class="trade-row"><span>${icon(g.icon)}${g.name} <small>(${Math.floor(colony.stock[g.id] ?? 0)})</small></span>
+        <button type="button" data-trade="${g.id}|sell|${qty}" ${sellP ? 'disabled' : ''} title="${sellP ?? `Vender ${qty}: +${tradeValue(g.id, qty, 'sell')} monedas`}">Vender ${qty}</button>
+        <button type="button" data-trade="${g.id}|buy|${qty}" ${buyP ? 'disabled' : ''} title="${buyP ?? `Comprar ${qty}: −${tradeValue(g.id, qty, 'buy')} monedas`}">Comprar ${qty}</button></li>`;
+    });
+    return `<section class="cp-section"><h3>Comercio</h3>
+      <div class="stat-line"><span>Monedas</span><strong>${Math.floor(colony.stock.coin ?? 0)}</strong></div>
+      <div class="stat-line"><span>Cupo de hoy</span><strong>${used} / ${Math.floor(quota)}</strong></div>
+      <p class="reason">Se vende al 80 % y se compra al 125 % del valor. Sólo se comercia con lo que existe en tu edad; los requisitos de construcción no se saltan comprando.</p>
+      <ul class="trade-list">${rows.join('')}</ul></section>`;
+  }
+
+  // Academia: tecnologías que se pagan con conocimiento.
+  researchHtml() {
+    const colony = this.colony;
+    const rows = TECHS.filter((t) => t.age <= colony.age + 1).map((t) => {
+      const problem = colony.researchProblem(t.id);
+      const done = colony.techs.has(t.id);
+      return `<li class="trade-row"><span><strong>${t.name}</strong> <small>${done ? 'investigada' : `${t.cost} de conocimiento`}</small><br><small>${t.unlocks}</small></span>
+        ${done ? '<em>✓</em>' : `<button type="button" data-research="${t.id}" ${problem ? 'disabled' : ''} title="${problem ?? 'Investigar'}">Investigar</button>`}</li>`;
+    });
+    return `<section class="cp-section"><h3>Tecnologías</h3>
+      <div class="stat-line"><span>Conocimiento</span><strong>${Math.floor(colony.stock.knowledge ?? 0)}</strong></div>
+      <ul class="trade-list">${rows.join('')}</ul></section>`;
+  }
+
+  // Hospitales, escuelas y administración: si están funcionando y qué aportan.
+  serviceNote(b, level) {
+    if (!['hospital', 'school', 'admin'].includes(b.def.id)) return '';
+    const lines = [];
+    if (b.def.id === 'hospital') lines.push(['Atención', b.operating ? `activa (recuperación ×${(level.regen ?? 0).toFixed(1)})` : 'parada']);
+    if (b.def.id === 'school') lines.push(['Enseñanza', b.operating ? `activa (hasta nivel ${level.skillCap})` : 'parada']);
+    if (level.population) lines.push(['Cubre a', `${level.population} habitantes`]);
+    return `<section class="cp-section"><h3>Servicio</h3>${lines.map(([k, v]) => `<div class="stat-line"><span>${k}</span><strong>${v}</strong></div>`).join('')}</section>`;
   }
 
   // Efectos de los edificios sin trabajadores (defensas, cuarteles, postes...): lo que aportan.

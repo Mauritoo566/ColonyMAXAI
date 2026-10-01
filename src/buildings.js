@@ -4,6 +4,7 @@ import { pickSurface } from './camp.js';
 import { levelModel, frameMesh, material } from './buildingModels.js';
 import { BUILDINGS, levelOf } from './sim/buildingTypes.js';
 import { buildLevelFor } from './sim/progression.js';
+import { DEPOSIT_COLORS } from './sim/economy.js';
 
 // Vista y controles de los edificios. Los edificios en sí (obras, trabajadores, mejoras)
 // son de la simulación (sim/colony.js); aquí se dibujan con su modelo y su etiqueta, se
@@ -50,6 +51,10 @@ export class BuildingSystem {
     this.ghostRing.position.y = 0.3;
     this.ghost.visible = false;
     scene.add(this.ghost);
+    // Manchas de los yacimientos (sólo se ven al colocar una mina).
+    this.deposits = new THREE.Group();
+    this.deposits.visible = false;
+    scene.add(this.deposits);
 
     // Aro bajo el edificio elegido.
     this.selectRing = new THREE.Mesh(
@@ -158,7 +163,27 @@ export class BuildingSystem {
     this.ghostRing.scale.setScalar(r);
     this.ghost.add(this.ghostRing);
     this.canvas.classList.add('is-placing');
+    this.showDeposits(this.placing.deposit);
     this.onChange?.();
+  }
+
+  // Dibuja los yacimientos de un mineral sobre el suelo (null los oculta).
+  showDeposits(kind) {
+    for (const child of [...this.deposits.children]) {
+      this.deposits.remove(child);
+      child.geometry.dispose();
+      child.material.dispose();
+    }
+    this.deposits.visible = !!kind && !!this.sim.camp;
+    if (!this.deposits.visible) return;
+    this.deposits.position.copy(this.sim.camp.position);
+    this.deposits.quaternion.copy(this.sim.camp.quaternion);
+    for (const d of this.sim.deposits) {
+      if (d.kind !== kind) continue;
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(d.r, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: DEPOSIT_COLORS[kind], transparent: true, opacity: 0.6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+      disc.position.set(d.x, this.sim.heightAt(d.x, d.z) - this.sim.camp.height + 0.2, d.z);
+      this.deposits.add(disc);
+    }
   }
 
   stopPlacing() {
@@ -167,6 +192,7 @@ export class BuildingSystem {
     this.candidate = null;
     this.ghost.visible = false;
     this.canvas.classList.remove('is-placing');
+    this.showDeposits(null);
     this.onChange?.();
   }
 

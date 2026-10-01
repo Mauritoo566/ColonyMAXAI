@@ -2520,3 +2520,35 @@ canvas.is-harvesting {
   text-transform: uppercase;
   color: var(--ui-faint, #9aa3a8);
 }
+
+.trade-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.trade-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.trade-row button {
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--ui-line, rgba(255, 255, 255, 0.2));
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.trade-row button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

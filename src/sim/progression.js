@@ -15,7 +15,7 @@ import { DAY_LENGTH_SECONDS } from '../daynight.js';
 
 // ---- Qué está implementado -------------------------------------------------------------------
 // Lo que todavía no funciona no se ofrece ni se puede construir. Cada fase añade sus funciones.
-export const FEATURES = new Set(['gather', 'storage', 'house', 'well', 'crew']);
+export const FEATURES = new Set(['gather', 'storage', 'house', 'well', 'crew', 'process', 'power', 'energy', 'deposit', 'drop', 'market', 'admin', 'research', 'tech', 'service']);
 
 const KIND_FEATURE = { undefined: 'gather', process: 'process', power: 'power', node: 'power', drop: 'drop', market: 'market', admin: 'admin', research: 'research', service: 'service', military: 'military', defense: 'defense' };
 

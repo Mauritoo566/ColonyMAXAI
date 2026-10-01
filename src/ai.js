@@ -50,6 +50,8 @@ export function chooseTask(colony, c, env) {
     const bush = colony.nearestSpot('food', c.x, c.z, 200, env.gameTime);
     if (bush) add(base * distanceFactor(dist(c, bush)), { type: 'eat', source: 'bush', spot: bush });
     if (stock.food >= 1) add(base * distanceFactor(dist(c, storage)) * 1.05, { type: 'eat', source: 'stock' });
+    // El pan sacia más que cualquier otra cosa: se prefiere si hay.
+    if ((stock.bread ?? 0) >= 1) add(base * distanceFactor(dist(c, storage)) * 1.25, { type: 'eat', source: 'bread' });
   }
 
   // Beber: agua cercana, un pozo o el almacén.
@@ -186,6 +188,14 @@ export function runTask(colony, c, task, dt, env) {
         colony.consumeSpot(spot, env.gameTime);
         return 'done';
       }
+      if (task.source === 'bread') {
+        if ((stock.bread ?? 0) < 1) return 'failed';
+        if (!go(colony, c, task, colony.layout.storage, dt, 1.6)) return 'running';
+        if (!busy(task, dt, 5)) return 'running';
+        colony.takeStock('bread', 1);
+        n.food = Math.min(100, n.food + 80);
+        return 'done';
+      }
       if (stock.food < 1) return 'failed';
       if (!go(colony, c, task, colony.layout.storage, dt, 1.6)) return 'running';
       if (!busy(task, dt, 5)) return 'running';
@@ -318,6 +328,7 @@ function runWork(colony, c, task, dt, env) {
     b.status = `El almacén está lleno de ${STOCK_NAMES[def.stock]}: construye o mejora almacenes`;
     return busy(task, dt, 20) ? 'done' : 'running';
   }
+  if (def.kind) return runStation(colony, c, task, dt, env);
   if (def.id === 'well') {
     // Recolector de lluvia: el aguatero vacía las vasijas en el almacén (si hay agua).
     if (level.rainOnly && b.store < 1) {
@@ -396,6 +407,18 @@ function runWork(colony, c, task, dt, env) {
   return 'running';
 }
 
+// Talleres, minas, servicios y demás puestos: el trabajador va a su puesto y se queda allí; el
+// avance (ciclos, energía, materiales) lo lleva el edificio (sim/economy.js).
+function runStation(colony, c, task, dt, env) {
+  const b = task.building;
+  if (!b.done || c.job !== b || b.removed) return 'done';
+  if (!go(colony, c, task, edgeOf(b, c), dt, 0.9)) return 'running';
+  c.working = !!b.operating || !!b.cycleActive;
+  colony.faceTowards(c, b.x, b.z, dt);
+  b.crewAt.set(c.id, env.gameTime);
+  return 'running';
+}
+
 // Lo que da cada recurso natural recolectado a mano y cuánto se tarda.
 const HARVEST = {
   food: { skill: 'gathering', time: 9, verb: 'Recogiendo', noun: 'comida' },
@@ -453,6 +476,7 @@ export function taskActivity(colony, c, task) {
   const walking = c.walking;
   switch (task.type) {
     case 'eat':
+      if (task.source === 'bread') return walking ? 'Va a comer pan' : 'Comiendo pan';
       if (task.source === 'stock') return walking ? 'Va a comer de las provisiones' : 'Comiendo';
       return walking ? `Va a buscar ${task.spot.type === 'mushrooms' ? 'setas' : 'bayas'}` : `Comiendo ${task.spot.type === 'mushrooms' ? 'setas' : 'bayas'}`;
     case 'drink':
@@ -483,6 +507,7 @@ export function taskActivity(colony, c, task) {
     }
     case 'work': {
       const def = task.building.def;
+      if (def.kind) return task.building.status ?? (walking ? `Va a su puesto: ${task.building.name}` : `Trabajando en: ${task.building.name}`);
       if (task.storeFull) return 'Espera: el almacén está lleno';
       if (task.noResource) return def.id === 'well' ? 'Espera a que llueva' : def.noResourceText;
       if (def.id === 'well') {
@@ -505,7 +530,7 @@ export function taskActivity(colony, c, task) {
 export function taskLog(c, task) {
   switch (task.type) {
     case 'eat':
-      return task.source === 'stock' ? 'Fue a comer de las provisiones' : `Fue a buscar ${task.spot.type === 'mushrooms' ? 'setas' : 'bayas'}`;
+      return task.source === 'bread' ? 'Fue a comer pan' : task.source === 'stock' ? 'Fue a comer de las provisiones' : `Fue a buscar ${task.spot.type === 'mushrooms' ? 'setas' : 'bayas'}`;
     case 'drink':
       return task.source === 'water' ? 'Fue a beber agua' : task.source === 'well' ? 'Fue a beber al pozo' : 'Bebió de las vasijas';
     case 'sleep':

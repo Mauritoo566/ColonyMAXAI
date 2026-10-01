@@ -24,6 +24,7 @@ import { GROVE_KEY, SPROUT_KEY } from './resourceGen.js';
 import { OtherCamps } from './world.js';
 import { FlagUI } from './flagUI.js';
 import { VillageUI } from './villageUI.js';
+import { RoadSystem } from './roads.js';
 import { ensureIcons } from './icons.js';
 
 ensureIcons();
@@ -160,7 +161,8 @@ new FlagUI({
   search: document.getElementById('flag-search'),
   colony,
 });
-buildings.blockSelection = () => !!camps.placing || harvest.active;
+buildings.blockSelection = () => !!camps.placing || harvest.active || !!roadsRef?.active;
+let roadsRef = null;
 
 // Clima: el de la colonia (lo manda el servidor); sin campamento, uno inventado para el
 // lugar que se mira.
@@ -215,7 +217,10 @@ const colonyUI = new ColonyUI({
   canvas,
   isBlocked: () => !!camps.placing || !!buildings.placing || harvest.active,
 });
-const buildUI = new BuildUI({ buildings, colony, harvest, onFocusColonist: (c) => colonyUI.focusColonist(c) });
+const roads = new RoadSystem({ scene, camera, canvas, colony, controls });
+roadsRef = roads;
+controls.blockLeftDrag = () => harvest.active || roads.active;
+const buildUI = new BuildUI({ buildings, colony, harvest, roads, onFocusColonist: (c) => colonyUI.focusColonist(c) });
 // Sólo una ficha abierta a la vez.
 colonyUI.onOpen = () => buildings.select(null);
 buildUI.onOpen = () => colonyView.select(null);
@@ -516,6 +521,7 @@ renderer.setAnimationLoop(() => {
   ageUI.update(delta);
   villageUI.update(delta);
   harvest.update(waterUniforms.uTime.value, delta);
+  roads.update();
   others.update(delta);
   viewTimer -= delta;
   if (viewTimer <= 0 && lastView.angleTo(resourceFocus) * RADIUS > 500) {

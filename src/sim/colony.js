@@ -19,6 +19,8 @@ import { updateFamily, updateImmigration, immigrationBlocker, assignHomes, maxPo
 import { buildBlocker, upgradeBlocker, evolveHouses, buildCostOf, buildLevelFor, limitsFor, radiusOf, expansionBlocker, expansionCost, EXPANSION_STEP } from './progression.js';
 import { GOOD_NAMES } from './goods.js';
 import { centerProps } from './centerLayout.js';
+import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, roadCap, ROAD_LEVELS } from './economy.js';
+import { TECHS_BY_ID } from './techs.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
 // de acopio, recursos del entorno, edades y guardado. No dibuja nada ni toca la página:
@@ -35,7 +37,7 @@ export const START_STOCK = { food: 12, water: 12, wood: 45, stone: 20, fiber: 10
 // Lo que cabe en el almacén del campamento (las vasijas y cestas junto a la fogata).
 // Cada almacén construido suma su capacidad.
 export const CAMP_CAPACITY = { food: 40, water: 30, wood: 60, stone: 40, fiber: 30 };
-export const CAMP_OTHER_CAPACITY = 10; // de cada uno de los demás bienes, hasta que se construya almacén
+export const CAMP_OTHER_CAPACITY = 30; // de cada uno de los demás bienes, hasta que se construya almacén
 // Zona de acopio al aire libre (una sola, rectangular y del tamaño que se quiera): guarda
 // lo que no cabe bajo techo. Cabe más cuanto más grande es (unidades por m²), pero la
 // comida al aire libre se pudre.
@@ -119,6 +121,12 @@ export class ColonySim {
     this.flow = { in: {}, out: {} }; // lo que entra y sale del almacén en el tramo actual
     this.flowBuckets = []; // los últimos tramos (para producción y consumo por día)
     this.flowTimer = 0;
+    this.roads = new Map(); // caminos: casilla -> nivel
+    this.deposits = []; // yacimientos de mineral (de la semilla del campamento)
+    this.tradeUsed = 0; // comercio del día (valor en monedas) y qué día es
+    this.tradeDay = 0;
+    this.skillsRevision = 0;
+    this.grid = { supply: 0, demand: 0 };
     this.produced = {}; // bienes producidos en toda la partida (requisitos de las edades)
     this.techs = new Set(); // tecnologías investigadas
     this.expansions = 0; // ampliaciones de territorio compradas
@@ -217,6 +225,14 @@ export class ColonySim {
         });
         this.step(c, dt, env);
       }
+      // Talleres, servicios y energía avanzan en cada paso (así también cuentan al ponerse al día).
+      for (const b of this.buildings) if (b.done && b.def.kind) updateProduction(this, b, dt);
+      applyHospitals(this, dt);
+      this.powerTimer = (this.powerTimer ?? 0) - dt;
+      if (this.powerTimer <= 0) {
+        this.powerTimer = 1;
+        updatePower(this);
+      }
     }
   }
 
@@ -246,6 +262,11 @@ export class ColonySim {
     this.spots = [];
     this.clothesLeft = 0;
     this.age = 1;
+    this.roads = new Map();
+    this.deposits = [];
+    this.tradeUsed = 0;
+    this.tradeDay = 0;
+    this.grid = { supply: 0, demand: 0 };
     this.flow = { in: {}, out: {} };
     this.flowBuckets = [];
     this.flowTimer = 0;
@@ -275,6 +296,7 @@ export class ColonySim {
     };
     if (ownZone) this.campZone = addTerrainZone(campZone(dir, camp.height));
     this.loadResourceSpots();
+    this.deposits = generateDeposits(this, seededRandom);
     this.campTemperature = temperature(dir.x, dir.y, dir.z, elevation(dir.x, dir.y, dir.z));
     this.createColonists();
     this.clothesLeft = START_COLONISTS; // ropa en el suelo para todos
@@ -605,7 +627,7 @@ export class ColonySim {
     dx /= len;
     dz /= len;
 
-    const speed = WALK_SPEED * (0.85 + gene(c.genome, 'agility') * 0.3);
+    const speed = WALK_SPEED * (0.85 + gene(c.genome, 'agility') * 0.3) * roadSpeed(this, c.x, c.z);
     let nx = c.x + dx * Math.min(speed * dt, dist);
     let nz = c.z + dz * Math.min(speed * dt, dist);
     // Nunca dentro de un obstáculo: se empuja hasta su borde.
@@ -1220,6 +1242,7 @@ export class ColonySim {
   buildProblem(def, x, z) {
     const blocked = buildBlocker(this, def);
     if (blocked) return blocked;
+    if (def.deposit && !depositAt(this, def.deposit, x, z)) return `Aquí no hay yacimiento de ${GOOD_NAMES[def.deposit]}: busca las manchas del color del mineral`;
     const cost = buildCostOf(def, this.age);
     if (!this.canAfford(cost)) return `Faltan ${this.missing(cost).join(' y ')}`;
     const radius = radiusOf(this);
@@ -1305,6 +1328,12 @@ export class ColonySim {
       },
       reason: '',
       status: null,
+      cycle: 0, // avance del ciclo de producción (0 a 1)
+      cycleActive: false,
+      crewAt: new Map(), // cuándo estuvo cada trabajador en su puesto
+      pf: 1, // factor de energía (0 a 1)
+      operating: false,
+      burning: false,
       zone,
       finish: (builder) => this.finishBuilding(b, builder),
     };
@@ -1471,7 +1500,93 @@ export class ColonySim {
       this.assignTimer = ASSIGN_EVERY;
       for (const b of this.buildings) this.assignWorker(b);
       assignHomes(this);
+      const day = Math.floor(this.gameTime / DAY_LENGTH_SECONDS);
+      if (day !== this.lastTrainDay) {
+        this.lastTrainDay = day;
+        trainColonists(this);
+      }
     }
+  }
+
+  // ---- Comercio, investigación y caminos (órdenes del jugador) -----------------------------
+
+  tradeProblem(good, qty, mode) {
+    return tradeProblem(this, good, qty, mode);
+  }
+
+  trade(good, qty, mode) {
+    if (tradeProblem(this, good, qty, mode)) return false;
+    if (this.remote) {
+      this.remote('trade', [good, qty, mode]);
+      return true;
+    }
+    doTrade(this, good, qty, mode);
+    this.emit('changed');
+    return true;
+  }
+
+  researchProblem(id) {
+    return researchProblem(this, id);
+  }
+
+  research(id) {
+    if (researchProblem(this, id)) return false;
+    if (this.remote) {
+      this.remote('research', [id]);
+      return true;
+    }
+    this.takeStock('knowledge', TECHS_BY_ID[id].cost);
+    this.techs.add(id);
+    this.emit('notice', `Tecnología investigada: ${TECHS_BY_ID[id].name}`);
+    this.emit('changed');
+    return true;
+  }
+
+  // Pintar caminos: lista de casillas [ix, iz]; se paga cada casilla nueva con el nivel de la edad.
+  paintRoads(cells) {
+    const clean = Array.isArray(cells) ? cells.filter((c) => Array.isArray(c) && Number.isInteger(c[0]) && Number.isInteger(c[1]) && Math.abs(c[0]) < 200 && Math.abs(c[1]) < 200 && !roadCellProblem(this, c[0], c[1])) : [];
+    if (!clean.length) return false;
+    const level = roadLevelFor(this.age);
+    const problem = roadsProblem(this, clean);
+    if (problem) return false;
+    if (this.remote) {
+      this.remote('paintRoads', [clean]);
+      return true;
+    }
+    const fresh = clean.filter(([ix, iz]) => (this.roads.get(roadKey(ix, iz)) ?? 0) < level);
+    for (const [k, n] of Object.entries(roadCost(level, fresh.length))) this.takeStock(k, n);
+    for (const [ix, iz] of fresh) this.roads.set(roadKey(ix, iz), level);
+    this.staticsRevision++;
+    this.emit('roads');
+    this.emit('changed');
+    return true;
+  }
+
+  roadProblem(cells) {
+    return roadsProblem(this, cells);
+  }
+
+  // Mejorar todos los caminos al nivel que permite la edad (se paga cada casilla).
+  upgradeRoads() {
+    const level = roadLevelFor(this.age);
+    const old = [...this.roads].filter(([, lv]) => lv < level);
+    if (!old.length) return false;
+    const cost = roadCost(level, old.length);
+    if (!this.canAfford(cost)) return false;
+    if (this.remote) {
+      this.remote('upgradeRoads', []);
+      return true;
+    }
+    for (const [k, n] of Object.entries(cost)) this.takeStock(k, n);
+    for (const [key] of old) this.roads.set(key, level);
+    this.staticsRevision++;
+    this.emit('roads');
+    this.emit('changed');
+    return true;
+  }
+
+  get roadInfo() {
+    return { level: roadLevelFor(this.age), cap: roadCap(this.age), count: this.roads.size, levels: ROAD_LEVELS };
   }
 
   refreshObstacles() {
@@ -1503,6 +1618,9 @@ export class ColonySim {
         techs: [...this.techs],
         expansions: this.expansions,
         ageChangedAt: this.ageChangedAt,
+        tradeUsed: this.tradeUsed,
+        tradeDay: this.tradeDay,
+        roads: [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]),
         colonists: this.colonists.map((c) => ({
           id: c.id,
           needs: c.needs,
@@ -1545,6 +1663,8 @@ export class ColonySim {
         store: b.store,
         worker: b.worker ? b.worker.id : null,
         workers: b.workers.map((w) => w.id),
+        cycle: b.cycle,
+        cycleActive: b.cycleActive,
       })),
     };
   }
@@ -1559,6 +1679,8 @@ export class ColonySim {
       const level = Math.min(def.levels.length, Math.max(1, s.level || 1));
       const b = this.createBuilding(def, s.x, s.z, s.yaw, s.upgrading ? 1 : s.progress, s.produced || 0, level, s.id);
       b.store = s.store || 0;
+      b.cycle = Number.isFinite(s.cycle) ? s.cycle : 0;
+      b.cycleActive = !!s.cycleActive;
       if (s.upgrading && levelOf(b, 1)) {
         b.upgrading = true;
         b.done = false;
@@ -1622,6 +1744,14 @@ export class ColonySim {
         return this.advanceAge();
       case 'expandTerritory':
         return this.expandTerritory();
+      case 'trade':
+        return typeof args[0] === 'string' && this.trade(args[0], args[1], args[2]);
+      case 'research':
+        return typeof args[0] === 'string' && this.research(args[0]);
+      case 'paintRoads':
+        return this.paintRoads(args[0]);
+      case 'upgradeRoads':
+        return this.upgradeRoads();
       case 'setFlag': {
         if (typeof args[0] !== 'string' || !FLAG_IDS.has(args[0])) return false;
         this.flag = args[0];
@@ -1672,6 +1802,10 @@ export class ColonySim {
       expansions: this.expansions,
       ageChangedAt: this.ageChangedAt,
       flows: this.flowRates(),
+      tradeUsed: Math.round(this.tradeUsed),
+      tradeDay: this.tradeDay,
+      grid: this.grid,
+      roads: statics ? [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]) : undefined,
       growthBlocker: this.growthBlocker,
       immigrationBlocker: this.immigrationBlocker,
       maxPopulation: this.maxPopulation,
@@ -1690,6 +1824,7 @@ export class ColonySim {
         clothed: c.clothed,
         activity: c.activity,
         job: c.job?.id ?? null,
+        sk: SKILLS.map((s) => Math.min(35, this.skillOf(c, s.id)).toString(36)).join(''),
         growth: Math.round(c.growth * 1000) / 1000,
         desire: Math.round(c.desire),
         mate: c.mate,
@@ -1715,6 +1850,9 @@ export class ColonySim {
         store: r2(b.store),
         produced: Math.floor(b.produced),
         workers: b.workers.map((w) => w.id),
+        cycle: r2(b.cycle),
+        pf: r2(b.pf),
+        op: b.operating,
         reason: b.reason,
         status: b.status,
       })),
@@ -1760,6 +1898,7 @@ export class ColonySim {
       c.health = row.health;
       c.log = row.log;
       c.activity = row.activity;
+      if (row.sk) SKILLS.forEach((sk, i) => (c.skills[sk.id] = parseInt(row.sk[i], 36) || c.skills[sk.id]));
       c.growth = row.growth ?? 1;
       c.desire = row.desire ?? 0;
       c.mate = row.mate ?? null;
@@ -1782,6 +1921,15 @@ export class ColonySim {
     if (s.age !== this.age) this.setAge(s.age);
     if (s.produced) this.produced = { ...s.produced };
     if (s.flows) this.flowsView = s.flows;
+    if (Number.isFinite(s.tradeUsed)) {
+      this.tradeUsed = s.tradeUsed;
+      this.tradeDay = s.tradeDay;
+    }
+    if (s.grid) this.grid = s.grid;
+    if (s.roads) {
+      this.roads = new Map(s.roads.map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
+      this.emit('roads');
+    }
     this.growthBlockerView = s.growthBlocker ?? null;
     this.immigrationBlockerView = s.immigrationBlocker ?? null;
     if (s.techs) this.techs = new Set(s.techs);
@@ -1821,6 +1969,9 @@ export class ColonySim {
         produced: row.produced,
         reason: row.reason,
         status: row.status,
+        cycle: row.cycle ?? 0,
+        pf: row.pf ?? 1,
+        operating: !!row.op,
       });
       if (row.buildTime) b.buildTime = row.buildTime;
       const crew = (row.workers ?? []).map((id) => this.colonist(id)).filter(Boolean);
@@ -1881,6 +2032,9 @@ export class ColonySim {
     this.techs = new Set(Array.isArray(data.techs) ? data.techs.filter((t) => typeof t === 'string') : []);
     this.expansions = Number.isInteger(data.expansions) ? Math.max(0, data.expansions) : 0;
     this.ageChangedAt = Number.isFinite(data.ageChangedAt) ? data.ageChangedAt : 0;
+    this.tradeUsed = Number.isFinite(data.tradeUsed) ? data.tradeUsed : 0;
+    this.tradeDay = Number.isFinite(data.tradeDay) ? data.tradeDay : 0;
+    this.roads = new Map((Array.isArray(data.roads) ? data.roads : []).filter((r) => r.length === 3).map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
     // Partidas anteriores a la ropa: queda una prenda por cada colono sin vestir.
     const naked = (data.colonists || []).filter((s) => !s.clothed).length;
     this.clothesLeft = Number.isFinite(data.clothesLeft) ? data.clothesLeft : naked;
