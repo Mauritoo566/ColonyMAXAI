@@ -21,6 +21,8 @@ import { GOOD_NAMES } from './goods.js';
 import { centerProps } from './centerLayout.js';
 import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, roadCap, ROAD_LEVELS } from './economy.js';
 import { TECHS_BY_ID } from './techs.js';
+import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
+import { UNITS_BY_ID } from './units.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
 // de acopio, recursos del entorno, edades y guardado. No dibuja nada ni toca la página:
@@ -122,6 +124,8 @@ export class ColonySim {
     this.flowBuckets = []; // los últimos tramos (para producción y consumo por día)
     this.flowTimer = 0;
     this.roads = new Map(); // caminos: casilla -> nivel
+    this.armyUnpaid = false; // las tropas no cobran el mantenimiento: rinden la mitad
+    this.nextRaidDay = null;
     this.deposits = []; // yacimientos de mineral (de la semilla del campamento)
     this.tradeUsed = 0; // comercio del día (valor en monedas) y qué día es
     this.tradeDay = 0;
@@ -262,6 +266,8 @@ export class ColonySim {
     this.spots = [];
     this.clothesLeft = 0;
     this.age = 1;
+    this.armyUnpaid = false;
+    this.nextRaidDay = null;
     this.roads = new Map();
     this.deposits = [];
     this.tradeUsed = 0;
@@ -368,6 +374,7 @@ export class ColonySim {
         home: null,
         born: null,
         arrived: null,
+        soldier: null,
         inside: false,
         loving: false,
         invite: null,
@@ -418,6 +425,7 @@ export class ColonySim {
       activity: 'Descansando un momento',
       clothed: !!dyn.clothed,
       growth,
+      soldier: dyn.soldier ?? null,
       desire: dyn.desire ?? 0,
       mate: dyn.mate ?? null,
       pregnant: dyn.pregnant ?? null,
@@ -1504,6 +1512,8 @@ export class ColonySim {
       if (day !== this.lastTrainDay) {
         this.lastTrainDay = day;
         trainColonists(this);
+        payUpkeep(this);
+        dailyRaid(this, day);
       }
     }
   }
@@ -1585,6 +1595,51 @@ export class ColonySim {
     return true;
   }
 
+  // ---- Ejército (órdenes del jugador; la lógica está en sim/military.js) -----------------------
+
+  recruitProblem(unitId) {
+    return recruitProblem(this, unitId);
+  }
+
+  recruit(unitId) {
+    if (recruitProblem(this, unitId)) return false;
+    if (this.remote) {
+      this.remote('recruit', [unitId]);
+      return true;
+    }
+    return !!recruit(this, unitId);
+  }
+
+  dismiss(c) {
+    if (!c?.soldier) return false;
+    if (this.remote) {
+      this.remote('dismiss', [c.id]);
+      return true;
+    }
+    return dismiss(this, c);
+  }
+
+  soldierUpgradeProblem(c) {
+    return soldierUpgradeProblem(this, c);
+  }
+
+  upgradeSoldier(c) {
+    if (soldierUpgradeProblem(this, c)) return false;
+    if (this.remote) {
+      this.remote('upgradeSoldier', [c.id]);
+      return true;
+    }
+    return upgradeSoldier(this, c);
+  }
+
+  get armyReport() {
+    return armyReport(this);
+  }
+
+  get militaryPower() {
+    return militaryPower(this);
+  }
+
   get roadInfo() {
     return { level: roadLevelFor(this.age), cap: roadCap(this.age), count: this.roads.size, levels: ROAD_LEVELS };
   }
@@ -1620,6 +1675,8 @@ export class ColonySim {
         ageChangedAt: this.ageChangedAt,
         tradeUsed: this.tradeUsed,
         tradeDay: this.tradeDay,
+        nextRaidDay: this.nextRaidDay,
+        armyUnpaid: this.armyUnpaid,
         roads: [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]),
         colonists: this.colonists.map((c) => ({
           id: c.id,
@@ -1638,6 +1695,7 @@ export class ColonySim {
           pregnant: c.pregnant,
           home: c.home,
           age: c.age,
+          soldier: c.soldier,
           static: c.id >= START_COLONISTS ? this.staticOf(c) : undefined, // los nacidos o llegados no salen de la semilla
         })),
         regrowing: this.spots.filter((s) => s.readyAt > this.gameTime).map((s) => [s.key, s.index, s.readyAt]),
@@ -1752,6 +1810,12 @@ export class ColonySim {
         return this.paintRoads(args[0]);
       case 'upgradeRoads':
         return this.upgradeRoads();
+      case 'recruit':
+        return typeof args[0] === 'string' && this.recruit(args[0]);
+      case 'dismiss':
+        return this.dismiss(this.colonist(args[0]));
+      case 'upgradeSoldier':
+        return this.upgradeSoldier(this.colonist(args[0]));
       case 'setFlag': {
         if (typeof args[0] !== 'string' || !FLAG_IDS.has(args[0])) return false;
         this.flag = args[0];
@@ -1804,6 +1868,7 @@ export class ColonySim {
       flows: this.flowRates(),
       tradeUsed: Math.round(this.tradeUsed),
       tradeDay: this.tradeDay,
+      armyUnpaid: this.armyUnpaid,
       grid: this.grid,
       roads: statics ? [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]) : undefined,
       growthBlocker: this.growthBlocker,
@@ -1831,6 +1896,7 @@ export class ColonySim {
         pregnant: c.pregnant?.due ?? null,
         home: c.home,
         age: c.age,
+        sd: c.soldier ? c.soldier.unit : null,
         x: r2(c.x),
         z: r2(c.z),
         facing: r2(c.facing),
@@ -1904,6 +1970,7 @@ export class ColonySim {
       c.mate = row.mate ?? null;
       c.pregnant = row.pregnant != null ? { due: row.pregnant } : null;
       c.home = row.home ?? null;
+      c.soldier = row.sd && UNITS_BY_ID[row.sd] ? { unit: row.sd, tier: UNITS_BY_ID[row.sd].age } : null;
       if (row.age != null) c.age = row.age;
     }
     if (part === 'fast') return;
@@ -1926,6 +1993,7 @@ export class ColonySim {
       this.tradeDay = s.tradeDay;
     }
     if (s.grid) this.grid = s.grid;
+    this.armyUnpaid = !!s.armyUnpaid;
     if (s.roads) {
       this.roads = new Map(s.roads.map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
       this.emit('roads');
@@ -2034,6 +2102,8 @@ export class ColonySim {
     this.ageChangedAt = Number.isFinite(data.ageChangedAt) ? data.ageChangedAt : 0;
     this.tradeUsed = Number.isFinite(data.tradeUsed) ? data.tradeUsed : 0;
     this.tradeDay = Number.isFinite(data.tradeDay) ? data.tradeDay : 0;
+    this.nextRaidDay = Number.isFinite(data.nextRaidDay) ? data.nextRaidDay : null;
+    this.armyUnpaid = !!data.armyUnpaid;
     this.roads = new Map((Array.isArray(data.roads) ? data.roads : []).filter((r) => r.length === 3).map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
     // Partidas anteriores a la ropa: queda una prenda por cada colono sin vestir.
     const naked = (data.colonists || []).filter((s) => !s.clothed).length;
@@ -2052,6 +2122,7 @@ export class ColonySim {
       c.mate = saved.mate ?? null;
       c.pregnant = saved.pregnant && Number.isFinite(saved.pregnant.due) ? saved.pregnant : null;
       c.home = saved.home ?? null;
+      c.soldier = saved.soldier && UNITS_BY_ID[saved.soldier.unit] ? { unit: saved.soldier.unit, tier: saved.soldier.tier ?? UNITS_BY_ID[saved.soldier.unit].age } : null;
       if (Number.isFinite(saved.age)) c.age = saved.age;
       Object.assign(c.needs, saved.needs);
       c.health = saved.health ?? c.health;

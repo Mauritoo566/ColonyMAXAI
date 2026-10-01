@@ -21,6 +21,7 @@ export class VillageUI {
     this.timer = 0;
     this.key = '';
     button.addEventListener('click', () => this.toggle());
+    this.onOpen = null;
     panel.addEventListener('click', (e) => {
       if (e.target.closest('[data-close]')) this.toggle(false);
       if (e.target.closest('[data-expand]')) this.colony.expandTerritory();

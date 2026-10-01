@@ -24,6 +24,7 @@ import { GROVE_KEY, SPROUT_KEY } from './resourceGen.js';
 import { OtherCamps } from './world.js';
 import { FlagUI } from './flagUI.js';
 import { VillageUI } from './villageUI.js';
+import { MilitaryUI } from './militaryUI.js';
 import { RoadSystem } from './roads.js';
 import { ensureIcons } from './icons.js';
 
@@ -151,7 +152,10 @@ colony.on('resources', () => {
   resources.setExtraTile(GROVE_KEY, colony.groveTile);
   resources.setExtraTile(SPROUT_KEY, colony.sproutTile);
 });
+const militaryUI = new MilitaryUI({ colony, button: document.getElementById('military-button'), panel: document.getElementById('military-panel') });
+militaryUI.onOpen = () => villageUI.toggle(false);
 const villageUI = new VillageUI({ colony, button: document.getElementById('village-button'), panel: document.getElementById('village-panel') });
+villageUI.onOpen = () => militaryUI.toggle(false);
 colony.on('flag', () => camps.setFlag(colony.flag));
 new FlagUI({
   button: document.getElementById('flag-button'),
@@ -520,6 +524,7 @@ renderer.setAnimationLoop(() => {
   buildUI.update(delta);
   ageUI.update(delta);
   villageUI.update(delta);
+  militaryUI.update(delta);
   harvest.update(waterUniforms.uTime.value, delta);
   roads.update();
   others.update(delta);

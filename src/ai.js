@@ -97,9 +97,12 @@ export function chooseTask(colony, c, env) {
   // Estar con alguien (ganas, invitaciones): sólo los adultos, y a su manera.
   loveOptions(colony, c, env, add);
 
+  // Los soldados montan guardia en torno a sus puestos (cuarteles, torres, fuertes) o al campamento.
+  if (c.soldier && !env.isNight) add(0.3, { type: 'guard', phase: 'going' });
+
   // Trabajo: construir obras y trabajar en su edificio, de día y con lo básico cubierto
-  // (los niños no trabajan: juegan, comen y duermen).
-  if (!env.isNight && !isChild(c)) {
+  // (los niños no trabajan: juegan, comen y duermen; los soldados montan guardia).
+  if (!env.isNight && !isChild(c) && !c.soldier) {
     const diligence = hasTrait(c, 'hardworking') ? 1.3 : hasTrait(c, 'lazy') ? 0.6 : 1;
     const fine = Math.min(n.food, n.water, n.rest, n.warmth) > 30 ? 1 : 0.4;
     for (const b of colony.buildings) {
@@ -279,6 +282,21 @@ export function runTask(colony, c, task, dt, env) {
 
     case 'love':
       return runLove(colony, c, task, dt, env, go);
+
+    case 'guard': {
+      if (!task.spot) {
+        const posts = colony.buildings.filter((b) => b.done && (b.def.category === 'military' || b.def.category === 'defense'));
+        const post = posts.length ? posts[Math.floor(c.rand() * posts.length)] : null;
+        const a = c.rand() * Math.PI * 2;
+        const base = post ?? { x: 0, z: 0, def: { footprint: 14 } };
+        const r = (post ? post.def.footprint : 14) + 1.5 + c.rand() * 3;
+        task.spot = { x: base.x + Math.cos(a) * r, z: base.z + Math.sin(a) * r };
+        if (!colony.walkable(task.spot.x, task.spot.z, 0.8)) return 'failed';
+      }
+      if (!go(colony, c, task, task.spot, dt, 0.8)) return 'running';
+      colony.faceTowards(c, task.spot.x * 2, task.spot.z * 2, dt);
+      return busy(task, dt, 18 + c.rand() * 10) ? 'done' : 'running';
+    }
 
     case 'work':
       return runWork(colony, c, task, dt, env);
@@ -490,6 +508,8 @@ export function taskActivity(colony, c, task) {
       if (task.phase === 'asking') return walking ? `Va a buscar a ${task.partner.name}` : `Le propone a ${task.partner.name} estar juntos`;
       if (task.phase === 'waiting') return `Espera la respuesta de ${task.partner.name}`;
       return walking ? `Va a casa con ${task.partner.name}` : `Espera a ${task.partner.name} en la puerta`;
+    case 'guard':
+      return walking ? 'Va a su puesto de guardia' : 'Montando guardia';
     case 'warm':
       return walking ? 'Va a calentarse al fuego' : 'Calentándose junto al fuego';
     case 'dress':

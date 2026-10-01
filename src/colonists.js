@@ -150,6 +150,10 @@ function dressModel(object, look, clothed, outfit) {
   }
   if (outfit.cape) accessories.add(box(0.5, 0.75, 0.04, outfit.cape, 0, 1.05, -0.17));
   if (outfit.collar) accessories.add(box(0.36, 0.08, 0.3, outfit.collar, 0, 1.52, 0));
+  if (outfit.weapon === 'spear') accessories.add(box(0.04, 1.9, 0.04, '#9a7446', 0.42, 0.95, 0.12));
+  if (outfit.weapon === 'sword') accessories.add(box(0.05, 0.75, 0.03, '#c6ced6', 0.42, 0.85, 0.15));
+  if (outfit.weapon === 'bow') accessories.add(box(0.04, 0.9, 0.06, '#8a5a34', 0.42, 1.0, 0.12));
+  if (outfit.weapon === 'rifle') accessories.add(box(0.06, 0.06, 0.95, '#3a3a40', 0.38, 1.0, 0.3));
 }
 
 // Sombreros y cascos sobre la cabeza (centro en y = 1,7).

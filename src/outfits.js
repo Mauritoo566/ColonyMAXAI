@@ -56,6 +56,18 @@ function soldierWear(age, tier = age) {
   return { shirt: steel, hat: { kind: 'helmet', color: tier >= 9 ? '#4a5a48' : steel }, cape: tier >= 5 && tier < 8 ? '#a8452d' : null };
 }
 
+import { UNITS_BY_ID } from './sim/units.js';
+
+// Arma que lleva un soldado según su unidad.
+function weaponFor(c) {
+  const u = UNITS_BY_ID[c.soldier?.unit];
+  if (!u) return null;
+  if (u.role === 'infantry') return u.age <= 4 ? 'spear' : u.age <= 7 ? 'sword' : 'rifle';
+  if (u.role === 'ranged') return u.age <= 7 ? 'bow' : 'rifle';
+  if (u.role === 'cavalry') return 'sword';
+  return null;
+}
+
 // Descriptor de la ropa: { shirt, pants, hat, apron, cape, coat, collar, key }.
 export function outfitFor(age, c) {
   const base = AGE_WEAR[Math.min(10, Math.max(1, age))];
@@ -69,8 +81,9 @@ export function outfitFor(age, c) {
     cape: trade?.cape !== undefined ? trade.cape : base.cape ?? null,
     coat: trade?.coat ?? null,
     collar: base.collar ?? null,
+    weapon: c.soldier ? weaponFor(c) : null,
   };
-  out.key = `${age}|${skill ?? ''}|${c.soldier ? 's' + (c.soldier.tier ?? '') : ''}`;
+  out.key = `${age}|${skill ?? ''}|${c.soldier ? 's' + (c.soldier.unit ?? '') : ''}`;
   return out;
 }
 
