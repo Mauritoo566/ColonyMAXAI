@@ -451,7 +451,7 @@ export class ColonyView {
   }
 }
 
-// Tótem de la tribu (llega con la Edad Tribal), junto a la fogata.
+// Tótem de la tribu (llega con la Edad de Piedra), junto a la fogata.
 let totemMaterial = null;
 
 function totemMesh() {

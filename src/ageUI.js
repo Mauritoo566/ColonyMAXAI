@@ -1,4 +1,4 @@
-import { AGES, ageInfo, nextAgeStatus } from './ages.js';
+import { AGES, AGE_HOOKS, ageInfo, nextAgeStatus } from './ages.js';
 import { STOCK_NAMES } from './buildings.js';
 import { unlockTable, limitsFor } from './sim/progression.js';
 
@@ -94,24 +94,23 @@ export class AgeUI {
     const rows = unlockTable();
     const lim = limitsFor(colony.age);
     const list = AGES.map((a) => {
-      const cls = a.n < colony.age ? 'is-past' : a.n === colony.age ? 'is-now' : a.soon ? 'is-soon' : '';
-      const tag = a.n < colony.age ? 'Superada' : a.n === colony.age ? 'Actual' : a.soon ? 'Próximamente' : '';
+      const reach = a.n <= colony.age || AGE_HOOKS.reachable(a);
+      const cls = a.n < colony.age ? 'is-past' : a.n === colony.age ? 'is-now' : reach ? '' : 'is-soon';
+      const tag = a.n < colony.age ? 'Superada' : a.n === colony.age ? 'Actual' : a.future ? 'Opcional' : reach ? '' : 'Próximamente';
+      const mine = rows.filter((r) => r.age === a.n);
+      const detail = !reach
+        ? `<p class="reason" style="margin:4px 0 0">${a.future ? 'Extensión opcional: la arquitectura está preparada pero la edad aún no se puede alcanzar.' : 'Aún no disponible en el juego.'}</p>`
+        : a.n < colony.age
+          ? ''
+          : `<p class="reason" style="margin:4px 0 2px"><strong>Cambia sola:</strong> ${a.auto}</p>
+             <ul class="age-rows">${mine.map((r) => `<li><strong>${r.name}</strong><span>${r.text}</span></li>`).join('')}</ul>`;
       return `
         <li class="age-item ${cls}">
           <span class="age-medal">${a.numeral}</span>
           <div>
             <h3>${a.name}${tag ? `<small>${tag}</small>` : ''}</h3>
-            <p>${a.desc}</p>
-            ${
-              a.soon
-                ? `<p class="reason" style="margin:4px 0 0">Aún no disponible. Planeado: ${a.unlocks.join(', ')}.</p>`
-                : a.n < colony.age
-                  ? ''
-                  : `<ul class="age-rows">${rows
-                      .filter((r) => r.age === a.n)
-                      .map((r) => `<li><strong>${r.name}</strong><span>${r.text}</span></li>`)
-                      .join('')}</ul>`
-            }
+            <p>${a.theme} · ${a.desc}</p>
+            ${detail}
           </div>
         </li>`;
     }).join('');
@@ -149,7 +148,7 @@ export class AgeUI {
         </div>
         <button type="button" class="icon-button" data-close aria-label="Cerrar">${icon('close')}</button>
       </div>
-      <p class="reason age-limits">Ahora puedes: territorio de <strong>${lim.radius} m</strong>, hasta <strong>${lim.houses}</strong> viviendas y <strong>${lim.perType}</strong> edificios de cada tipo; los edificios llegan hasta el nivel <strong>${ageInfo(colony.age).numeral}</strong>.</p>
+      <p class="reason age-limits">Ahora puedes: territorio de <strong>${colony.territoryRadius} m</strong> (hasta ${lim.expansions} ampliaciones), hasta <strong>${lim.houses}</strong> viviendas, <strong>${lim.perType}</strong> edificios de cada tipo y <strong>${lim.popCap}</strong> habitantes.</p>
       <ol class="age-list">${list}</ol>
       ${req}`;
     this.panel.querySelector('[data-close]').addEventListener('click', () => this.toggle(false));

@@ -71,7 +71,7 @@ function quarryModel2(p) {
   p.add(new THREE.BoxGeometry(0.5, 0.12, 0.08), '#6d6d70', mat(2.42, 1.22, 1.93, 0, 0, 0.4));
 }
 
-// Pozo simple (Edad Tribal): anillo de piedras sueltas, travesaño y cubo de cuero.
+// Pozo simple (Edad de Piedra): anillo de piedras sueltas, travesaño y cubo de cuero.
 function wellModel2(p) {
   for (let k = 0; k < 11; k++) {
     const a = (k / 11) * Math.PI * 2;

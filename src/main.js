@@ -23,6 +23,9 @@ import { setStorageUser } from './storage.js';
 import { GROVE_KEY, SPROUT_KEY } from './resourceGen.js';
 import { OtherCamps } from './world.js';
 import { FlagUI } from './flagUI.js';
+import { ensureIcons } from './icons.js';
+
+ensureIcons();
 
 // Antes de nada: conectar con el servidor e iniciar sesión (o registrarse). El mundo vive
 // en el servidor: simula todas las colonias; este navegador las dibuja y le manda las

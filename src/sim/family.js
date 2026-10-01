@@ -7,13 +7,14 @@
 
 import { DAY_LENGTH_SECONDS } from '../daynight.js';
 import { levelOf } from './buildingTypes.js';
+import { BASE_POPULATION, limitsFor } from './progression.js';
 import { createChildProfile, wellbeing, hasTrait, addLog } from '../needs.js';
 import { appearanceFromGenes } from '../genes.js';
 import { pickName } from './names.js';
 
 const DAY = DAY_LENGTH_SECONDS;
 
-export const BASE_MAX_POPULATION = 10; // lo que admite el campamento solo
+export const BASE_MAX_POPULATION = BASE_POPULATION; // lo que admite el campamento solo
 export const CHILD_SECONDS = 3 * DAY; // un niño tarda tres días en ser adulto
 export const PREGNANCY_SECONDS = 1.2 * DAY;
 export const LOVE_SECONDS = 30; // lo que pasan juntos dentro de la casa
@@ -28,13 +29,14 @@ export const isAdult = (c) => !isChild(c);
 // ---- Viviendas y población máxima -------------------------------------------------------
 
 // Una vivienda sirve mientras está terminada o en mejora (conserva su nivel anterior).
-const usable = (b) => b.def.id === 'house' && (b.done || b.upgrading);
+const usable = (b) => b.def.levels[0].housing != null && (b.done || b.upgrading);
 
 // Máximo de colonos: el campamento admite 10 y cada vivienda terminada suma lo suyo.
 export function maxPopulation(colony) {
   let max = BASE_MAX_POPULATION;
-  for (const b of colony.buildings) if (usable(b)) max += levelOf(b).housing;
-  return max;
+  for (const b of colony.buildings) if (usable(b)) max += levelOf(b).housing ?? 0;
+  // Techo de población de la edad (rendimiento y equilibrio).
+  return Math.min(max, limitsFor(colony.age).popCap);
 }
 
 export function pregnantCount(colony) {

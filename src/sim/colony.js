@@ -10,12 +10,14 @@ import { RESOURCE_TYPES } from '../resourceTypes.js';
 import { TILE_ANGLE, generateTile, generateCampGrove, GROVE_KEY, SPROUT_KEY, sproutItem, tileFromItems } from '../resourceGen.js';
 import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, taskKey } from '../ai.js';
 import { campLayout, campObstacles, campZone } from './campLayout.js';
-import { BUILDINGS, levelOf, STOCK_NAMES } from './buildingTypes.js';
+import { BUILDINGS, levelOf } from './buildingTypes.js';
+const STOCK_NAMES = GOOD_NAMES;
 import { WeatherState } from './weather.js';
 import { pickName } from './names.js';
 import { FLAG_IDS, DEFAULT_FLAG } from '../flags.js';
 import { updateFamily, assignHomes, maxPopulation, growthBlocker } from './family.js';
-import { buildBlocker, upgradeBlocker, evolveHouses, buildCostOf, buildLevelFor, limitsFor } from './progression.js';
+import { buildBlocker, upgradeBlocker, evolveHouses, buildCostOf, buildLevelFor, limitsFor, radiusOf, expansionBlocker, expansionCost, EXPANSION_STEP } from './progression.js';
+import { GOOD_NAMES } from './goods.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
 // de acopio, recursos del entorno, edades y guardado. No dibuja nada ni toca la página:
@@ -32,20 +34,21 @@ export const START_STOCK = { food: 12, water: 12, wood: 45, stone: 20, fiber: 10
 // Lo que cabe en el almacén del campamento (las vasijas y cestas junto a la fogata).
 // Cada almacén construido suma su capacidad.
 export const CAMP_CAPACITY = { food: 40, water: 30, wood: 60, stone: 40, fiber: 30 };
+export const CAMP_OTHER_CAPACITY = 10; // de cada uno de los demás bienes, hasta que se construya almacén
 // Zona de acopio al aire libre (una sola, rectangular y del tamaño que se quiera): guarda
 // lo que no cabe bajo techo. Cabe más cuanto más grande es (unidades por m²), pero la
 // comida al aire libre se pudre.
 export const ZONE_PER_M2 = 1.5;
 export const MIN_ZONE_SIDE = 2; // metros: más chico no tiene sentido
 export const FOOD_SPOIL_SECONDS = 1.5 * DAY_LENGTH_SECONDS; // día y medio de juego
-export const SAVE_VERSION = 2; // 2: además guarda colonos, recursos agotados y el reloj
+export const SAVE_VERSION = 3; // 2: además guarda colonos, recursos agotados y el reloj; 3: bienes, tecnologías, territorio
 export const BUILD_MAX_DISTANCE = 75; // metros desde la fogata donde se puede construir en la primera edad (ver progression.js)
 
 // Lugares fijos del campamento (coordenadas locales).
 // Al fundar el campamento hay ropa en el suelo para todos; cada colono va a buscar la
 // suya cuando tiene frío. Sin ropa se enfrían mucho más.
 export const CLOTHES_SPOT = { x: Math.cos(0.55) * 7.2, z: Math.sin(0.55) * 7.2 };
-// Tótem de la tribu (llega con la Edad Tribal), junto a la fogata.
+// Tótem de la tribu (llega con la Edad de Piedra), junto a la fogata.
 export const TOTEM_SPOT = { x: Math.cos(4.6) * 7, z: Math.sin(4.6) * 7 };
 
 const WALK_SPEED = 1.4; // m/s
@@ -112,6 +115,10 @@ export class ColonySim {
     this.sproutTimer = 0;
     this.assignTimer = 0;
     this.clothesLeft = 0;
+    this.produced = {}; // bienes producidos en toda la partida (requisitos de las edades)
+    this.techs = new Set(); // tecnologías investigadas
+    this.expansions = 0; // ampliaciones de territorio compradas
+    this.ageChangedAt = 0; // hora de juego del último cambio de edad (transición suave)
     this.flag = DEFAULT_FLAG; // bandera del mástil (flags.js)
     this.nextColonistId = START_COLONISTS;
     this.staticsRevision = 0; // sube con cada nacimiento (el servidor manda entonces los datos fijos)
@@ -228,6 +235,10 @@ export class ColonySim {
     this.spots = [];
     this.clothesLeft = 0;
     this.age = 1;
+    this.produced = {};
+    this.techs = new Set();
+    this.expansions = 0;
+    this.ageChangedAt = 0;
     this.flag = DEFAULT_FLAG;
     this.nextColonistId = START_COLONISTS;
     this.staticsRevision = 0;
@@ -738,10 +749,11 @@ export class ColonySim {
   // Cuánto cabe de un recurso: el almacén del campamento más los almacenes construidos
   // (mientras se mejora, un almacén sigue guardando lo de su nivel actual).
   capacity(kind) {
-    let cap = CAMP_CAPACITY[kind] ?? Infinity;
+    let cap = CAMP_CAPACITY[kind] ?? CAMP_OTHER_CAPACITY;
     for (const b of this.buildings) {
-      if (b.def.id !== 'stockpile' || (!b.done && !b.upgrading)) continue;
-      cap += b.def.levels[b.level - 1].capacity[kind] ?? 0;
+      if (!b.def.levels[0].capacity || (!b.done && !b.upgrading)) continue;
+      const lv = b.def.levels[b.level - 1];
+      cap += lv.capacity[kind] ?? lv.other ?? 0;
     }
     return cap;
   }
@@ -771,7 +783,7 @@ export class ColonySim {
   // Lo más lleno del almacén bajo techo (0–1), para la etiqueta.
   storeFill() {
     let fill = 0;
-    for (const k of Object.keys(STOCK_NAMES)) fill = Math.max(fill, Math.min(1, this.indoor(k) / this.capacity(k)));
+    for (const k of Object.keys(this.stock)) if ((this.stock[k] ?? 0) > 0 || CAMP_CAPACITY[k]) fill = Math.max(fill, Math.min(1, this.indoor(k) / this.capacity(k)));
     return fill;
   }
 
@@ -786,6 +798,14 @@ export class ColonySim {
       if (kind === 'food') this.foodBatches.push({ amount: outside, expires: this.gameTime + FOOD_SPOIL_SECONDS });
     }
     return inside + outside;
+  }
+
+  // Guarda lo producido por un edificio o una tarea y lo anota en los totales de la partida
+  // (las edades piden haber producido ciertos bienes; lo comprado no cuenta).
+  produce(kind, amount) {
+    const added = this.addStock(kind, amount);
+    this.produced[kind] = (this.produced[kind] ?? 0) + added;
+    return added;
   }
 
   // Saca del almacén: primero lo que está al aire libre (y la comida más vieja).
@@ -908,6 +928,7 @@ export class ColonySim {
     const time = this.timeLabel();
     for (const [k, n] of Object.entries(status.next.requires.cost)) this.takeStock(k, n);
     this.setAge(status.next.n);
+    this.ageChangedAt = this.gameTime;
     // Las viviendas evolucionan solas (mismo sitio, sin pagar); el resto se mejora a mano.
     const evolved = evolveHouses(this);
     if (evolved) {
@@ -926,6 +947,36 @@ export class ColonySim {
     this.age = age;
     this.refreshObstacles();
     this.emit('age', age);
+  }
+
+  // Radio del territorio de la aldea (metros desde la fogata).
+  get territoryRadius() {
+    return radiusOf(this);
+  }
+
+  // Por qué no se puede ampliar el territorio (o null) y su coste.
+  get expansionBlocker() {
+    return expansionBlocker(this);
+  }
+
+  get expansionCost() {
+    return expansionCost(this);
+  }
+
+  // Comprar una ampliación de territorio: más radio donde construir. El servidor comprueba que
+  // no pise el de otro jugador (claimProblem).
+  expandTerritory() {
+    if (expansionBlocker(this)) return false;
+    if (this.remote) {
+      this.remote('expandTerritory', []);
+      return true;
+    }
+    for (const [k, n] of Object.entries(expansionCost(this))) this.takeStock(k, n);
+    this.expansions++;
+    this.emit('territory', radiusOf(this));
+    this.emit('notice', `El territorio de la aldea llega ahora a ${radiusOf(this)} m`);
+    this.emit('changed');
+    return true;
   }
 
   // Coste de construir un tipo hoy (la vivienda de edades avanzadas cuesta más).
@@ -1114,8 +1165,8 @@ export class ColonySim {
     if (blocked) return blocked;
     const cost = buildCostOf(def, this.age);
     if (!this.canAfford(cost)) return `Faltan ${this.missing(cost).join(' y ')}`;
-    const radius = limitsFor(this.age).radius;
-    if (Math.hypot(x, z) > radius) return `Fuera del territorio de la aldea (${radius} m en la ${ageInfo(this.age).name}; se amplía al avanzar de edad)`;
+    const radius = radiusOf(this);
+    if (Math.hypot(x, z) > radius) return `Fuera del territorio de la aldea (${radius} m; se amplía con la edad y comprando territorio)`;
     const r = def.footprint;
     for (const o of this.obstacles) {
       if (Math.hypot(x - o.x, z - o.z) < o.r + r + 0.8) return 'Choca con otra construcción';
@@ -1347,6 +1398,10 @@ export class ColonySim {
         age: this.age,
         clothesLeft: this.clothesLeft,
         flag: this.flag,
+        produced: this.produced,
+        techs: [...this.techs],
+        expansions: this.expansions,
+        ageChangedAt: this.ageChangedAt,
         colonists: this.colonists.map((c) => ({
           id: c.id,
           needs: c.needs,
@@ -1454,6 +1509,8 @@ export class ColonySim {
       }
       case 'advanceAge':
         return this.advanceAge();
+      case 'expandTerritory':
+        return this.expandTerritory();
       case 'setFlag': {
         if (typeof args[0] !== 'string' || !FLAG_IDS.has(args[0])) return false;
         this.flag = args[0];
@@ -1499,6 +1556,10 @@ export class ColonySim {
       age: this.age,
       clothesLeft: this.clothesLeft,
       flag: this.flag,
+      produced: this.produced,
+      techs: [...this.techs],
+      expansions: this.expansions,
+      ageChangedAt: this.ageChangedAt,
       maxPopulation: this.maxPopulation,
       born: statics ? this.colonists.filter((c) => c.born).map((c) => ({ ...this.staticOf(c), x: r2(c.x), z: r2(c.z) })) : undefined,
       stock: this.stock,
@@ -1605,6 +1666,13 @@ export class ColonySim {
       this.emit('zones');
     }
     if (s.age !== this.age) this.setAge(s.age);
+    if (s.produced) this.produced = { ...s.produced };
+    if (s.techs) this.techs = new Set(s.techs);
+    if (Number.isInteger(s.expansions) && s.expansions !== this.expansions) {
+      this.expansions = s.expansions;
+      this.emit('territory', radiusOf(this));
+    }
+    if (Number.isFinite(s.ageChangedAt)) this.ageChangedAt = s.ageChangedAt;
     if (s.flag && s.flag !== this.flag) {
       this.flag = s.flag;
       this.emit('flag', this.flag);
@@ -1692,6 +1760,10 @@ export class ColonySim {
     this.spoiled = data.spoiled || 0;
     this.setAge(Math.min(AGES.length, Math.max(1, data.age || 1)));
     this.flag = FLAG_IDS.has(data.flag) ? data.flag : DEFAULT_FLAG;
+    this.produced = data.produced && typeof data.produced === 'object' ? { ...data.produced } : {};
+    this.techs = new Set(Array.isArray(data.techs) ? data.techs.filter((t) => typeof t === 'string') : []);
+    this.expansions = Number.isInteger(data.expansions) ? Math.max(0, data.expansions) : 0;
+    this.ageChangedAt = Number.isFinite(data.ageChangedAt) ? data.ageChangedAt : 0;
     // Partidas anteriores a la ropa: queda una prenda por cada colono sin vestir.
     const naked = (data.colonists || []).filter((s) => !s.clothed).length;
     this.clothesLeft = Number.isFinite(data.clothesLeft) ? data.clothesLeft : naked;

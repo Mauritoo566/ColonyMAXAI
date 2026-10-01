@@ -29,7 +29,7 @@ let sim = colony();
 assert.match(sim.buildProblem(BUILDINGS.house, 22, 10), /leñador|zona de tala|Zona de tala/i);
 const wood = place(sim, 'woodcutter', 0);
 assert.equal(sim.buildProblem(BUILDINGS.house, 22, -8), null, 'con un leñador ya se puede');
-assert.match(sim.upgradeProblem(wood), /Edad Tribal/);
+assert.match(sim.upgradeProblem(wood), /Edad de Piedra/);
 assert.equal(sim.upgradeProblem(wood) && sim.upgrade(wood), false);
 console.log('✓ edificios previos y mejoras bloqueadas por la edad');
 
@@ -39,8 +39,8 @@ assert.match(sim.buildProblem(BUILDINGS.woodcutter, -24, 12), /Límite de la Eda
 for (let k = 0; k < LIMITS[0].houses; k++) place(sim, 'house', 2 + k);
 assert.match(sim.buildProblem(BUILDINGS.house, 30, 0), /Límite de la Edad Primitiva: 3/);
 assert.match(sim.buildProblem(BUILDINGS.quarry, 80, 0), /Fuera del territorio/);
-assert.equal(maxPopulation(sim), 10 + 3 * 2);
-console.log('✓ límites de edificios y territorio de la edad I; tres viviendas = 16 plazas');
+assert.equal(maxPopulation(sim), 14, "10 + 3 viviendas = 16, pero la edad I admite 14");
+console.log('✓ límites de edificios y territorio de la edad I; tope de población 14');
 
 // Avanzar de edad: requisitos (no sólo materiales), cobra una vez y evoluciona las viviendas.
 assert.equal(nextAgeStatus(sim).ready, false);

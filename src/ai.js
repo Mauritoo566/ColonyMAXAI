@@ -340,7 +340,7 @@ function runWork(colony, c, task, dt, env) {
       // Con lluvia el pozo se llena solo: rinde hasta el doble.
       water = level.yield * (1 + (colony.weather?.rain ?? 0));
     }
-    water = colony.addStock('water', water);
+    water = colony.produce('water', water);
     b.produced += water;
     b.status = null;
     return 'done';
@@ -387,8 +387,8 @@ function runWork(colony, c, task, dt, env) {
     task.drop ??= colony.goesOutdoor(def.stock) && colony.zones.length ? colony.dropPoint(def.stock) : edgeOf(b, c);
     if (!go(colony, c, task, task.drop, dt, task.drop.r ? task.drop.r * 0.6 : 0.9)) return 'running';
     const amount = task.spot.scavenge ? def.scavenge.yield : level.yield;
-    const added = colony.addStock(def.stock, amount);
-    for (const [k, n] of Object.entries(def.extra || {})) colony.addStock(k, n);
+    const added = colony.produce(def.stock, amount);
+    for (const [k, n] of Object.entries(def.extra || {})) colony.produce(k, n);
     b.produced += added;
     if (!task.spot.scavenge) b.status = null;
     return 'done';
@@ -432,7 +432,7 @@ function runHarvest(colony, c, task, dt, env) {
     // Si bajo techo ya no cabe, lo deja en la zona de acopio al aire libre.
     task.drop ??= colony.dropPoint(spot.kind);
     if (!go(colony, c, task, task.drop, dt, task.drop.r ? task.drop.r * 0.6 : 1.6)) return 'running';
-    for (const [k, n] of Object.entries(task.load)) colony.addStock(k, n);
+    for (const [k, n] of Object.entries(task.load)) colony.produce(k, n);
     return 'done';
   }
   return 'running';

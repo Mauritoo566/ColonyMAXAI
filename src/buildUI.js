@@ -1,4 +1,6 @@
 import { BUILDING_TYPES, BUILD_CATEGORIES, STOCK_NAMES, levelOf } from './buildings.js';
+import { GOODS, BASE_GOODS } from './sim/goods.js';
+import { defImplemented, minAgeOf } from './sim/progression.js';
 import { AGES, ageInfo } from './ages.js';
 import { FOOD_SPOIL_SECONDS, zoneCapacity } from './sim/colony.js';
 import { storageKey } from './storage.js';
@@ -11,13 +13,11 @@ import { SKILLS } from './needs.js';
 // y la ficha de cada edificio (obra, trabajador asignado y candidatos).
 
 const REFRESH_SECONDS = 0.25;
-const STOCK = [
-  { id: 'food', icon: 'food', color: 'var(--food)' },
-  { id: 'water', icon: 'water', color: 'var(--water)' },
-  { id: 'wood', icon: 'wood', color: '#c08a52' },
-  { id: 'stone', icon: 'stone', color: '#a8a39a' },
-  { id: 'fiber', icon: 'fiber', color: '#b5c46a' },
-];
+// Bienes que se muestran: los cinco básicos y los demás que ya existen en la edad actual y la
+// colonia ha tenido o producido (así no se llena la pantalla con lo que aún no importa).
+function visibleGoods(colony) {
+  return GOODS.filter((g) => BASE_GOODS.includes(g.id) || (g.age <= colony.age && ((colony.stock[g.id] ?? 0) > 0 || (colony.produced?.[g.id] ?? 0) > 0)));
+}
 
 function icon(id) {
   return `<svg class="icon" aria-hidden="true"><use href="#i-${id}" /></svg>`;
@@ -52,9 +52,7 @@ export class BuildUI {
     this.stock = $('stock');
     this.panel = $('building-panel');
 
-    this.stock.innerHTML = STOCK.map(
-      (s) => `<li data-stock="${s.id}" style="--res:${s.color}" title="${STOCK_NAMES[s.id]}">${icon(s.icon)}<span>0</span></li>`,
-    ).join('');
+    this.stockKey = '';
 
     // Pestañas por categoría; la lista muestra sólo los edificios de la elegida.
     this.tabs = $('build-tabs');
@@ -81,13 +79,7 @@ export class BuildUI {
         <span class="build-icon">${icon('stone')}</span>
         <span class="build-name">Zona de acopio</span>
         <span class="build-cost"><span>Gratis</span></span>
-      </button>` + BUILD_CATEGORIES.filter((cat) => !BUILDING_TYPES.some((d) => d.category === cat.id)).map(
-      (cat) => `
-      <div class="build-soon" data-cat="${cat.id}">
-        <span class="build-icon">${icon(cat.icon)}</span>
-        <span><strong>Próximamente</strong>${cat.soon}</span>
-      </div>`,
-    ).join('');
+      </button>`;
     this.list.querySelector('[data-zone]').addEventListener('click', () => {
       if (buildings.placing) buildings.stopPlacing();
       const on = !(harvest.active && harvest.mode === 'zone');
@@ -191,7 +183,7 @@ export class BuildUI {
     this.collapsed = !id;
     if (id) this.tab = id;
     for (const tab of this.tabs.children) tab.setAttribute('aria-selected', String(!this.collapsed && tab.dataset.cat === this.tab));
-    for (const item of this.list.children) item.hidden = item.dataset.cat !== this.tab;
+    for (const item of this.list.children) item.hidden = item.dataset.cat !== this.tab || item.dataset.off === '1';
     this.list.hidden = this.collapsed;
     this.bar.classList.toggle('is-collapsed', this.collapsed);
     try {
@@ -213,6 +205,12 @@ export class BuildUI {
       return;
     }
     const stock = this.colony.stock;
+    const shown = visibleGoods(this.colony);
+    const stockKey = shown.map((g) => g.id).join();
+    if (stockKey !== this.stockKey) {
+      this.stockKey = stockKey;
+      this.stock.innerHTML = shown.map((g) => `<li data-stock="${g.id}" style="--res:${g.color}" title="${g.name}">${icon(g.icon)}<span>0</span></li>`).join('');
+    }
     for (const li of this.stock.children) {
       const v = Math.floor(stock[li.dataset.stock]);
       const cap = this.colony.capacity(li.dataset.stock);
@@ -221,6 +219,29 @@ export class BuildUI {
       const out = Math.floor(this.colony.outdoor[li.dataset.stock] ?? 0);
       li.classList.toggle('is-full', this.colony.isFull(li.dataset.stock));
       li.title = `${STOCK_NAMES[li.dataset.stock]}: ${v - out} de ${cap} en el almacén${out ? ` + ${out} al aire libre` : ''}`;
+    }
+    // Sólo se ofrece lo de la edad actual (y lo que ya existe en el juego): lo futuro se ve en
+    // el panel de edades, con su edad y requisitos.
+    const age = this.colony.age;
+    const counts = {};
+    for (const button of this.list.querySelectorAll('[data-build]')) {
+      const def = BUILDING_TYPES.find((d) => d.id === button.dataset.build);
+      const off = !(defImplemented(def) && minAgeOf(def) <= age);
+      button.dataset.off = off ? '1' : '0';
+      if (!off) counts[def.category] = (counts[def.category] ?? 0) + 1;
+    }
+    counts.storage = (counts.storage ?? 0) + 1; // la zona de acopio
+    for (const tab of this.tabs.children) {
+      const n = counts[tab.dataset.cat] ?? 0;
+      tab.hidden = n === 0;
+      const badge = tab.querySelector('.build-tab-count');
+      if (badge && badge.textContent !== String(n)) badge.textContent = String(n);
+    }
+    if ((counts[this.tab] ?? 0) === 0 && !this.collapsed) {
+      const first = [...this.tabs.children].find((t) => !t.hidden);
+      if (first) this.setTab(first.dataset.cat, false);
+    } else {
+      for (const item of this.list.children) item.hidden = item.dataset.cat !== this.tab || item.dataset.off === '1' || this.collapsed;
     }
     for (const button of this.list.querySelectorAll('[data-build]')) {
       const def = BUILDING_TYPES.find((d) => d.id === button.dataset.build);
@@ -250,7 +271,7 @@ export class BuildUI {
   // Filas "recurso: guardado / capacidad" con barra.
   stockRowsHtml() {
     const colony = this.colony;
-    return STOCK.map((r) => {
+    return visibleGoods(colony).map((r) => {
       const have = Math.max(0, Math.floor(colony.indoor(r.id)));
       const out = Math.floor(colony.outdoor[r.id] ?? 0);
       const cap = colony.capacity(r.id);
@@ -272,7 +293,7 @@ export class BuildUI {
     const used = colony.outdoorUsed();
     const next = colony.foodBatches[0];
     const hoursLeft = next ? Math.max(0, ((next.expires - colony.gameTime) / DAY_SECONDS) * 24) : 0;
-    const items = STOCK.filter((r) => (colony.outdoor[r.id] ?? 0) >= 1)
+    const items = visibleGoods(colony).filter((r) => (colony.outdoor[r.id] ?? 0) >= 1)
       .map((r) => `<span style="--res:${r.color}">${icon(r.icon)}${Math.floor(colony.outdoor[r.id])}</span>`)
       .join('');
     return `<section class="cp-section">
@@ -307,11 +328,11 @@ export class BuildUI {
 
   // Lo que suma un almacén construido (y lo que sumará mejorado).
   storageAddsHtml(level, next) {
-    const list = (cap) => STOCK.map((r) => `<span style="--res:${r.color}">${icon(r.icon)}+${cap[r.id] ?? 0}</span>`).join('');
+    const list = (cap, other) => GOODS.filter((r) => BASE_GOODS.includes(r.id)).map((r) => `<span style="--res:${r.color}">${icon(r.icon)}+${cap[r.id] ?? 0}</span>`).join('') + (other ? `<span title="Cada uno de los demás bienes">${icon('block')}+${other} c/u</span>` : '');
     return `<section class="cp-section">
         <h3>Amplía el almacén</h3>
-        <div class="store-adds">${list(level.capacity)}</div>
-        ${next ? `<p class="reason">Mejorado a ${next.name}: <span class="store-adds store-adds--inline">${list(next.capacity)}</span></p>` : ''}
+        <div class="store-adds">${list(level.capacity, level.other)}</div>
+        ${next ? `<p class="reason">Mejorado a ${next.name}: <span class="store-adds store-adds--inline">${list(next.capacity, next.other)}</span></p>` : ''}
       </section>
       <section class="cp-section">
         <h3>Almacén de la colonia</h3>
@@ -322,7 +343,7 @@ export class BuildUI {
   renderStore(b) {
     const colony = this.colony;
     const piles = this.buildings.list.filter((o) => o.def.id === 'stockpile' && (o.done || o.upgrading)).length;
-    const key = ['store', piles, JSON.stringify(STOCK.map((r) => [Math.floor(colony.stock[r.id] ?? 0), colony.capacity(r.id), Math.floor(colony.outdoor[r.id] ?? 0)])), JSON.stringify(colony.zones), Math.floor(colony.spoiled), Math.floor(((colony.foodBatches[0]?.expires ?? 0) - colony.gameTime) / 15)].join('|');
+    const key = ['store', piles, JSON.stringify(visibleGoods(colony).map((r) => [r.id, Math.floor(colony.stock[r.id] ?? 0), colony.capacity(r.id), Math.floor(colony.outdoor[r.id] ?? 0)])), JSON.stringify(colony.zones), Math.floor(colony.spoiled), Math.floor(((colony.foodBatches[0]?.expires ?? 0) - colony.gameTime) / 15)].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
     this.panel.innerHTML = `
