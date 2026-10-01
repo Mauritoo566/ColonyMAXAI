@@ -221,7 +221,10 @@ export function chooseTask(colony, c, env) {
       add(score - b.id * 1e-5, { type: 'build', building: b });
     }
     const job = c.job;
-    if (job && job.done) add(0.34 * diligence * fine, { type: 'work', building: job, phase: 'start' });
+    // Con el almacén lleno de lo que produce su puesto, no se queda parado esperando: hace otra cosa
+    // (obras, recolectar, pasear) y vuelve cuando haya sitio.
+    const full = job?.def.stock && colony.isFull(job.def.stock);
+    if (job && job.done && !full) add(0.34 * diligence * fine, { type: 'work', building: job, phase: 'start' });
     // Recolectar lo que el jugador marcó: es una orden, así que va antes que el trabajo
     // fijo y las obras (las necesidades urgentes siguen primero). La distancia pesa poco.
     const marked = colony.nearestMarked(c.x, c.z, env.gameTime);

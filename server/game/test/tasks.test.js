@@ -131,4 +131,15 @@ const site = (sim, id, x, z) => {
   assert.equal(r.adults.length, 3);
   assert.equal(r.children.length, 1);
 }
+// Almacén lleno: quien produce ese bien no se queda parado esperando; hace otra cosa.
+{
+  const sim = colony();
+  const b = sim.createBuilding(BUILDINGS.gatherer, 22, 10, 0, 1, 0);
+  const w = sim.colonists.find((c) => !c.soldier && (c.growth ?? 1) >= 1);
+  sim.setWorker(b, w);
+  sim.isFull = (k) => k === b.def.stock;
+  const other = site(sim, 'stockpile', -24, 12);
+  run(sim, 40);
+  assert.ok(other.progress > 0 || other.done, 'ayuda en la obra en vez de esperar');
+}
 console.log('tasks.test ✓');
