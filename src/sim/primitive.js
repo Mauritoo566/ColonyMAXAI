@@ -81,9 +81,9 @@ export function foodReport(colony) {
 
 export const NATURAL = {
   food: { name: 'Comida silvestre', where: 'Arbustos de bayas y setas, alrededor del campamento.', order: 'Herramienta «Recolectar» (filtro Comida): arrastra sobre la zona.', use: 'Alimenta a los colonos.' },
-  wood: { name: 'Ramas y madera', where: 'Ramas y troncos caídos por el bosque.', order: 'Herramienta «Recolectar» (filtro Madera).', use: 'Refugios, almacén, acopio y construcciones básicas. No hace falta hacha.' },
+  wood: { name: 'Palos y ramas', where: 'Palos y ramas caídos en el suelo, sobre todo cerca de los árboles. Los árboles en pie no se talan hasta la Edad de Piedra.', order: 'Herramienta «Recolectar» (filtro Madera): arrastra sobre la zona. Cada montón da 2 de madera y 1 de fibra.', use: 'Refugios, almacén, acopio y construcciones básicas. No hace falta hacha.' },
   stone: { name: 'Piedras sueltas', where: 'Piedras del terreno (sin picar cantera).', order: 'Herramienta «Recolectar» (filtro Piedra).', use: 'Construcciones básicas y descubrir la primera herramienta. No hace falta pico.' },
-  fiber: { name: 'Fibras', where: 'No hay plantas de fibra aparte: llega junto con otra cosa. Cada arbusto de bayas y cada árbol que se recoge da 1 (las setas y las piedras, no); las enramadas de recolección también la traen.', order: 'No se marca por separado: recoge bayas (filtro Comida) o madera (filtro Madera) y la fibra viene incluida.', use: 'Ataduras, refugios, recipientes y casi toda construcción.' },
+  fiber: { name: 'Fibras', where: 'No hay plantas de fibra aparte: llega junto con otra cosa. Cada arbusto de bayas y cada montón de palos que se recoge da 1 (las setas y las piedras, no); las enramadas de recolección también la traen.', order: 'No se marca por separado: recoge bayas (filtro Comida) o palos (filtro Madera) y la fibra viene incluida.', use: 'Ataduras, refugios, recipientes y casi toda construcción.' },
   water: { name: 'Agua', where: 'Se capta en el recolector de lluvia (no hace falta un río).', order: 'Los colonos beben solos del recolector; un aguatero lleva el agua al almacén.', use: 'Beber y mantener reservas. Sin lluvia, el recolector sólo junta rocío.' },
 };
 
@@ -93,7 +93,7 @@ export function remainingOf(colony, kind) {
   let marked = 0;
   let waiting = 0;
   for (const s of colony.spots) {
-    if (s.kind !== kind || s.gone) continue;
+    if (s.kind !== kind || s.gone || (colony.usable && !colony.usable(s))) continue;
     left++;
     if (s.marked) marked++;
     if (s.readyAt > colony.gameTime) waiting++;

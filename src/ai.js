@@ -565,7 +565,7 @@ const HARVEST = {
   wood: { skill: 'woodcutting', time: 16, verb: 'Recogiendo ramas y leña', noun: 'madera' },
   stone: { skill: 'mining', time: 16, verb: 'Recogiendo piedras sueltas', noun: 'piedra' },
 };
-const HARVEST_YIELD = { berryBush: { food: 3, fiber: 1 }, mushrooms: { food: 2 }, stone: { stone: 3 }, flint: { stone: 2 } };
+const HARVEST_YIELD = { berryBush: { food: 3, fiber: 1 }, mushrooms: { food: 2 }, sticks: { wood: 2, fiber: 1 }, stone: { stone: 3 }, flint: { stone: 2 } };
 
 function harvestYield(spot) {
   return HARVEST_YIELD[spot.type] ?? (spot.kind === 'wood' ? { wood: 4, fiber: 1 } : { [spot.kind]: 1 });
@@ -586,7 +586,7 @@ function runHarvest(colony, c, task, dt, env) {
     c.working = true;
     colony.faceTowards(c, spot.x, spot.z, dt);
     const skill = c.skills[info.skill] / 10;
-    if (!busy(task, dt, info.time * (1.4 - skill * 0.7))) return 'running';
+    if (!busy(task, dt, (spot.stick ? 8 : info.time) * (1.4 - skill * 0.7))) return 'running';
     task.load = harvestYield(spot);
     colony.consumeSpot(spot, env.gameTime);
     task.phase = 'returning';
@@ -644,8 +644,8 @@ export function taskActivity(colony, c, task) {
       return walking ? `Va a construir: ${task.building.name}` : `Construyendo: ${task.building.name}`;
     case 'harvest': {
       const info = HARVEST[task.spot.kind];
-      if (task.phase === 'going') return `Va a recolectar ${info.noun} marcada`;
-      if (task.phase === 'gathering') return info.verb;
+      if (task.phase === 'going') return task.spot.stick ? 'Va a recoger palos y ramas marcados' : `Va a recolectar ${info.noun} marcada`;
+      if (task.phase === 'gathering') return task.spot.tree ? 'Talando un árbol' : task.spot.stick ? 'Recogiendo palos y ramas del suelo' : info.verb;
       return task.drop?.r ? `Lleva ${info.noun} a la zona al aire libre` : `Lleva ${info.noun} al almacén`;
     }
     case 'work': {

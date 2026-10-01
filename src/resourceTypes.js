@@ -86,4 +86,7 @@ export const RESOURCE_TYPES = [
   { id: 'iron', name: 'Veta de hierro', gives: 'Hierro', scale: [0.9, 1.3], ore: 0.5, biomes: { mountain: 4, tundra: 2, taiga: 1, snow: 1.5 } },
   { id: 'gold', name: 'Veta de oro', gives: 'Oro', scale: [0.9, 1.2], ore: 0.62, biomes: { mountain: 2, desert: 0.8, jungle: 0.4 } },
   { id: 'salt', name: 'Salinas', gives: 'Sal', scale: [0.8, 1.3], ore: 0.35, biomes: { desert: 3, beach: 1, steppe: 1 }, maxDistance: 900 },
+  // Palos y ramas caídos: se recogen del suelo sin herramientas (es la madera de la Edad Primitiva).
+  // Va al final de la lista para no cambiar dónde está todo lo demás en el mundo.
+  { id: 'sticks', name: 'Palos y ramas caídos', gives: 'Madera y fibra', scale: [0.8, 1.3], clustered: true, biomes: { forest: 90, taiga: 70, jungle: 60, swamp: 30, grassland: 28, savanna: 14, steppe: 8, tundra: 8, mountain: 6, desert: 3 }, maxDistance: 260 },
 ];

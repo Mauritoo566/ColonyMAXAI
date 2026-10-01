@@ -13,8 +13,8 @@ import { fromRect, rectFromCorners } from './rect.js';
 const MAX_MARKERS = 1500;
 const CLICK_RADIUS = 4; // un clic sin arrastrar marca lo que haya a 4 m
 const TOOL_COLORS = { mark: '#f2b24c', unmark: '#ef6457', zone: '#8fd0ff', bad: '#ef6457' };
-const MARKER_HEIGHT = { wood: 7.2, food: 1.5, stone: 1.4 };
-const MARKER_KINDS = ['wood', 'stone', 'food'];
+const MARKER_HEIGHT = { wood: 7.2, sticks: 1.3, food: 1.5, stone: 1.4 };
+const MARKER_KINDS = ['wood', 'sticks', 'stone', 'food'];
 
 export class HarvestTool {
   // colony: la simulación (sim/colony.js); campObject(): el modelo del campamento.
@@ -298,7 +298,7 @@ export class HarvestTool {
       this.lists = {};
       for (const kind of MARKER_KINDS) {
         this.lists[kind] = this.colony.spots
-          .filter((s) => s.marked && !s.gone && s.kind === kind)
+          .filter((s) => s.marked && !s.gone && (kind === 'sticks' ? s.stick : kind === 'wood' ? s.kind === 'wood' && !s.stick : s.kind === kind))
           .slice(0, MAX_MARKERS)
           .map((s) => ({ s, y: this.colony.heightAt(s.x, s.z) - camp.height + MARKER_HEIGHT[kind] }));
         this.icons[kind].count = this.lists[kind].length;
@@ -380,7 +380,7 @@ function iconTexture(kind) {
   canvas.width = 128;
   canvas.height = 160;
   const g = canvas.getContext('2d');
-  const color = { wood: '#d8352a', stone: '#4f6f8a', food: '#3f8f45' }[kind];
+  const color = { wood: '#d8352a', sticks: '#d8352a', stone: '#4f6f8a', food: '#3f8f45' }[kind];
   // Sombra, punta y círculo.
   g.fillStyle = 'rgba(0,0,0,0.35)';
   g.beginPath();
@@ -400,7 +400,7 @@ function iconTexture(kind) {
   g.strokeStyle = '#ffffff';
   g.lineCap = 'round';
   g.lineJoin = 'round';
-  if (kind === 'wood') {
+  if (kind === 'wood' || kind === 'sticks') {
     // Hacha: mango inclinado y hoja curva.
     g.lineWidth = 10;
     g.beginPath();

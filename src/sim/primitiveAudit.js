@@ -26,9 +26,9 @@ export const AUDIT = [
   },
   {
     step: '2. Ramas y madera',
-    action: 'Recolectar (zona marcada o solos) — sin hacha',
+    action: 'Recolectar palos caídos (zona marcada o solos) — sin hacha',
     needs: '—',
-    origin: 'Ramas y troncos caídos del terreno (sitios que se agotan)',
+    origin: 'Palos y ramas caídos en el suelo (cada montón da 2 de madera y 1 de fibra; se agotan, no se renuevan); los árboles en pie no se talan en Primitiva',
     requires: 'Un colono adulto',
     result: '+madera y +fibra en el acopio',
     explain: 'Si se agotan, la interfaz avisa y hay que marcar otra zona',

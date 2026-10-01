@@ -392,9 +392,30 @@ const place = (sim, id) => {
 {
   const sim = fresh();
   const [near, far] = scanSite(dir, 777);
-  for (const kind of ['food', 'wood', 'stone']) assert.equal(far[kind], sim.spots.filter((s) => s.kind === kind).length, `el conteo previo de ${kind} coincide con la colonia`);
+  for (const kind of ['food', 'wood', 'stone']) assert.equal(far[kind], sim.spots.filter((s) => s.kind === kind && !s.tree).length, `el conteo previo de ${kind} coincide con la colonia`);
   assert.ok(near.food <= far.food && near.wood <= far.wood);
   console.log(`✓ el aviso previo cuenta recursos reales: en 75 m ${near.food}/${near.wood}/${near.stone}`);
+}
+
+// 17. Palos del suelo: en Primitiva la madera sale de ellos; los árboles se quedan en pie hasta Piedra.
+{
+  const sim = fresh();
+  const rect = { cx: 0, cz: 0, hw: 120, hd: 120, angle: 0 };
+  sim.markRect(rect, true, ['wood']);
+  const marked = sim.spots.filter((s) => s.marked);
+  assert.ok(marked.length > 10 && marked.every((s) => s.stick), 'sólo se marcan palos, no árboles');
+  assert.equal(sim.spots.filter((s) => s.tree && s.marked).length, 0);
+  assert.equal(sim.nearestSpot('wood', 0, 0, 500, 0).stick, true, 'los colonos eligen palos');
+  const w0 = sim.stock.wood;
+  const f0 = sim.stock.fiber;
+  t = 0;
+  run(sim, 2 * DAY);
+  assert.ok(sim.stock.wood > w0 && sim.stock.fiber > f0, 'recogen madera y fibra de los palos');
+  assert.ok(sim.spots.filter((s) => s.tree && s.gone).length === 0, 'no se tala ningún árbol');
+  assert.ok(sim.spots.filter((s) => s.stick && s.gone).length > 0, 'los palos recogidos desaparecen (no se renuevan)');
+  sim.age = 2;
+  assert.ok(sim.usable(sim.spots.find((s) => s.tree)), 'desde Piedra los árboles también se pueden');
+  console.log('✓ palos caídos: madera sin talar árboles en Primitiva');
 }
 
 // 13. La auditoría: cada paso del recorrido se verifica de verdad.

@@ -6,7 +6,7 @@ Generado desde `src/sim/primitiveAudit.js`. Cada fila se comprueba contra el jue
 | Paso | Acción | Recursos necesarios | Origen | Edificio o capacidad requerida | Resultado | Si falta algo |
 |---|---|---|---|---|---|---|
 | 1. Fundar | Pulsar «Fundar campamento» | — | Se crean con la partida | Una ubicación válida | Fogata, 5 colonos, refugio de ramas (2 plazas), recolector de lluvia con agua y acopio inicial | Si el lugar es difícil, el aviso del puntero lo dice antes de fundar |
-| 2. Ramas y madera | Recolectar (zona marcada o solos) — sin hacha | — | Ramas y troncos caídos del terreno (sitios que se agotan) | Un colono adulto | +madera y +fibra en el acopio | Si se agotan, la interfaz avisa y hay que marcar otra zona |
+| 2. Ramas y madera | Recolectar palos caídos (zona marcada o solos) — sin hacha | — | Palos y ramas caídos en el suelo (cada montón da 2 de madera y 1 de fibra; se agotan, no se renuevan); los árboles en pie no se talan en Primitiva | Un colono adulto | +madera y +fibra en el acopio | Si se agotan, la interfaz avisa y hay que marcar otra zona |
 | 3. Piedras sueltas | Recolectar (filtro Piedra) — sin pico | — | Piedras del terreno (no es cantera) | Un colono adulto | +piedra | Cada piedra recogida desaparece: no se renueva |
 | 4. Comida silvestre | Recolectar (filtro Comida) | — | Bayas y setas (rebrotan despacio) | Un colono adulto | +comida y +fibra | Los colonos también comen solos de los arbustos cercanos |
 | 5. Agua | Beber del recolector de lluvia (ya construido) | Lluvia (con tiempo seco, sólo rocío) | Recolector de lluvia inicial | No hace falta un río ni el pozo | Agua visible (cantidad, capacidad, consumo y días de reserva) | Sin lluvia la reserva baja: construir otro recolector (límite 2) da margen |

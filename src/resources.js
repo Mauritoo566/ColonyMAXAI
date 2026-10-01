@@ -117,6 +117,13 @@ const MODELS = {
         p.add(new THREE.OctahedronGeometry(r, 0), '#3b3a3c', mat(x, r * 0.5, z, 0.4, x * 3, 0.2));
       }
     },
+  sticks: (p) => {
+      // Unos palos y ramas tirados en el suelo, cruzados, con alguna hoja seca.
+      for (const [x, z, len, a] of [[0, 0, 1.7, 0.2], [0.25, 0.3, 1.4, 1.2], [-0.2, 0.15, 1.2, 2.4], [0.1, -0.3, 1.5, 0.8]]) {
+        stick(p, v(x - Math.cos(a) * len / 2, 0.1 + (x > 0 ? 0.1 : 0), z - Math.sin(a) * len / 2), v(x + Math.cos(a) * len / 2, 0.12, z + Math.sin(a) * len / 2), 0.07, '#7a5a38', 4);
+      }
+      p.add(new THREE.OctahedronGeometry(0.16, 0), '#a8782e', mat(0.3, 0.2, 0.1, 0.3, 0.4, 0));
+    },
   clay: (p) => {
       p.add(new THREE.CylinderGeometry(1.6, 1.8, 0.25, 9), '#b0643c', mat(0, 0.08, 0));
       p.add(new THREE.DodecahedronGeometry(0.5, 0), '#c0724a', mat(0.4, 0.25, 0.2, 0, 0, 0, 1, 0.5, 1));
@@ -157,6 +164,7 @@ const LOD_MODELS = {
   reeds: (p) => p.add(new THREE.ConeGeometry(0.6, 2.2, 4), '#7d8f45', mat(0, 1.1, 0)),
   berryBush: (p) => p.add(new THREE.OctahedronGeometry(1.1, 0), '#3f7a34', mat(0, 0.8, 0, 0, 0, 0, 1.1, 0.8, 1.1)),
   clay: (p) => p.add(new THREE.CylinderGeometry(1.6, 1.8, 0.25, 6), '#b0643c', mat(0, 0.08, 0)),
+  sticks: (p) => p.add(new THREE.BoxGeometry(1.7, 0.12, 0.2), '#7a5a38', mat(0, 0.12, 0, 0, 0.3, 0)),
   salt: (p) => p.add(new THREE.CylinderGeometry(2, 2.2, 0.12, 6), '#ece7dc', mat(0, 0.04, 0)),
   copper: (p) => p.add(new THREE.OctahedronGeometry(1.3, 0), '#8a6a50', mat(0, 0.6, 0, 0.3, 0.4, 0, 1.3, 0.8, 1.1)),
   iron: (p) => p.add(new THREE.OctahedronGeometry(1.3, 0), '#7a5a4c', mat(0, 0.6, 0, 0.3, 0.4, 0, 1.3, 0.8, 1.1)),

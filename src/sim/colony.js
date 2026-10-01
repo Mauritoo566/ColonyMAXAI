@@ -80,9 +80,11 @@ const MAX_SPROUTS = 50; // vegetación nueva que puede brotar con la lluvia
 const SPROUT_EVERY = 25; // segundos de juego entre brotes con lluvia fuerte
 const ASSIGN_EVERY = 1; // segundos entre repasos de trabajadores libres
 // Qué recursos naturales sirven para qué.
+// Árboles: se talan con herramientas (Edad de Piedra en adelante). En Primitiva la madera sale de los palos caídos.
+export const TREES = ['broadleaf', 'pine', 'jungleTree', 'acacia', 'palm'];
 const SPOT_KINDS = {
   food: ['berryBush', 'mushrooms'],
-  wood: ['broadleaf', 'pine', 'jungleTree', 'acacia', 'palm'],
+  wood: ['broadleaf', 'pine', 'jungleTree', 'acacia', 'palm', 'sticks'],
   stone: ['stone', 'flint'],
 };
 
@@ -96,7 +98,8 @@ export function scanSite(dir, seed, radii = [75, SPOT_RADIUS]) {
   const span = SPOT_RADIUS / RADIUS;
   const kinds = {};
   for (const [kind, ids] of Object.entries(SPOT_KINDS)) for (const id of ids) kinds[id] = kind;
-  const typeIndex = RESOURCE_TYPES.map((t) => kinds[t.id] || null);
+  // Antes de la Edad de Piedra los árboles no se recogen: sólo cuentan los palos del suelo.
+  const typeIndex = RESOURCE_TYPES.map((t) => (TREES.includes(t.id) ? null : kinds[t.id] || null));
   const origin = new THREE.Vector3().copy(dir).normalize().multiplyScalar(RADIUS + naturalSurfaceHeight(dir));
   const up = new THREE.Vector3().copy(dir).normalize();
   const out = radii.map(() => ({ food: 0, wood: 0, stone: 0 }));
@@ -1100,7 +1103,8 @@ export class ColonySim {
         p.set(tile.pos[k * 3], tile.pos[k * 3 + 1], tile.pos[k * 3 + 2]).sub(origin).applyQuaternion(inv);
         const d = Math.hypot(p.x, p.z);
         if (d > SPOT_RADIUS || d < minDistance) continue;
-        spots.push({ key, index: k, kind, type: RESOURCE_TYPES[tile.type[k]].id, x: p.x, z: p.z, readyAt: 0, taken: null });
+        const type = RESOURCE_TYPES[tile.type[k]].id;
+        spots.push({ key, index: k, kind, type, tree: TREES.includes(type), stick: type === 'sticks', x: p.x, z: p.z, readyAt: 0, taken: null });
       }
     }
   }
@@ -1476,12 +1480,17 @@ export class ColonySim {
     this.emit('resources');
   }
 
+  // ¿Se puede recoger este sitio ahora? Los árboles sólo desde la Edad de Piedra (antes: palos del suelo).
+  usable(s) {
+    return !s.tree || this.age >= 2;
+  }
+
   // El recurso libre de un tipo más cercano a un punto (o null).
   nearestSpot(kind, x, z, maxDistance = Infinity, gameTime = 0) {
     let best = null;
     let bestD = maxDistance;
     for (const s of this.spots) {
-      if (s.kind !== kind || s.gone || s.taken || s.readyAt > gameTime) continue;
+      if (s.kind !== kind || s.gone || s.taken || s.readyAt > gameTime || !this.usable(s)) continue;
       if (this.blockedByBuilding(s.x, s.z)) continue;
       const d = Math.hypot(s.x - x, s.z - z);
       if (d < bestD) {
@@ -1507,7 +1516,7 @@ export class ColonySim {
     let best = null;
     let bestD = Infinity;
     for (const s of this.spots) {
-      if (!s.marked || s.gone || s.taken || s.readyAt > gameTime) continue;
+      if (!s.marked || s.gone || s.taken || s.readyAt > gameTime || !this.usable(s)) continue;
       if (this.isFull(s.kind) || this.blockedByBuilding(s.x, s.z)) continue;
       const d = Math.hypot(s.x - x, s.z - z);
       if (d < bestD) {
@@ -1529,7 +1538,7 @@ export class ColonySim {
     this.remote?.('markRect', [rect, marked, kinds]);
     let changed = 0;
     for (const s of this.spots) {
-      if (s.gone || !insideRect(rect, s.x, s.z) || (kinds && !kinds.includes(s.kind))) continue;
+      if (s.gone || !this.usable(s) || !insideRect(rect, s.x, s.z) || (kinds && !kinds.includes(s.kind))) continue;
       if (!!s.marked !== marked) {
         s.marked = marked;
         changed++;
@@ -1545,7 +1554,7 @@ export class ColonySim {
     this.remote?.('markArea', [x, z, radius, marked, kinds]);
     let changed = 0;
     for (const s of this.spots) {
-      if (s.gone || Math.hypot(s.x - x, s.z - z) > radius || (kinds && !kinds.includes(s.kind))) continue;
+      if (s.gone || !this.usable(s) || Math.hypot(s.x - x, s.z - z) > radius || (kinds && !kinds.includes(s.kind))) continue;
       if (!!s.marked !== marked) {
         s.marked = marked;
         changed++;
@@ -2783,7 +2792,7 @@ export class ColonySim {
     }
     for (const [key, index] of data.marked || []) {
       const s = byKey.get(`${key}:${index}`);
-      if (s) s.marked = true;
+      if (s && this.usable(s)) s.marked = true; // las marcas en árboles de una aldea antigua en Primitiva se descartan
     }
     this.removed = new Map((data.removed || []).map(([key, idx]) => [key, new Set(idx)]));
     for (const [key, indices] of data.removed || []) {
