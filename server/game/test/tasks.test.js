@@ -221,4 +221,23 @@ const site = (sim, id, x, z) => {
   assert.ok(sim.roads.has(key(manual[0])) && sim.roads.size <= 2 + 0, 'sólo quedan los manuales');
   assert.ok(before > 0);
 }
+// Los caminos no atraviesan la zona de acopio ni los edificios; y al dibujar la zona se quitan.
+{
+  const sim = colony();
+  sim.age = 3;
+  sim.stock.fiber = 100;
+  const zone = { cx: 28, cz: 0, hw: 6, hd: 6, angle: 0 };
+  assert.equal(sim.setZone(zone), null);
+  const [zix, ziz] = [7, 0];
+  assert.ok(sim.paintRoads([[zix, ziz]]) === false, 'no se puede pintar sobre la zona');
+  sim.roads.set('7,0', 1);
+  sim.roads.set('0,5', 1);
+  sim.pruneRoads();
+  assert.ok(!sim.roads.has('7,0') && sim.roads.has('0,5'), 'se quitó sólo lo que pisa la zona');
+  const b = sim.createBuilding(BUILDINGS.gatherer, 30, -14, 0, 1, 0);
+  for (const key of sim.roads.keys()) {
+    const [ix, iz] = key.split(',').map(Number);
+    assert.ok(Math.hypot(ix * 4 - b.x, iz * 4 - b.z) > b.def.footprint, 'no atraviesa edificios');
+  }
+}
 console.log('tasks.test ✓');

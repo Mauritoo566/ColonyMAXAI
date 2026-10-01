@@ -1021,10 +1021,29 @@ export class ColonySim {
     if (problem) return problem;
     this.remote?.('setZone', [rect]);
     this.zones = [{ cx: rect.cx, cz: rect.cz, hw: rect.hw, hd: rect.hd, angle: rect.angle }];
+    this.pruneRoads();
     this.trimOutdoor();
     this.emit('zones');
     this.emit('changed');
     return null;
+  }
+
+  // Quita los caminos que pisan la zona de acopio (no se vuelven a trazar solos ahí).
+  pruneRoads() {
+    if (this.remote) return;
+    let n = 0;
+    for (const key of [...this.roads.keys()]) {
+      const [ix, iz] = key.split(',').map(Number);
+      if (this.zones.some((z) => rectDistance(z, ix * 4, iz * 4) < 2.4)) {
+        this.roads.delete(key);
+        this.autoRoadKeys.delete(key);
+        n++;
+      }
+    }
+    if (n) {
+      this.staticsRevision++;
+      this.emit('roads');
+    }
   }
 
   // Al quitar la zona, lo guardado al aire libre se pierde.
@@ -2026,6 +2045,7 @@ export class ColonySim {
     this.restoreColony(data.colony);
     // Partidas anteriores: las viviendas toman el nivel de la edad (no se quita nada).
     evolveHouses(this);
+    this.pruneRoads();
     this.autoConnect();
     if (data.weather && this.weather?.load) this.weather.load(data.weather);
     this.emit('buildings');

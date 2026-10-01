@@ -9,6 +9,7 @@ import { levelOf } from './buildingTypes.js';
 import { GOOD_NAMES, GOODS_BY_ID, TRADE_VALUE } from './goods.js';
 import { TECHS_BY_ID } from './techs.js';
 import { radiusOf } from './progression.js';
+import { rectDistance } from '../rect.js';
 
 const DAY = DAY_LENGTH_SECONDS;
 const name = (k) => GOOD_NAMES[k] ?? k;
@@ -366,7 +367,9 @@ export function roadCellProblem(colony, ix, iz) {
   const z = iz * ROAD_CELL;
   if (Math.hypot(x, z) > radiusOf(colony)) return 'Fuera del territorio';
   if (colony.heightAt(x, z) <= 0.8) return 'En el agua';
-  for (const o of colony.obstacles) if (o.kind !== 'tent' && Math.hypot(x - o.x, z - o.z) < o.r + 1.2) return 'Hay algo encima';
+  // El camino mide ~2,7 m de ancho: se deja margen a los lados de lo que hay (los tipis, sólo su base).
+  for (const o of colony.obstacles) if (Math.hypot(x - o.x, z - o.z) < o.r + (o.kind === 'tent' ? 0 : 2.2)) return 'Hay algo encima';
+  for (const zone of colony.zones) if (rectDistance(zone, x, z) < 2.4) return 'En la zona de acopio';
   return null;
 }
 
