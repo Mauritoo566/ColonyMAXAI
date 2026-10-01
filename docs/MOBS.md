@@ -48,3 +48,22 @@ Criterio: aparecen por bioma y por edad; los pacíficos dan recursos o ambiente,
 - **Defensa**: las atalayas avisan; los muros y puestos de guardia reducen el daño; el ganado domesticado se protege con corrales.
 - **Escasez**: la caza se agota o migra; los hostiles rondan más cuando hay poca caza (hambre de manada).
 - **Edades**: Primitiva sólo trae animales de caza y pocos depredadores (lobos y osos de noche); desde Piedra, ganado y más peligros.
+
+## Por bioma (los 14 biomas del juego)
+
+| Bioma | Pacíficos | Hostiles |
+|---|---|---|
+| Océano | Peces, delfines, tortugas | Tiburón, cocodrilo marino (en la orilla) |
+| Hielo polar | Foca, pingüino, pez ártico | Oso polar, lobo ártico |
+| Picos nevados | Cabra montesa, liebre de nieve | Lobo de nieve, leopardo de las nieves |
+| Montaña rocosa | Cabra montesa, marmota, águila (ambiente) | Oso, lobo, puma |
+| Playa | Cangrejo, gaviota, tortuga, peces | Cangrejo gigante, serpiente marina (orilla) |
+| Pantano | Rana, garza, castor, peces | Cocodrilo, serpiente venenosa, sanguijuelas gigantes, jabalí furioso |
+| Tundra | Reno, liebre, zorro ártico, buey almizclero | Lobo, oso pardo |
+| Taiga | Alce, ciervo, ardilla, castor | Lobo alfa y manada, oso, lince |
+| Estepa | Caballo salvaje, saiga, marmota, oveja salvaje | Lobo, zorro (roba comida), águila (ataca ganado) |
+| Pradera | Conejo, ciervo, vaca/uro, oveja, mariposas | Jabalí furioso, zorro, lobo (poco) |
+| Bosque templado | Ciervo, conejo, jabalí manso, pájaros, setas con ardillas | Lobo, oso, jabalí furioso |
+| Desierto | Camello, lagarto, gacela | Escorpión gigante, serpiente de cascabel, chacal |
+| Sabana | Cebra, gacela, jirafa, caballo salvaje, elefante (manso) | León, hienas, leopardo |
+| Selva | Mono, loro, tapir, mariposas | Tigre/jaguar, serpiente constrictora, cocodrilo, escorpión, plagas de insectos |
