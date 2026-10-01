@@ -78,20 +78,16 @@ La interfaz (`src/colonyUI.js`) muestra arriba a la izquierda el **bienestar de 
 - El hijo hereda genes de ambos (con mutaciones), nace con un nombre de la **edad de la aldea en ese momento** (los nombres nunca cambian) y crece en 3 días: de niño es más bajo y de cabeza grande, no trabaja. Los genes se ven en el cuerpo: piel, pelo (canas con los años), estatura y complexión.
 - La **bandera** de la aldea se elige de una lista de países (botón Bandera) y la ven los demás jugadores.
 
-### Restricciones por edad
-Las reglas están en un solo sitio (`src/sim/progression.js`) y las usan construir, mejorar, el crecimiento y la interfaz; las valida la simulación del servidor, así que desactivar un botón no basta para saltarlas. La edad es necesaria pero no suficiente: también se exigen costes, edificios previos y condiciones. Lo que llega por comercio o por otra vía no salta nada, porque se mira el estado de la aldea (edificios terminados, nivel, edad), no el almacén. Las partidas anteriores se conservan: nada se borra ni se baja de nivel (un edificio ya mejorado sigue mejorado) y las viviendas se ponen al día con la edad al cargar.
+### Progresión por edades (10 edades jugables)
+El asentamiento pasa de campamento a aldea, pueblo, ciudad y civilización a lo largo de diez edades: **Primitiva, de Piedra, del Bronce, del Hierro, Clásica, Medieval, Renacimiento, Industrial, Moderna y Contemporánea** (la XI, Futurista, queda preparada pero fuera del alcance). Cada edad **limita** lo que se puede construir, mejorar, alojar, producir y reclutar, y desbloquea contenido nuevo; la edad es necesaria pero no suficiente (también cuentan costes, edificios previos, tecnologías y condiciones). Todo se valida en el servidor.
 
-| Edad | Territorio | Viviendas (máx.) | De cada tipo (máx.) | Nivel máx. de edificios | Se desbloquea (implementado) |
-|---|---|---|---|---|---|
-| I Primitiva | 75 m | 3 · Choza de ramas (2 plazas) | 2 (pozos 1) | I | Enramada de recolección, Zona de tala, Pedrera, Recolector de lluvia, Pila de troncos, Choza de ramas (pide una Zona de tala terminada) |
-| II Tribal | 95 m | 6 · Casa de barro (3 plazas) | 4 (pozos 2) | II | Mejoras pagadas: Choza de recolección y Cabaña del leñador (piden Pedrera), Cantera (pide Leñador), Pozo simple, Granero (pide Recolección). Las viviendas existentes evolucionan solas; las nuevas cuestan 24 madera, 8 piedra, 8 fibras |
-| III Bronce | 120 m | 10 | 6 (pozos 3) | — | Sólo suben los límites: aún no hay edificios, recursos ni mejoras de esta edad |
-| IV Hierro | 150 m | 15 | 8 (pozos 4) | — | Ídem |
-| V Medieval | 190 m | 20 | 10 (pozos 5) | — | Ídem |
-
-- **Avanzar a la Edad Tribal** pide: 6 colonos, una vivienda, una zona de tala, una pedrera y una enramada de recolección terminadas, más una ofrenda (30 madera, 15 piedra, 10 fibras) que se cobra una sola vez. Las edades III a V aparecen como «Próximamente» y no se pueden alcanzar.
-- **Población**: el máximo es 10 del campamento + las plazas de las viviendas terminadas. Nacen niños sólo si hay plazas y reservas (1,2 de comida y de agua por colono, contando a los que vienen en camino).
-- **Aún no existe** (y por eso no hay nada que restringir ni se muestra como desbloqueable): fundiciones, herramientas de metal, recetas y cadenas de producción, caminos, energía, investigación, ejército y defensas, y más edificios por edad. El sistema ya admite `minAge`, `requires` y límites por tipo para cuando se añadan.
+- **Evoluciona sola:** el aspecto de las viviendas (y su capacidad), la ropa de los colonos y el centro del asentamiento (sendas, plaza, calles, fuente, farolas).
+- **Lo paga el jugador:** viviendas nuevas, mejoras de cada edificio, caminos, energía, territorio, tecnologías y soldados.
+- **Producción:** 37 bienes y 51 tipos de edificio con 164 niveles; talleres con recetas, trabajadores, yacimientos de mineral y red de energía (calderas, centrales y postes).
+- **Población:** viviendas, abastecimiento y servicios por umbral; llegan colonos nuevos sólo si hay plazas, reservas y bienestar.
+- **Ejército:** 16 unidades que salen de la población civil, con equipo, mantenimiento y mejoras pagadas; defensas; incursiones sin destrucción; ataques entre jugadores desactivados.
+- **Interfaz:** barra de edades con requisitos, próximos desbloqueos y por qué algo está bloqueado; panel «Aldea» (población, trabajadores, territorio, almacenamiento, producción y consumo por día) y panel «Ejército».
+- **Documento completo con las tablas por edad:** [`docs/PROGRESION.md`](docs/PROGRESION.md) (se genera con `node tools/gen-progression-doc.mjs`).
 
 ### Ropa
 
@@ -106,14 +102,11 @@ Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s 
 La **barra de construcción** (abajo) está ordenada por categorías (Producción, Vivienda, Almacenes, Decoración y Defensa; las que aún no tienen edificios dicen "próximamente") y permite encargar edificios (`src/buildings.js`). En Producción están choza de recolección (comida), cabaña del leñador (madera), cantera (piedra) y pozo (agua). Se elige dónde (hasta 75 m de la fogata; no sobre agua, pendientes fuertes ni encima de otra cosa) y los materiales se pagan al encargarlo. Los colonos construyen de día; los más hábiles en construcción avanzan más rápido. Al terminar, la colonia asigna el trabajo al **colono libre más capacitado** según sus habilidades (que salen de sus genes, su oficio anterior y su actitud). La ficha del edificio explica por qué lo eligió, muestra el ranking de candidatos y permite cambiarlo. Los árboles talados y las piedras picadas desaparecen del mundo.
 
 ### Edades y mejoras
-
-La colonia avanza por edades (`src/ages.js`, barra decorada arriba al centro): Primitiva, Tribal, del Bronce, del Hierro y Medieval (de momento se juegan las dos primeras). Cada edificio tiene un nivel por edad, con su propio nombre, modelo 3D y rendimiento: en la Edad Primitiva son una enramada de recolección, una zona de tala, una pedrera y un **recolector de lluvia** (sólo junta agua cuando llueve, y un poco con el rocío). Desde la ficha del edificio se puede **mejorar** un nivel por encima de la edad actual: se paga el coste, los constructores trabajan en la obra con andamios y al terminar cambia el modelo (choza de recolección, cabaña del leñador, cantera, pozo simple). Con 3 edificios mejorados y una ofrenda de materiales la colonia pasa a la **Edad Tribal**, todos lo celebran y aparece el tótem de la tribu junto a la fogata. La choza de recolección trae también **fibras**, que se usan en las mejoras. **Equilibrio del agua:** en el pozo simple todos beben gratis y sin límite; el aguatero saca unas jarras para el almacén (entre 6 y 10 por día, frente a las ~3 que gasta una colonia de 5). Antes sacaba 28 a 44 por día y el agua se acumulaba sin que nadie la usara.
-
-Si se acaban los árboles o las piedras grandes cerca, el leñador junta ramas caídas y el cantero piedras sueltas (rinden menos, pero siguen trabajando).
+Las edades están en `src/ages.js`, los edificios en `src/sim/buildingTypes.js` y las reglas que los ligan en `src/sim/progression.js`. Un edificio mejora de nivel pagando el coste (y cumpliendo sus requisitos) sólo hasta el nivel que permite la edad; las viviendas evolucionan solas. Para avanzar de edad hay que cumplir lo que pide la siguiente (población, edificios, producción, tecnologías y una ofrenda que se cobra una sola vez); ver el documento de progresión para cada una.
 
 ### Almacén
 
-Lo que recoge la colonia se guarda en el **almacén del campamento** (las vasijas, cestas y sacos junto a la fogata). Tiene etiqueta en el mundo y, al hacerle clic (o en la fila de recursos de la tarjeta de la colonia), se abre su ficha con lo guardado y la capacidad. Cada recurso tiene un límite: cuando algo se llena, quien lo trae espera sin trabajar. Para guardar más se construyen almacenes (pestaña Almacenes): la **pila de troncos y cestas** de la Edad Primitiva, que se mejora a **granero** en la Tribal.
+Lo que recoge la colonia se guarda en el **almacén del campamento** (las vasijas, cestas y sacos junto a la fogata). Tiene etiqueta en el mundo y, al hacerle clic (o en la fila de recursos de la tarjeta de la colonia), se abre su ficha con lo guardado y la capacidad. Cada recurso tiene un límite: cuando algo se llena, quien lo trae espera sin trabajar. Para guardar más se construyen almacenes (pestaña Almacenes): la **pila de troncos y cestas** de la Edad Primitiva, que se mejora a **granero** en la Edad de Piedra y sigue creciendo hasta el almacén automatizado.
 
 ### Recolectar y zona de acopio
 
@@ -202,6 +195,15 @@ La simulación de la colonia está separada de lo que se dibuja: `src/sim/` no u
 - `src/net.js` – conexión con el servidor (se reconecta sola)
 - `src/sim/colony.js` – simulación de una colonia: colonos, IA, edificios, almacén, zona de acopio, recursos, edades y guardado
 - `src/sim/buildingTypes.js` – tipos de edificio y sus niveles (datos)
+- `src/sim/goods.js`, `techs.js`, `units.js` – bienes, tecnologías y unidades militares (datos)
+- `src/sim/progression.js` – reglas centrales por edad: límites, requisitos, niveles, territorio y tabla de desbloqueos
+- `src/sim/family.js` – viviendas, población, reproducción, llegada de colonos y servicios por umbral
+- `src/sim/economy.js` – talleres con recetas, energía, yacimientos, comercio, investigación, servicios y caminos
+- `src/sim/military.js` – reclutamiento, mantenimiento, mejoras, defensas e incursiones
+- `src/sim/centerLayout.js`, `names.js`, `report.js` – centro del asentamiento, nombres por edad, resumen de la aldea
+- `src/buildingModelsGen.js`, `center.js`, `outfits.js`, `roads.js`, `icons.js` – modelos generados por edad, centro, ropa y oficios, caminos, iconos
+- `src/villageUI.js`, `militaryUI.js`, `flagUI.js` – paneles de la aldea, del ejército y de la bandera
+- `tools/gen-progression-doc.mjs` – genera `docs/PROGRESION.md` desde los datos
 - `src/sim/campLayout.js` – distribución del campamento, terreno que nivela y su semilla
 - `src/sim/weather.js` – clima de cada colonia
 - `src/sim/away.js` – resumen «Mientras no estabas»

@@ -728,7 +728,7 @@ military({
   requires: [{ id: 'barracks' }],
   levels: [
     L(3, 'Armería', 'Lanzas y escudos de bronce para equipar a los soldados.', 'gen:workshop:3', { recipe: { in: { bronze: 2, wood: 1 }, out: { arms_bronze: 1 }, time: 40 } }),
-    L(4, 'Fragua de armas', 'Espadas y cascos de hierro.', 'gen:workshop:4', { recipe: { in: { iron: 2, charcoal: 1 }, out: { arms_iron: 1 }, time: 40 }, upgradeCost: { cut_stone: 10, iron_tools: 2, wood: 20 } }),
+    L(4, 'Fragua de armas', 'Espadas y cascos de hierro.', 'gen:workshop:4', { recipe: { in: { iron: 2, charcoal: 1 }, out: { arms_iron: 1 }, time: 40 }, upgradeCost: { stone: 20, iron_tools: 2, wood: 20 } }),
     L(6, 'Armería medieval', 'Mallas, ballestas y armaduras forjadas.', 'gen:workshop:6', { recipe: { in: { iron: 2, planks: 1, cloth: 1 }, out: { arms_forged: 1 }, time: 38 }, upgradeCost: { cut_stone: 14, planks: 12, iron_tools: 3 } }),
     L(8, 'Arsenal industrial', 'Fabricación en serie con acero.', 'gen:workshop:8', { recipe: { in: { steel: 2, coal: 1 }, out: { arms_steel: 2 }, time: 34 }, upgradeCost: { bricks: 20, steel: 8, machinery: 1 }, energy: 2 }),
     L(9, 'Fábrica de armamento', 'Vehículos, blindajes y munición modernos.', 'gen:factory:9', { recipe: { in: { steel: 3, machinery: 1 }, out: { arms_modern: 2 }, time: 36 }, upgradeCost: { concrete: 20, steel: 10, machinery: 2 }, energy: 4 }),

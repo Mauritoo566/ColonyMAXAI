@@ -1,0 +1,153 @@
+// Genera docs/PROGRESION.md a partir de los datos del juego (edades, edificios, bienes,
+// tecnologías, unidades y límites), para que la documentación no se desfase del código.
+// Uso: node tools/gen-progression-doc.mjs
+
+import { writeFileSync } from 'node:fs';
+import { AGES, MAX_AGE } from '../src/ages.js';
+import { BUILDING_TYPES } from '../src/sim/buildingTypes.js';
+import { GOODS, GOOD_NAMES } from '../src/sim/goods.js';
+import { TECHS } from '../src/sim/techs.js';
+import { UNITS } from '../src/sim/units.js';
+import { LIMITS, EXPANSION_STEP, BASE_POPULATION, unlockTable } from '../src/sim/progression.js';
+import { SERVICE_RULES } from '../src/sim/family.js';
+import { ROAD_LEVELS } from '../src/sim/economy.js';
+import { DEPOSIT_KINDS } from '../src/sim/economy.js';
+import { PVP } from '../src/sim/units.js';
+
+const cost = (c) => Object.entries(c ?? {}).map(([k, n]) => `${n} ${GOOD_NAMES[k] ?? k}`).join(', ') || '—';
+const L = [];
+const w = (s = '') => L.push(s);
+
+w('# Progresión de ColonyMAXAI: de campamento a civilización');
+w();
+w('Documento generado por `tools/gen-progression-doc.mjs` a partir de los datos del juego (no se edita a mano: cambia los datos y vuelve a generarlo). Las reglas viven en `src/sim/*.js` y `src/ages.js`; construir, producir, mejorar y reclutar comparten los mismos requisitos y los valida la simulación del servidor.');
+w();
+w('## 1. Diagnóstico de lo que había antes de esta ampliación');
+w();
+w('| Sistema | Estado inicial |');
+w('|---|---|');
+w('| Edades | 5 con nombre (Primitiva, Tribal, Bronce, Hierro, Medieval); sólo se llegaba a la II; las demás eran «próximamente». Se avanzaba mejorando 3 edificios. |');
+w('| Edificios | 5 tipos (recolección, tala, cantera, pozo, almacén) con 2 niveles; un trabajador por edificio; sin procesado ni recetas. |');
+w('| Recursos | 5 en bruto (comida, agua, madera, piedra, fibras). |');
+w('| Colonos | Simulación determinista, IA de utilidad, necesidades, genes y familia. Vestimenta única. |');
+w('| Vivienda | Tiendas del campamento. |');
+w('| Territorio / servicios / energía / transporte / ejército | Radio fijo; el resto no existía. |');
+w('| Red | Servidor autoritativo con SQLite; la copia del navegador sólo refleja. |');
+w();
+w('**Migración:** las 5 edades antiguas se conservan con el mismo número (1 Primitiva, 2 «Tribal» → Edad de Piedra, 3 Bronce, 4 Hierro, 5 «Medieval» → Edad Clásica; la Medieval pasa a ser la VI). Como sólo se llegaba a la II, ninguna partida cambia de edad. Los edificios conservan posición, nivel y trabajador; las viviendas existentes se ponen al día con la edad al cargar; lo ya mejorado no se baja de nivel aunque la nueva regla lo limite (el tope sólo frena lo nuevo). El guardado pasa a la versión 3 y sigue leyendo las versiones 1 y 2.');
+w();
+w('## 2. Fases');
+w();
+w('| Fase | Contenido | Depende de | Complejidad | Estado |');
+w('|---|---|---|---|---|');
+w('| F1 | Base de progresión: 11 edades, catálogo de recursos y edificios con requisitos, reglas centrales, guardado v3 y migración | — | Alta | Hecho |');
+w('| F2 | Evolución automática: viviendas por edad, vestimenta y oficios, centro del asentamiento | F1 | Media | Hecho |');
+w('| F3 | Mejoras manuales: niveles por edificio, varios trabajadores, herramientas requeridas | F1 | Alta | Hecho |');
+w('| F4 | Población y expansión: llegada de colonos, viviendas de más capacidad, territorio ampliable, servicios por umbral, transición entre edades | F1–F3 | Media | Hecho |');
+w('| F5 | Cadenas productivas y servicios: recetas, yacimientos, energía, caminos, mercado, investigación, hospital, escuela | F1, F3 | Muy alta | Hecho |');
+w('| F6 | Ejército y defensas: unidades, reclutamiento, equipo, mantenimiento, defensas, incursiones, reglas de combate | F3–F5 | Alta | Hecho |');
+w('| F7 | Edades avanzadas, rendimiento con aldeas grandes, edad XI preparada, documentación y pruebas | F1–F6 | Media | Hecho (la edad XI queda preparada pero separada del alcance) |');
+w();
+w('## 3. Evolución automática frente a mejoras manuales');
+w();
+w('| Cambia solo al avanzar de edad (gratis, sin tocar posiciones) | Lo decide y paga el jugador |');
+w('|---|---|');
+w('| Aspecto de **todas las viviendas** (y su capacidad, que sube con el nivel; no crea casas ni regala colonos) | Construir viviendas nuevas (cuestan más en edades avanzadas), bloques residenciales |');
+w('| Ropa de los colonos (por edad) y prendas de oficio | Mejorar cada edificio de producción, taller, almacén, servicio, militar o defensa |');
+w('| Centro del asentamiento: sendas, plaza, calles, fuente, pozo, farolas, bancos | Caminos y mejora de caminos, energía, agua canalizada, transporte |');
+w('| Techo de población y límites de la edad | Territorio (ampliaciones pagadas), reclutar y mejorar soldados, investigar tecnologías |');
+w();
+w('Un edificio sin mejorar conserva modelo, nivel y rendimiento. Los soldados existentes no reciben equipo nuevo: se modernizan uno a uno pagando la unidad siguiente de su línea. La evolución visual **no regala** redes de agua, electricidad ni transporte: esas piden edificios (acueducto, central, postes, estaciones) y siguen limitadas por el alcance de cada uno.');
+w();
+w('## 4. Población y expansión');
+w();
+w(`- **Capacidad:** ${BASE_POPULATION} del campamento (tiendas) + plazas de las viviendas terminadas (choza de 2 a edificio moderno de 6; bloques de 12 a 26), con un techo por edad. Tener plazas libres no basta.`);
+w('- **Cómo crece:** (a) hijos, por la reproducción emergente de los colonos; (b) **llegada de colonos**: una vez al día, con probabilidad, si hay plazas, reservas holgadas (2 de comida y de agua por colono), bienestar medio ≥ 62 % (más probable ≥ 75 %) y el dueño conectado. Los niños tardan 3 días en ser adultos.');
+w('- **Abastecimiento:** nada nace ni llega si faltan 1,2 de comida y agua por habitante.');
+w('- **Servicios por umbral:** ' + SERVICE_RULES.map((r) => `desde ${r.from} habitantes (edad ${r.age}+) hace falta ${r.text}`).join('; ') + '. No hay castigo si faltan: la aldea simplemente no crece más.');
+w(`- **Territorio:** cada edad fija un radio base y un número de ampliaciones (cada una suma ${EXPANSION_STEP} m y se paga con recursos crecientes); sin administración sólo cabe 1; la casa del consejo, el ayuntamiento y el edificio municipal permiten 2, 4 y 6. Respeta el agua, el terreno y los obstáculos; los campamentos distan ≥ 2 km, así que nunca se solapan con otro jugador.`);
+w('- **Transición equilibrada:** lo nuevo que pesa en el bienestar (vivir sin casa desde el Bronce) entra poco a poco en los 2 días siguientes a cada cambio de edad.');
+w();
+w('| Edad | Territorio base | Ampliaciones | Viviendas | Bloques | Edificios de cada tipo | Población máx. |');
+w('|---|---|---|---|---|---|---|');
+LIMITS.forEach((l, i) => w(`| ${AGES[i].numeral} ${AGES[i].name} | ${l.radius} m | ${l.expansions} | ${l.houses} | ${l.apartments || '—'} | ${l.perType} | ${l.popCap} |`));
+w();
+w('## 5. Tabla por edad: qué permite y con qué requisitos');
+w();
+const rows = unlockTable();
+for (const age of AGES) {
+  w(`### ${age.numeral}. ${age.name} — ${age.theme}`);
+  w();
+  w(age.desc);
+  w();
+  if (age.future) {
+    w('**Extensión opcional.** La arquitectura (edades, límites, catálogo, ropa, centro) admite una edad más, pero no se puede alcanzar ni tiene contenido.');
+    w();
+    continue;
+  }
+  w(`**Cambia sola:** ${age.auto}`);
+  w();
+  if (age.requires) {
+    const r = age.requires;
+    const req = [`${r.population} colonos`, ...(r.buildings ?? []).map((b) => `${b.name}${b.level ? ` (nivel ${b.level})` : ''}`), ...Object.entries(r.produced ?? {}).map(([k, n]) => `haber producido ${n} de ${GOOD_NAMES[k]}`), ...(r.techs ?? []).map((t) => `tecnología ${TECHS.find((x) => x.id === t).name}`)];
+    w(`**Para llegar aquí:** ${req.join(' · ')}. Ofrenda (se cobra una vez): ${cost(r.cost)}.`);
+    w();
+  }
+  const mine = rows.filter((r) => r.age === age.n && r.kind !== 'limit');
+  if (mine.length) {
+    w('| Se desbloquea | Tipo | Detalle y requisitos |');
+    w('|---|---|---|');
+    for (const r of mine) w(`| ${r.name} | ${r.kind === 'build' ? 'edificio' : 'mejora'} | ${r.text} |`);
+    w();
+  }
+  const units = UNITS.filter((u) => u.age === age.n);
+  if (units.length) w(`**Unidades:** ${units.map((u) => `${u.name} (${u.pool}, equipo ${GOOD_NAMES[u.arms]}, poder ${u.power})`).join('; ')}.`), w();
+  const techs = TECHS.filter((t) => t.age === age.n);
+  if (techs.length) w(`**Tecnologías investigables:** ${techs.map((t) => `${t.name} (${t.cost} de conocimiento)`).join('; ')}.`), w();
+  const goods = GOODS.filter((g) => g.age === age.n);
+  if (goods.length) w(`**Bienes nuevos:** ${goods.map((g) => g.name).join(', ')}.`), w();
+  const road = ROAD_LEVELS.find((r) => r.age === age.n);
+  if (road) w(`**Caminos:** ${road.name} (×${road.speed}, ${cost(road.cost)} por casilla de 4 m).`), w();
+}
+w('## 6. Cadenas productivas');
+w();
+w('| Cadena | Pasos |');
+w('|---|---|');
+w('| Madera → tablones → construcciones elaboradas | tala → aserradero → casas, talleres, academia |');
+w('| Grano → harina → pan | campo → molino → panadería (el pan sacia más que las bayas) |');
+w('| Cobre + estaño → bronce → herramientas | minas (sobre yacimientos) → fundición → taller de herramientas |');
+w('| Hierro + combustible → herramientas y acero | mina → carbonera/alto horno → herrería → acería |');
+w('| Piedra + arcilla → sillares, cerámica, ladrillos, hormigón | cantería, alfarería, horno de ladrillos, planta de hormigón |');
+w('| Materias primas + energía → bienes industriales | caldera/central + red de postes → fábricas → maquinaria, electrónica |');
+w('| Excedentes → monedas → compras y mantenimiento | mercado (cupo diario) |');
+w('| Planchas + tela → conocimiento → tecnologías | academia → tecnologías que desbloquean la industria y la electricidad |');
+w(`Yacimientos (se ven al elegir el sitio de una mina): ${DEPOSIT_KINDS.map((k) => GOOD_NAMES[k]).join(', ')}.`);
+w();
+w('Si una instalación se detiene, su ficha lo explica: sin trabajadores, falta de materiales, almacén lleno, sin energía o dotación incompleta. Los recursos básicos siguen participando en todas las cadenas nuevas (madera, piedra y fibras en costes y recetas).');
+w();
+w('## 7. Ejército y defensas');
+w();
+w('| Unidad | Edificio | Edad | Equipo | Coste | Mantenimiento/día | Poder |');
+w('|---|---|---|---|---|---|---|');
+for (const u of UNITS) w(`| ${u.name} | ${u.pool} | ${u.age} | ${GOOD_NAMES[u.arms]} | ${cost(u.cost)} | ${cost(u.upkeep)} | ${u.power} |`);
+w();
+w('- **Reclutar** saca colonos adultos de la población civil (primero los libres, si no el menos hábil de los que trabajan, que deja su puesto); el ejército no pasa del 40 % de los adultos y cada edificio militar tiene su guarnición.');
+w('- **Mantenimiento** diario de comida y, desde edades avanzadas, monedas y carbón; si falta, las tropas rinden la mitad.');
+w('- **Modernizar** un soldado cuesta la unidad siguiente de su línea (equipo nuevo incluido); no ocurre solo al cambiar de edad.');
+w('- **Defensas** (atalayas, muros, puertas, fuertes) suman puntos de defensa; las que consumen energía sólo valen conectadas.');
+w('- **Capacidad militar** = poder de las tropas (con la ventaja infantería > caballería > tiradores > infantería) + defensas.');
+w('- **Incursiones (PvE):** desde la Edad del Bronce, cada 3 a 5 días tras 6 días de protección, sólo con el dueño conectado. Si la capacidad militar no alcanza la fuerza de la banda, se pierde hasta un 10 % de comida, madera, piedra y monedas; nunca se destruyen edificios ni se hiere a nadie.');
+w(`- **Ataques entre jugadores: desactivados** (\`PVP.enabled = ${PVP.enabled}\`). Reglas definidas para cuando se activen: ${PVP.protectionDays} días de protección inicial, aldeas con el dueño desconectado intocables, máximo ${PVP.maxAgeGap} edad de diferencia y sólo robo de recursos (nunca destrucción).`);
+w();
+w('## 8. Mundo compartido, persistencia y rendimiento');
+w();
+w('- Cada aldea tiene su edad; los visitantes ven sus edificios, niveles, vestimenta y centro con el aspecto correcto (los nacidos o llegados se sincronizan con sus datos fijos).');
+w('- Se guardan edad, colonos (familia, soldados, hogar), edificios (nivel, ciclo, dotación), bienes, tecnologías, territorio, caminos y comercio. Las órdenes se validan en el servidor y se aplican de una en una (sin duplicar por solicitudes repetidas).');
+w('- Durante las desconexiones la colonia sigue simulándose como antes (producción incluida, sin incursiones ni llegadas de colonos).');
+w('- Rendimiento: una aldea de 120 colonos y 88 edificios cuesta unos 4 ms por paso de 0,1 s; los colonos lejanos se dibujan con un modelo simple de 2 piezas y sin animar; el estado completo ocupa unos 50–90 KB por segundo con 120 colonos.');
+w();
+w('## 9. Pruebas');
+w();
+w('`npm test` ejecuta: auditoría del catálogo (nada exige algo posterior, 10 edades alcanzables), la escalera de las 10 edades jugada de principio a fin, restricciones, economía (cadenas, energía, comercio, investigación, caminos), ejército, y el protocolo del servidor con dos jugadores.');
+writeFileSync(new URL('../docs/PROGRESION.md', import.meta.url), L.join('\n') + '\n');
+console.log(`docs/PROGRESION.md: ${L.length} líneas, ${MAX_AGE} edades`);

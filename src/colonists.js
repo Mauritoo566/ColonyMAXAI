@@ -13,6 +13,7 @@ import { outfitFor } from './outfits.js';
 
 const WALK_SPEED = 1.4; // m/s (para el ritmo de las piernas)
 const LABEL_DISTANCE = 170; // metros: más lejos no se muestra el nombre
+const FAR_DISTANCE = 90; // metros: más lejos se dibuja la versión simple del colono
 const PICK_RADIUS_PX = 26; // tolerancia al hacer clic sobre un colono
 const LOINCLOTH = '#6b4a2e'; // lo único que llevan al llegar
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -115,7 +116,12 @@ function createPersonModel(look) {
 
   const accessories = new THREE.Group(); // sombrero, delantal, capa...: cambian con la edad y el oficio
   body.add(accessories);
-  root.userData = { body, armL, armR, legL, legR, torso, hip, head, hair, accessories };
+  // Versión de lejos (a más de FAR_DISTANCE m): dos cajas en lugar de unas veinte piezas.
+  const proxy = new THREE.Group();
+  proxy.add(box(0.5, 1.4, 0.3, look.shirt, 0, 0.9, 0), box(0.3, 0.3, 0.3, look.skin, 0, 1.7, 0));
+  proxy.visible = false;
+  root.add(proxy);
+  root.userData = { body, armL, armR, legL, legR, torso, hip, head, hair, accessories, proxy, far: false };
   return root;
 }
 
@@ -133,6 +139,7 @@ function dressModel(object, look, clothed, outfit) {
   const shirt = outfit ? mixHex(outfit.shirt, look.shirt, 0.22) : look.shirt;
   const pants = outfit ? mixHex(outfit.pants, look.pants, 0.22) : look.pants;
   torso.material = material(clothed ? shirt : look.skin);
+  object.userData.proxy.children[0].material = material(clothed ? shirt : look.skin);
   hip.material = material(clothed ? pants : LOINCLOTH);
   for (const arm of [armL, armR]) arm.children[0].material = material(clothed ? shirt : look.skin);
   for (const leg of [legL, legR]) leg.children[0].material = material(clothed ? pants : look.skin);
@@ -439,7 +446,18 @@ export class ColonyView {
     // Orientación: la del campamento (su "arriba" es el del planeta allí) y el rumbo.
     object.quaternion.copy(this.sim.camp.quaternion).multiply(yaw.setFromAxisAngle(Y_AXIS, e.facing));
 
-    const { body, armL, armR, legL, legR } = object.userData;
+    const ud = object.userData;
+    // De lejos se dibuja una versión simple y no se anima (con aldeas grandes ahorra miles de piezas).
+    const far = this.camera.position.distanceToSquared(object.position) > FAR_DISTANCE * FAR_DISTANCE;
+    if (far !== ud.far) {
+      ud.far = far;
+      ud.body.visible = !far;
+      ud.legL.visible = !far;
+      ud.legR.visible = !far;
+      ud.proxy.visible = far;
+    }
+    if (far) return;
+    const { body, armL, armR, legL, legR } = ud;
     const swing = Math.sin(e.phase) * 0.65 * e.moving;
     legL.rotation.x = swing;
     legR.rotation.x = -swing;

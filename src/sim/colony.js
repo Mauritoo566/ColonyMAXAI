@@ -1883,7 +1883,7 @@ export class ColonySim {
       weather: this.weather?.save?.() ?? null,
       colonists: this.colonists.map((c) => ({
         id: c.id,
-        needs: c.needs,
+        needs: Object.fromEntries(Object.entries(c.needs).map(([k, v]) => [k, Math.round(v * 10) / 10])),
         health: r2(c.health),
         log: c.log,
         clothed: c.clothed,
