@@ -35,27 +35,54 @@ const FIRE_SAFE = 14; // metros: los hostiles no se acercan a la fogata
 const HIT_EVERY = 1.4;
 const MAX_ROAM = 230;
 
+// Manadas y rebaños: casi todos viven en grupo con un líder al que siguen (los osos van solos).
+const GROUP = { conejo: [2, 4], ciervo: [3, 6], jabali: [2, 4], oveja: [4, 8], uro: [3, 6], caballo: [3, 6], lobo: [2, 4], oso: [1, 1] };
+
 export function spawnMobs(sim, biomeId, rand) {
   const set = BIOME_MOBS[biomeId];
   sim.mobs = [];
   if (!set) return;
   let id = 0;
-  const place = (type, min, max) => {
-    for (let k = 0; k < 20; k++) {
+  let group = 0;
+  const spot = (min, max) => {
+    for (let k = 0; k < 25; k++) {
       const a = rand() * Math.PI * 2;
       const r = min + rand() * (max - min);
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
-      if (sim.walkable(x, z, 1.5)) {
-        sim.mobs.push({ id: id++, type, x, z, facing: rand() * Math.PI * 2, state: 0, wait: rand() * 6, tx: x, tz: z, cd: 0, target: null });
-        return;
-      }
+      if (sim.walkable(x, z, 1.5)) return { x, z };
     }
+    return null;
   };
-  // Más y más cerca: unos pocos a la vista del campamento y el resto repartido por el territorio.
-  for (let i = 0; i < Math.ceil(set.n * 0.4); i++) place(set.peaceful[Math.floor(rand() * set.peaceful.length)], 22, 55);
-  for (let i = 0; i < set.n * 1.2; i++) place(set.peaceful[Math.floor(rand() * set.peaceful.length)], 45, 150);
-  for (let i = 0; i < set.h; i++) place(set.hostile[Math.floor(rand() * set.hostile.length)], 110, 220);
+  // Crea un grupo del tipo dado (hasta "left" animales) y devuelve cuántos puso.
+  const herd = (type, min, max, left) => {
+    const c = spot(min, max);
+    if (!c) return 0;
+    const [lo, hi] = GROUP[type];
+    const n = Math.min(left, lo + Math.floor(rand() * (hi - lo + 1)));
+    const g = group++;
+    let made = 0;
+    for (let i = 0; i < n; i++) {
+      const ox = i ? (rand() - 0.5) * 7 : 0;
+      const oz = i ? (rand() - 0.5) * 7 : 0;
+      const x = c.x + ox;
+      const z = c.z + oz;
+      if (!sim.walkable(x, z, 1)) continue;
+      sim.mobs.push({ id: id++, type, x, z, facing: rand() * Math.PI * 2, state: 0, wait: rand() * 4, tx: x, tz: z, cd: 0, target: null, g, leader: made === 0, ox, oz });
+      made++;
+    }
+    return made;
+  };
+  // Pacíficos: unos grupos a la vista del campamento y el resto repartidos por el territorio.
+  const total = Math.ceil(set.n * 1.6);
+  let made = 0;
+  for (let guard = 0; made < total && guard < 40; guard++) {
+    const near = made < total * 0.35;
+    made += herd(set.peaceful[Math.floor(rand() * set.peaceful.length)], near ? 22 : 50, near ? 60 : 150, total - made);
+  }
+  // Hostiles: lejos del campamento.
+  made = 0;
+  for (let guard = 0; made < set.h && guard < 20; guard++) made += herd(set.hostile[Math.floor(rand() * set.hostile.length)], 110, 220, set.h - made);
 }
 
 // ¿Cuida a este colono alguna defensa (atalaya o fuerte terminados cerca)?
@@ -89,6 +116,47 @@ export function updateMobs(sim, dt, isNight) {
           best = d;
           target = c;
         }
+      }
+    }
+    // Los pacíficos huyen de un hostil cercano (corriendo).
+    let fleeing = false;
+    if (!st.hostile) {
+      let near = null;
+      let nd = 16;
+      for (const h of sim.mobs) {
+        if (!MOB_STATS[h.type].hostile) continue;
+        const d = Math.hypot(h.x - m.x, h.z - m.z);
+        if (d < nd) {
+          nd = d;
+          near = h;
+        }
+      }
+      if (near) {
+        const dx = m.x - near.x;
+        const dz = m.z - near.z;
+        const d = Math.hypot(dx, dz) || 1;
+        m.tx = Math.max(-MAX_ROAM, Math.min(MAX_ROAM, m.x + (dx / d) * 25));
+        m.tz = Math.max(-MAX_ROAM, Math.min(MAX_ROAM, m.z + (dz / d) * 25));
+        m.state = 1;
+        fleeing = true;
+      }
+    }
+    // Los seguidores acompañan a su líder (los lobos también cazan en manada).
+    if (!fleeing && !target && m.g != null && !m.leader) {
+      const lead = sim.mobs.find((o) => o.g === m.g && o.leader);
+      if (lead && Math.hypot(lead.x - m.x, lead.z - m.z) > 6) {
+        m.tx = lead.x + m.ox;
+        m.tz = lead.z + m.oz;
+        m.state = 1;
+        m.wait = 0;
+      } else if (m.state === 1 && lead) {
+        m.state = 0;
+        m.wait = 1 + rand() * 3;
+      }
+      if (lead && m.state === 0) {
+        m.wait = Math.max(m.wait, 0.5);
+        m.state = 0;
+        continue;
       }
     }
     if (target) {
@@ -130,7 +198,7 @@ export function updateMobs(sim, dt, isNight) {
       }
       continue;
     }
-    const speed = st.speed * (m.state === 2 ? 1 : 0.6) * dt;
+    const speed = st.speed * (m.state === 2 ? 1 : fleeing ? 1 : m.g != null && !m.leader ? 0.9 : 0.6) * dt;
     let nx = m.x + (dx / d) * Math.min(speed, d);
     let nz = m.z + (dz / d) * Math.min(speed, d);
     // Los hostiles no entran en el círculo de la fogata; todos rodean edificios y muros.

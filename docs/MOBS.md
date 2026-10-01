@@ -70,7 +70,7 @@ Criterio: aparecen por bioma y por edad; los pacíficos dan recursos o ambiente,
 
 ## Implementados (tandas 1 y 2 de modelos, en `src/mobs.js`)
 
-Pacíficos: conejo, ciervo, jabalí, oveja, uro, caballo. Hostiles: lobo, oso. Se simulan en el servidor (`src/sim/mobs.js`),
+Pacíficos: conejo, ciervo, jabalí, oveja, uro, caballo (en rebaños de 2 a 8 con un líder; huyen de los hostiles). Hostiles: lobo (en manadas de 2 a 4), oso (solitario). Se simulan en el servidor (`src/sim/mobs.js`),
 aparecen por bioma al fundar o cargar la aldea, y viajan en el estado rápido: todos los jugadores cercanos los ven en vivo.
 Los hostiles atacan de noche (el oso, siempre) a colonos al descubierto, no entran en el círculo de la fogata ni cerca de
 atalayas, los muros los frenan, y nunca atacan mientras el dueño está desconectado.
