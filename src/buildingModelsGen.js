@@ -569,18 +569,18 @@ function tower(p, tier) {
 function wall(p, tier) {
   const c = pal(Math.min(tier, 10));
   if (tier <= 2) {
-    for (let i = -4; i <= 4; i++) stick(p, v(i * 0.38, 0, 0), v(i * 0.38, 1.7 + (i % 2) * 0.2, 0), 0.1, '#7a5230', 5);
-    box(p, 3.2, 0.1, 0.1, '#5a3a22', 0, 0.9, 0.12);
+    for (let i = -4; i <= 4; i++) stick(p, v(i * 0.4, 0, 0), v(i * 0.4, 1.7 + (i % 2) * 0.2, 0), 0.1, '#7a5230', 5);
+    box(p, 3.3, 0.1, 0.1, '#5a3a22', 0, 0.9, 0.12);
     return;
   }
   if (tier === 4) {
-    box(p, 3.2, 1.1, 0.9, '#7a6a52', 0, 0.55, 0);
-    for (let i = -4; i <= 4; i++) stick(p, v(i * 0.38, 1.0, 0), v(i * 0.38, 2.0, 0), 0.09, '#a07a4a', 5);
+    box(p, 3.3, 1.1, 0.9, '#7a6a52', 0, 0.55, 0);
+    for (let i = -4; i <= 4; i++) stick(p, v(i * 0.4, 1.0, 0), v(i * 0.38, 2.0, 0), 0.09, '#a07a4a', 5);
     return;
   }
   const stone = tier >= 9 ? '#9a9a96' : tier >= 8 ? '#b85a3e' : tier >= 6 ? '#c2bcae' : '#a8a39a';
   const h = tier >= 8 ? 2.8 : tier >= 6 ? 2.6 : 2.0;
-  box(p, 3.2, h, 0.9, stone, 0, h / 2, 0);
+  box(p, 3.3, h, 0.9, stone, 0, h / 2, 0);
   for (let i = -3; i <= 3; i += 2) box(p, 0.4, 0.4, 1.0, stone, i * 0.45, h + 0.2, 0);
   void c;
 }

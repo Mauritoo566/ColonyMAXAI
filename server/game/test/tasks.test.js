@@ -269,10 +269,13 @@ const site = (sim, id, x, z) => {
   const r = sim.applyCommand('buildLine', ['wall', 12, 30, 44, 30]);
   assert.equal(r, true);
   const walls = sim.buildings.filter((b) => b.def.id === 'wall');
-  assert.equal(walls.length, sim.wallCheck(def, 12, 30, 44, 30).segs.filter((x) => !x.problem).length + walls.length - walls.length || walls.length);
   assert.ok(walls.length >= 9, `se construyeron ${walls.length} tramos`);
   assert.ok(walls.every((w) => Math.abs(w.yaw) < 1e-9), 'orientados a lo largo (eje X)');
   assert.equal(sim.stock.wood, 200 - walls.length * 8, 'se paga cada tramo');
+  // Un tramo nuevo se pega al extremo del muro existente (sin hueco).
+  const last = walls.reduce((a, b) => (b.x > a.x ? b : a));
+  const next = sim.wallPlan(def, last.x + 3.2 + 0.5, 30, last.x + 12, 30)[0];
+  assert.ok(Math.abs(next.x - (last.x + 3.2)) < 1e-6 && Math.abs(next.z - 30) < 1e-6, 'se pega al extremo');
   // Sin recursos para todos: se hacen sólo los que se pueden pagar.
   sim.stock.wood = 24;
   const before = sim.buildings.filter((b) => b.def.id === 'wall').length;

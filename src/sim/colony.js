@@ -1766,7 +1766,30 @@ export class ColonySim {
   }
 
   // Muros: tramos de 3,2 m a lo largo de una línea de A a B (máx. 60). Cada tramo mira a lo largo de la línea.
+  // Extremo libre más cercano de un muro ya puesto (a menos de 3 m): el nuevo tramo se pega ahí.
+  wallSnap(def, x, z) {
+    let best = null;
+    let bd = 3;
+    for (const b of this.buildings) {
+      if (b.def.id !== def.id) continue;
+      const h = def.footprint;
+      for (const sgn of [-1, 1]) {
+        const ex = b.x + Math.cos(b.yaw) * h * sgn;
+        const ez = b.z - Math.sin(b.yaw) * h * sgn;
+        const d = Math.hypot(ex - x, ez - z);
+        if (d < bd) { bd = d; best = { x: ex, z: ez, yaw: b.yaw, sgn }; }
+      }
+    }
+    return best;
+  }
+
   wallPlan(def, ax, az, bx, bz) {
+    const snap = this.wallSnap(def, ax, az);
+    if (snap) {
+      // El primer tramo queda justo a continuación del extremo del muro existente.
+      ax = snap.x + Math.cos(snap.yaw) * snap.sgn * def.footprint;
+      az = snap.z - Math.sin(snap.yaw) * snap.sgn * def.footprint;
+    }
     const len = Math.hypot(bx - ax, bz - az);
     const step = def.footprint * 2;
     const dx = len > 1e-6 ? (bx - ax) / len : 1;
