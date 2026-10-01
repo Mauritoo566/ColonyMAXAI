@@ -109,6 +109,38 @@ export class BuildUI {
       const on = !(harvest.active && harvest.mode === 'zone');
       harvest.setActive(on, on ? 'zone' : 'mark');
     });
+    // Sin barra de desplazamiento: se arrastra la lista con el ratón como en una pantalla táctil
+    // (y la rueda la mueve de lado). Un arrastre no cuenta como clic sobre una tarjeta.
+    {
+      const list = this.list;
+      let drag = null;
+      list.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'touch' || e.button !== 0) return;
+        drag = { x: e.clientX, left: list.scrollLeft, moved: false };
+      });
+      window.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        const dx = e.clientX - drag.x;
+        if (!drag.moved && Math.abs(dx) < 5) return;
+        drag.moved = true;
+        list.classList.add('is-dragging');
+        list.scrollLeft = drag.left - dx;
+      });
+      window.addEventListener('pointerup', () => {
+        if (drag?.moved) {
+          const swallow = (ev) => ev.stopPropagation();
+          list.addEventListener('click', swallow, { capture: true, once: true });
+          setTimeout(() => list.removeEventListener('click', swallow, { capture: true }), 0);
+        }
+        drag = null;
+        list.classList.remove('is-dragging');
+      });
+      list.addEventListener('wheel', (e) => {
+        if (list.scrollWidth <= list.clientWidth) return;
+        e.preventDefault();
+        list.scrollLeft += e.deltaY + e.deltaX;
+      }, { passive: false });
+    }
     // Franja de detalle: descripción, coste y motivo completo de lo que esté señalado o elegido.
     this.detail = document.createElement('p');
     this.detail.className = 'build-detail';

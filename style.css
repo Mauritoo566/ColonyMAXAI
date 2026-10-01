@@ -2620,3 +2620,9 @@ canvas.is-harvesting {
 /* La lista de colonos se desplaza dentro de la tarjeta (el <details> es el que hace scroll) */
 .roster-wrap { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .roster { overflow: visible; }
+
+/* Lista de construcción: sin barra, se arrastra */
+.build-list { scrollbar-width: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.build-list::-webkit-scrollbar { display: none; }
+.build-list.is-dragging { cursor: grabbing; }
+.build-list.is-dragging .build-item { pointer-events: none; }
