@@ -78,7 +78,7 @@ const scene = new THREE.Scene();
 scene.background = SPACE_COLOR.clone();
 scene.fog = new THREE.Fog(SKY_DAY.clone(), 1e12, 1e12);
 
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, RADIUS * 20);
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.4, RADIUS * 20);
 const controls = new PlanetControls(camera, canvas);
 // El reloj del mundo es el mismo para todos (lo manda el servidor; aquí se extrapola).
 const dayNight = new DayNight({ startLon: 0, startHour: 12 });

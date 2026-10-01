@@ -19,7 +19,7 @@ En el servidor de producción el juego corre como servicio de systemd detrás de
 
 - Arrastrar: moverse sobre el planeta
 - Rueda del ratón o pellizcar: acercar / alejar (desde el espacio hasta unos metros del suelo)
-- Botón derecho, Shift + arrastrar o girar con dos dedos: rotar la vista (en horizontal) y levantar la mirada hacia el cielo (en vertical)
+- Botón derecho o Shift + arrastrar: orbitar alrededor del punto del centro de la pantalla (horizontal: girar; vertical: inclinar, con límites). Alt + botón derecho (o botón central): mirar alrededor y al cielo. Dos dedos: girar la vista. Se puede acercar casi a ras de los colonos (7 m)
 - El tiempo es el mismo para todos los jugadores: un día de juego dura 6 minutos
 
 ## Cuentas y mundo compartido

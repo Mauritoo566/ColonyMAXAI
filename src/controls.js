@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import { RADIUS, surfaceHeight } from './elevation.js';
 
-const MIN_CLEARANCE = 25; // metros mínimos sobre el suelo
+const MIN_CLEARANCE = 7; // metros mínimos sobre el suelo (se puede acercar casi a ras de los colonos)
 const MAX_ALTITUDE = RADIUS * 4;
 const MAX_LAT = THREE.MathUtils.degToRad(89);
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const MAX_TILT = THREE.MathUtils.degToRad(62); // vista de estrategia cerca del suelo
-const MAX_LOOK_UP = THREE.MathUtils.degToRad(80); // cuánto se puede levantar la mirada
+const MAX_LOOK_UP = THREE.MathUtils.degToRad(80); // cuánto se puede levantar la mirada (Alt + botón derecho: mirar al cielo)
+const MAX_ORBIT_TILT = THREE.MathUtils.degToRad(82); // inclinación máxima orbitando: casi al horizonte, sin pasar al cielo
+const MIN_ORBIT_TILT = THREE.MathUtils.degToRad(8); // y casi desde arriba, sin dar la vuelta
 const FLIGHT_MIN_SECONDS = 1.5;
 const FLIGHT_MAX_SECONDS = 10;
 
@@ -46,6 +48,7 @@ export class PlanetControls {
     this.viewClearance = null; // altura para la inclinación durante un vuelo
     this.pointers = new Map();
     this.pinch = null;
+    this.orbit = null; // órbita en curso: el punto del suelo que queda fijo en el centro
 
     this.dir = new THREE.Vector3();
     this.east = new THREE.Vector3();
@@ -217,11 +220,11 @@ export class PlanetControls {
   }
 
   // Coloca el objetivo de la cámara para que un punto quede en el centro de la pantalla.
-  aimAt(dir) {
-    const clearance = Math.max(1, this.target.altitude - this.groundHeight);
+  aimAt(dir, fixedClearance = null) {
+    const clearance = fixedClearance ?? Math.max(1, this.target.altitude - this.groundHeight);
     const lat = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
     const lon = Math.atan2(dir.x, dir.z);
-    const back = clearance * Math.tan(tiltFor(clearance));
+    const back = clearance * Math.tan(Math.min(tiltFor(clearance) + this.target.lookUp, MAX_ORBIT_TILT));
     const h = this.target.heading;
     this.target.lat = THREE.MathUtils.clamp(lat - (back * Math.cos(h)) / RADIUS, -MAX_LAT, MAX_LAT);
     const tLon = lon - (back * Math.sin(h)) / RADIUS / Math.max(0.05, Math.cos(lat));
@@ -267,8 +270,38 @@ export class PlanetControls {
 
   onPointerDown(e) {
     this.element.setPointerCapture(e.pointerId);
-    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button, shift: e.shiftKey });
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button, shift: e.shiftKey, alt: e.altKey });
     this.pinch = null;
+    this.orbit = null;
+    if (e.button === 2 && !e.altKey) this.beginOrbit();
+  }
+
+  // Punto del suelo que está en el centro de la pantalla ahora: es el pivote de la órbita
+  // (siempre existe, aunque no haya nada ahí, y no depende de lo que haya debajo del puntero).
+  centerDir(out = new THREE.Vector3()) {
+    this.cancelFlight();
+    const clearance = Math.max(1, this.altitude - this.groundHeight);
+    const ahead = clearance * Math.tan(Math.min(tiltFor(clearance) + this.lookUp, MAX_ORBIT_TILT)) / RADIUS;
+    const dir = new THREE.Vector3().setFromSphericalCoords(1, Math.PI / 2 - this.lat, this.lon);
+    const east = new THREE.Vector3().crossVectors(WORLD_UP, dir).normalize();
+    const north = new THREE.Vector3().crossVectors(dir, east);
+    const forward = north.multiplyScalar(Math.cos(this.heading)).addScaledVector(east, Math.sin(this.heading));
+    return out.copy(dir).multiplyScalar(Math.cos(ahead)).addScaledVector(forward, Math.sin(ahead)).normalize();
+  }
+
+  beginOrbit() {
+    // Girar con el botón derecho no tiene sentido desde el espacio (todo el planeta a la vista).
+    if (this.lowness < 0.05) {
+      this.orbit = null;
+      return;
+    }
+    this.orbit = { pivot: this.centerDir(), clearance: Math.max(1, this.altitude - this.groundHeight) };
+    // La cámara parte de donde está (sin saltos): se toma el estado actual como objetivo.
+    this.target.heading = this.heading;
+    this.target.lookUp = this.lookUp;
+    this.target.altitude = this.altitude;
+    this.target.lat = this.lat;
+    this.target.lon = this.lon;
   }
 
   onPointerMove(e) {
@@ -294,11 +327,25 @@ export class PlanetControls {
 
     // Mientras se marca un área con la herramienta, el botón izquierdo no mueve la cámara.
     if (p.button === 0 && !p.shift && this.blockLeftDrag?.()) return;
-    if (p.button === 2 || p.shift) {
+    if (p.alt && (p.button === 2 || p.button === 1)) {
+      // Alt + botón derecho (o botón central): girar la cabeza en el sitio, para mirar al cielo.
       this.cancelFlight();
-      this.target.heading -= dx * 0.005; // botón derecho: girar la vista
-      // y en vertical: levantar o bajar la mirada (para ver el cielo, el Sol y la Luna)
+      this.target.heading -= dx * 0.005;
       this.target.lookUp = THREE.MathUtils.clamp(this.target.lookUp + dy * 0.004, 0, MAX_LOOK_UP);
+    } else if (p.button === 2 || p.shift) {
+      // Botón derecho: orbitar alrededor del punto del centro (el pivote queda fijo).
+      this.cancelFlight();
+      this.target.heading -= dx * 0.005;
+      const base = tiltFor(this.orbit?.clearance ?? Math.max(1, this.target.altitude - this.groundHeight));
+      this.target.lookUp = THREE.MathUtils.clamp(this.target.lookUp + dy * 0.004, MIN_ORBIT_TILT - base, MAX_ORBIT_TILT - base);
+      if (this.orbit && !this.follow) {
+        this.aimAt(this.orbit.pivot, this.orbit.clearance);
+        // La órbita se aplica al instante (sin suavizado) para que el pivote no se desplace.
+        this.heading = this.target.heading;
+        this.lookUp = this.target.lookUp;
+        this.lat = this.target.lat;
+        this.lon = this.target.lon;
+      }
     } else {
       this.pan(dx, dy);
     }
@@ -307,6 +354,7 @@ export class PlanetControls {
   onPointerUp(e) {
     this.pointers.delete(e.pointerId);
     this.pinch = null;
+    if (!this.pointers.size) this.orbit = null;
   }
 
   onWheel(e) {
