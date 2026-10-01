@@ -1784,16 +1784,25 @@ export class ColonySim {
   }
 
   wallPlan(def, ax, az, bx, bz) {
+    const step = def.footprint * 2;
+    let dx = bx - ax, dz = bz - az;
+    let len = Math.hypot(dx, dz);
+    if (len > 1e-6) { dx /= len; dz /= len; }
     const snap = this.wallSnap(def, ax, az);
     if (snap) {
-      // El primer tramo queda justo a continuación del extremo del muro existente.
-      ax = snap.x + Math.cos(snap.yaw) * snap.sgn * def.footprint;
-      az = snap.z - Math.sin(snap.yaw) * snap.sgn * def.footprint;
+      // Sale del extremo del muro existente: sigue recto si el arrastre va más o menos en su dirección
+      // (o es un solo clic) y, si no, hace esquina; el primer tramo queda pegado, sin hueco.
+      const ux = Math.cos(snap.yaw) * snap.sgn, uz = -Math.sin(snap.yaw) * snap.sgn;
+      if (len < 0.5 || dx * ux + dz * uz > 0.9) { dx = ux; dz = uz; }
+      else if (len < 1e-6) { dx = ux; dz = uz; }
+      const ex = snap.x, ez = snap.z; // extremo libre del muro existente
+      const along = (bx - ex) * dx + (bz - ez) * dz;
+      ax = ex + dx * def.footprint;
+      az = ez + dz * def.footprint;
+      len = Math.max(0, along - def.footprint);
+    } else if (len <= 1e-6) {
+      dx = 1; dz = 0;
     }
-    const len = Math.hypot(bx - ax, bz - az);
-    const step = def.footprint * 2;
-    const dx = len > 1e-6 ? (bx - ax) / len : 1;
-    const dz = len > 1e-6 ? (bz - az) / len : 0;
     const yaw = Math.atan2(-dz, dx);
     const n = Math.min(60, Math.floor(len / step + 1e-6) + 1);
     return Array.from({ length: n }, (_, i) => ({ x: ax + dx * step * i, z: az + dz * step * i, yaw }));
@@ -2111,12 +2120,13 @@ export class ColonySim {
     const zone = addTerrainZone({
       dir: { x: dir.x, y: dir.y, z: dir.z },
       height,
-      flatRadius: def.footprint + 1,
-      blendRadius: 5,
-      clearRadius: def.footprint + 0.8,
+      // Los muros siguen el terreno: sin nivelar ni pintar tierra (cada tramo a su altura dejaba escalones).
+      flatRadius: def.line ? 0.01 : def.footprint + 1,
+      blendRadius: def.line ? 0.05 : 5,
+      clearRadius: def.line ? 0.4 : def.footprint + 0.8,
       detailRadius: 0,
       dirtColor: (ground.details ? ground : BIOMES.grassland).dirt,
-      resourceClear: def.footprint + 3,
+      resourceClear: def.line ? def.footprint + 0.5 : def.footprint + 3,
     });
     this.heights.clear();
 
