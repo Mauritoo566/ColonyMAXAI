@@ -244,8 +244,15 @@ export class BuildingSystem {
     const gz = this.grid ? this.grid.snap(local.z) : local.z;
     this.groundPoint = { x: gx, z: gz };
     // Los muros no se giran: conservan su orientación (o van a lo largo del eje X).
-    const yaw = (this.moving ?? this.placing).line ? (this.moving ? this.moving.yaw : 0) : Math.atan2(-gx, -gz) + this.turn * (Math.PI / 2);
-    this.candidate = { x: gx, z: gz, yaw, problem: this.moving ? this.sim.moveProblem(this.moving, gx, gz) : this.sim.buildProblem(this.placing, gx, gz) };
+    const yaw = ((this.moving ?? this.placing).def ?? this.placing).line ? (this.moving ? this.moving.yaw : 0) : Math.atan2(-gx, -gz) + this.turn * (Math.PI / 2);
+    let cx = gx, cz = gz, cyaw = yaw;
+    const def = (this.moving ?? this.placing).def ?? this.placing;
+    if (def.line) {
+      // Un muro suelto se pega al extremo libre de otro y toma su orientación (sin huecos).
+      const s = this.sim.wallSnapPiece(def, gx, gz, this.moving?.id ?? null);
+      if (s) { cx = s.x; cz = s.z; cyaw = s.yaw; }
+    }
+    this.candidate = { x: cx, z: cz, yaw: cyaw, problem: this.moving ? this.sim.moveProblem(this.moving, cx, cz) : this.sim.buildProblem(this.placing, cx, cz) };
   }
 
   // Final de la línea: con Mayús se ajusta a 8 direcciones.

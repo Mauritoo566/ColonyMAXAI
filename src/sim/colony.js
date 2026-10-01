@@ -1767,20 +1767,31 @@ export class ColonySim {
 
   // Muros: tramos de 3,2 m a lo largo de una línea de A a B (máx. 60). Cada tramo mira a lo largo de la línea.
   // Extremo libre más cercano de un muro ya puesto (a menos de 3 m): el nuevo tramo se pega ahí.
-  wallSnap(def, x, z) {
+  wallSnap(def, x, z, excludeId = null, reach = 3) {
     let best = null;
-    let bd = 3;
-    for (const b of this.buildings) {
-      if (b.def.id !== def.id) continue;
-      const h = def.footprint;
+    let bd = reach;
+    const h = def.footprint;
+    const walls = this.buildings.filter((b) => b.def.id === def.id && b.id !== excludeId);
+    for (const b of walls) {
       for (const sgn of [-1, 1]) {
         const ex = b.x + Math.cos(b.yaw) * h * sgn;
         const ez = b.z - Math.sin(b.yaw) * h * sgn;
         const d = Math.hypot(ex - x, ez - z);
-        if (d < bd) { bd = d; best = { x: ex, z: ez, yaw: b.yaw, sgn }; }
+        if (d >= bd) continue;
+        // Un extremo ya ocupado por otro tramo no admite más.
+        const ux = Math.cos(b.yaw) * sgn, uz = -Math.sin(b.yaw) * sgn;
+        const taken = walls.some((o) => o !== b && Math.hypot(o.x - (ex + ux * h), o.z - (ez + uz * h)) < 1.2);
+        if (!taken) { bd = d; best = { x: ex, z: ez, yaw: b.yaw, sgn }; }
       }
     }
     return best;
+  }
+
+  // Un tramo suelto (al colocarlo o moverlo) se pega al extremo libre más cercano y toma su orientación.
+  wallSnapPiece(def, x, z, excludeId = null) {
+    const snap = this.wallSnap(def, x, z, excludeId, 4.5);
+    if (!snap) return null;
+    return { x: snap.x + Math.cos(snap.yaw) * snap.sgn * def.footprint, z: snap.z - Math.sin(snap.yaw) * snap.sgn * def.footprint, yaw: snap.yaw };
   }
 
   wallPlan(def, ax, az, bx, bz) {
@@ -2095,7 +2106,7 @@ export class ColonySim {
     }
     const old = { workers: [...b.workers], residents: this.colonists.filter((c) => c.home === b.id), orders: this.colonists.filter((c) => c.order?.kind === 'build' && c.order.building === b.id) };
     this.detachBuilding(b);
-    const nb = this.createBuilding(b.def, x, z, b.def.line ? b.yaw : Number.isFinite(yaw) ? yaw : b.yaw, b.done ? 0 : b.progress, b.produced, b.level);
+    const nb = this.createBuilding(b.def, x, z, Number.isFinite(yaw) ? yaw : b.yaw, b.done ? 0 : b.progress, b.produced, b.level);
     nb.gate = b.gate;
     Object.assign(nb, { upgrading: b.upgrading, store: b.store, cycle: b.cycle, cycleActive: b.cycleActive, priority: b.priority, paused: b.paused, buildTime: b.buildTime });
     for (const w of old.workers) {

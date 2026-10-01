@@ -276,6 +276,12 @@ const site = (sim, id, x, z) => {
   const last = walls.reduce((a, b) => (b.x > a.x ? b : a));
   const next = sim.wallPlan(def, last.x + 3.2 + 0.5, 30, last.x + 12, 30)[0];
   assert.ok(Math.abs(next.x - (last.x + 3.2)) < 1e-6 && Math.abs(next.z - 30) < 1e-6, 'se pega al extremo');
+  // Mover un tramo cerca de otro: se pega y se alinea.
+  const piece = walls[0];
+  const near = walls.find((w) => w !== piece && w.x === last.x);
+  const snapped = sim.wallSnapPiece(def, last.x + 3.9, 33, piece.id);
+  assert.ok(snapped && Math.abs(snapped.x - (last.x + 3.2)) < 1e-6 && Math.abs(snapped.z - 30) < 1e-6 && Math.abs(snapped.yaw - last.yaw) < 1e-9, 'al mover también se pega');
+  void near;
   // Sin recursos para todos: se hacen sólo los que se pueden pagar.
   sim.stock.wood = 24;
   const before = sim.buildings.filter((b) => b.def.id === 'wall').length;
