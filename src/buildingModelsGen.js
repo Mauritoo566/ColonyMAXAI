@@ -29,13 +29,13 @@ const cyl = (p, rt, rb, h, color, x, y, z, seg = 10) => p.add(new THREE.Cylinder
 const cone = (p, r, h, color, x, y, z, seg = 10) => p.add(new THREE.ConeGeometry(r, h, seg), color, mat(x, y, z));
 
 // Tejado a dos aguas con la cumbrera a lo largo de z: w = ancho, d = largo, h = altura de la cumbrera.
-function gable(p, w, d, h, color, y, wallColor) {
+function gable(p, w, d, h, color, y, wallColor, ox = 0, oz = 0) {
   const s = Math.hypot(w / 2, h) + 0.2;
   const a = Math.atan2(h, w / 2);
-  box(p, s, 0.16, d + 0.35, color, w / 4, y + h / 2, 0, 0, 0, -a);
-  box(p, s, 0.16, d + 0.35, color, -w / 4, y + h / 2, 0, 0, 0, a);
+  box(p, s, 0.16, d + 0.35, color, ox + w / 4, y + h / 2, oz, 0, 0, -a);
+  box(p, s, 0.16, d + 0.35, color, ox - w / 4, y + h / 2, oz, 0, 0, a);
   if (wallColor) {
-    for (const z of [d / 2, -d / 2]) p.add(triangle(v(-w / 2, y, z), v(w / 2, y, z), v(0, y + h, z)), wallColor);
+    for (const z of [d / 2, -d / 2]) p.add(triangle(v(ox - w / 2, y, oz + z), v(ox + w / 2, y, oz + z), v(ox, y + h, oz + z)), wallColor);
   }
 }
 
@@ -320,7 +320,7 @@ function farm(p, tier) {
   for (const [x, z, w, d] of [[0, 1.8, 4.8, 0.08], [0, -1.8, 4.8, 0.08], [2.4, 0, 0.08, 3.6], [-2.4, 0, 0.08, 3.6]]) box(p, w, 0.6, d, c.trim, x, 0.3, z);
   // Cobertizo.
   box(p, 1.1, 1.0, 0.9, c.wall, 2.9, 0.5, 1.6);
-  gable(p, 1.4, 1.2, 0.5, c.roof, 1.0, c.wall);
+  gable(p, 1.2, 0.9, 0.45, c.roof, 1.0, c.wall, 2.9, 1.6);
   if (tier >= 5) {
     cyl(p, 0.55, 0.55, 2.2, tier >= 8 ? '#b4bcc4' : '#c9a45a', -2.9, 1.1, -1.4, 10);
     cone(p, 0.65, 0.6, tier >= 8 ? '#8a9298' : '#a07a4a', -2.9, 2.5, -1.4, 10);
