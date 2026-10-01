@@ -128,8 +128,10 @@ const spots = [[22, 10], [22, -8], [-24, 12], [-22, -14], [10, 28], [-10, 28]];
   c.x = 8 * 4; c.z = 8 * 4;
   assert.ok(roadSpeed(sim, c.x, c.z) > 1);
   assert.equal(roadSpeed(sim, 0, 0), 1);
-  const young = colony(2, { fiber: 100 });
-  assert.equal(young.paintRoads([[8, 8]]), false, 'no hay caminos antes de la edad III');
+  const stone = colony(2, { fiber: 100 });
+  assert.equal(stone.paintRoads([[8, 8]]), true, 'el camino de tierra llega con la Edad de Piedra');
+  const young = colony(1, { fiber: 100 });
+  assert.equal(young.paintRoads([[8, 8]]), false, 'no hay caminos en la primera edad');
   console.log('✓ caminos: por edad, con coste y con velocidad');
 }
 console.log('Todo bien.');

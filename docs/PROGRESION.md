@@ -104,6 +104,8 @@ Chozas de barro y paja, senderos, tótem y herramientas de piedra pulida.
 
 **Bienes nuevos:** grano, arcilla.
 
+**Caminos:** Camino de tierra (×1.25, 1 fibras por casilla de 4 m).
+
 ### III. Edad del Bronce — Primeros talleres
 
 Adobe con vigas y techos de caña, minas, fundición y herramientas de bronce.
@@ -129,8 +131,6 @@ Adobe con vigas y techos de caña, minas, fundición y herramientas de bronce.
 **Unidades:** Lancero (barracks, equipo armas de bronce, poder 3).
 
 **Bienes nuevos:** cobre, estaño, bronce, herramientas de bronce, cerámica, pan, armas de bronce.
-
-**Caminos:** Camino de tierra (×1.25, 1 fibras por casilla de 4 m).
 
 ### IV. Edad del Hierro — Especialización
 

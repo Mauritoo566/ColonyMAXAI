@@ -334,7 +334,7 @@ export function researchProblem(colony, id) {
 
 export const ROAD_CELL = 4;
 export const ROAD_LEVELS = [
-  { age: 3, name: 'Camino de tierra', cost: { fiber: 1 }, speed: 1.25, color: '#a8845a' },
+  { age: 2, name: 'Camino de tierra', cost: { fiber: 1 }, speed: 1.25, color: '#a8845a' },
   { age: 5, name: 'Camino empedrado', cost: { stone: 2 }, speed: 1.45, color: '#8f8a82' },
   { age: 7, name: 'Calle adoquinada', cost: { cut_stone: 1 }, speed: 1.6, color: '#7a746a' },
   { age: 9, name: 'Carretera asfaltada', cost: { concrete: 1 }, speed: 1.9, color: '#3e3e44' },
@@ -352,7 +352,7 @@ export function roadLevelFor(age) {
   return n;
 }
 
-export const roadCap = (age) => Math.max(0, (age - 2) * 80);
+export const roadCap = (age) => (age < 2 ? 0 : Math.max(40, (age - 2) * 80));
 
 export function roadSpeed(colony, x, z) {
   if (!colony.roads.size) return 1;
