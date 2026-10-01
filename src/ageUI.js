@@ -37,6 +37,21 @@ export class AgeUI {
     this.modal.addEventListener('pointerdown', (e) => {
       if (e.target === this.modal) this.toggle(false);
     });
+    // Un solo manejador para todos los botones: la ventana se redibuja sola y un clic a medias no se pierde.
+    this.panel.addEventListener('click', (e) => {
+      const hit = (sel) => e.target.closest(sel);
+      if (hit('[data-close]')) this.toggle(false);
+      const tab = hit('[data-agetab]');
+      if (tab) {
+        this.tab = tab.dataset.agetab;
+        this.renderedFor = null;
+        this.render();
+      }
+      if (hit('[data-advance]') && this.colony.advanceAge(this.timeLabel?.() ?? '')) {
+        this.renderedFor = null;
+        this.timer = 0;
+      }
+    });
     this.modal.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
   }
 
@@ -172,18 +187,5 @@ export class AgeUI {
       </div>
       <div class="cp-tabs" role="tablist">${tabs.map(([id, t]) => `<button type="button" class="cp-tab" role="tab" data-agetab="${id}" aria-selected="${this.tab === id}">${t}</button>`).join('')}</div>
       <div class="age-body">${pages[this.tab] ?? pages.resumen}</div>`;
-    for (const b of this.panel.querySelectorAll('[data-agetab]')) {
-      b.addEventListener('click', () => {
-        this.tab = b.dataset.agetab;
-        this.renderedFor = null;
-        this.render();
-      });
-    }
-    this.panel.querySelector('[data-advance]')?.addEventListener('click', () => {
-      if (colony.advanceAge(this.timeLabel?.() ?? '')) {
-        this.renderedFor = null;
-        this.timer = 0;
-      }
-    });
   }
 }
