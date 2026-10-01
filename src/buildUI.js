@@ -552,8 +552,10 @@ export class BuildUI {
               (w) => `<div class="worker-card">
                 <span class="avatar" data-avatar="${w.id}"></span>
                 <div><div class="worker-name">${escapeHtml(w.name)}</div><div class="reason">${skill.name}: ${colony.skillOf(w, def.skill)}/10</div></div>
-                <button type="button" class="btn" data-see-worker="${w.id}">Ver</button>
-                <button type="button" class="btn" data-release="${w.id}">Quitar</button>
+                <div class="worker-actions">
+                  <button type="button" class="btn" data-see-worker="${w.id}">Ver</button>
+                  <button type="button" class="btn" data-release="${w.id}">Quitar</button>
+                </div>
               </div>`,
             )
             .join('')}

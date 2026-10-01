@@ -2655,3 +2655,5 @@ canvas.is-harvesting {
 .harvest-filters { display: flex; gap: 4px; flex-wrap: wrap; }
 .harvest-filters button { flex: 1; height: 28px; padding: 0 10px; border: 1px solid var(--ui-line); border-radius: 7px; background: none; color: var(--ui-muted); font: 700 12px/1 var(--font-display); cursor: pointer; }
 .harvest-filters button[aria-pressed='true'] { border-color: var(--accent); color: var(--ui-text); background: rgba(242, 178, 76, 0.16); }
+.worker-actions { display: grid; gap: 4px; }
+.worker-actions .btn { padding: 6px 12px; min-width: 72px; }
