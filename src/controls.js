@@ -49,8 +49,8 @@ export class PlanetControls {
     this.north = new THREE.Vector3();
     this.forward = new THREE.Vector3();
     this.look = new THREE.Vector3();
-    this.tmpQuat = new THREE.Quaternion();
-    this.lookQuat = new THREE.Quaternion();
+    this.focusDir = new THREE.Vector3();
+    this.flightUp = new THREE.Vector3();
 
     element.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     element.addEventListener('pointermove', (e) => this.onPointerMove(e));
@@ -367,26 +367,32 @@ export class PlanetControls {
 
     camera.position.copy(dir).multiplyScalar(RADIUS + this.altitude);
     look.copy(dir).multiplyScalar(-Math.cos(tilt)).addScaledVector(forward, Math.sin(tilt));
-    camera.up.copy(dir).multiplyScalar(Math.sin(tilt)).addScaledVector(forward, Math.cos(tilt)).normalize();
-    camera.lookAt(look.add(camera.position));
 
-    // Durante un vuelo la cámara mira fija al destino. Al empezar gira hacia él en un
-    // momento, y al final coincide con la vista normal (el vuelo termina justo detrás
-    // del destino), así que no hay saltos.
+    // Durante un vuelo la cámara mira cada vez más hacia el destino al empezar y vuelve a
+    // la vista normal al final (que coincide con el punto de llegada: sin saltos). Se
+    // mezclan las DIRECCIONES de la mirada, no las orientaciones: así el "arriba" se
+    // calcula siempre igual y la cámara nunca se inclina de lado (antes, mezclar dos
+    // orientaciones con "arriba" distinto la torcía hasta 100° a media altura).
     const f = this.flight;
     if (f) {
-      const normalView = this.tmpQuat.copy(camera.quaternion);
-      // Arriba de la cámara: una mezcla fija del "arriba" del planeta y la dirección de
-      // avance. Mirando en horizontal manda el "arriba"; mirando hacia abajo, la
-      // dirección de avance. Así la cámara nunca gira sobre sí misma.
-      camera.up.copy(dir).addScaledVector(forward, 1.5).normalize();
-      camera.lookAt(f.focus);
-      // Gira hacia el destino en ~1 s al empezar y vuelve a la vista normal al final.
+      const toFocus = this.focusDir.copy(f.focus).sub(camera.position).normalize();
       const t = Math.min(1, f.time / f.duration);
       const turnIn = Math.min(0.3, 1.1 / f.duration);
       const blend = THREE.MathUtils.smoothstep(t, 0, turnIn) * (1 - THREE.MathUtils.smoothstep(t, 0.8, 1));
-      this.lookQuat.copy(camera.quaternion);
-      camera.quaternion.slerpQuaternions(normalView, this.lookQuat, blend);
+      f.blend = blend;
+      look.lerp(toFocus, blend).normalize();
     }
+    // "Arriba" de la cámara. En la vista normal es el del planeta inclinado según el ángulo
+    // de mirada (hacia abajo del todo pasa a ser el rumbo). En vuelo se pasa suavemente a un
+    // "arriba" que sigue siendo el del planeta aunque se mire hacia el lado, y sólo usa el
+    // rumbo cuando se mira casi en vertical (ahí el del planeta no define el giro).
+    camera.up.copy(dir).multiplyScalar(Math.sin(tilt)).addScaledVector(forward, Math.cos(tilt));
+    if (f) {
+      const w = THREE.MathUtils.smoothstep(Math.abs(look.dot(dir)), 0.8, 0.995);
+      this.flightUp.copy(dir).multiplyScalar(1 - w).addScaledVector(forward, w);
+      camera.up.lerp(this.flightUp, f.blend);
+    }
+    camera.up.normalize();
+    camera.lookAt(look.add(camera.position));
   }
 }

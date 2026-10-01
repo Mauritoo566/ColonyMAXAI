@@ -387,6 +387,8 @@ const groundSphere = new THREE.Sphere(new THREE.Vector3(), RADIUS);
 const hit = new THREE.Vector3();
 let centerHit = null; // punto del suelo en el centro de la pantalla (o null si es cielo)
 const centerDir = new THREE.Vector3();
+let smoothedFocus = null;
+let lastFocusAt = 0;
 
 // Actualiza el "hueco" de las nubes: distancia al punto del suelo que se ve en el
 // centro de la pantalla y cuánto se aplica según la altura.
@@ -396,11 +398,14 @@ function updateCloudFade(clearance) {
   groundSphere.radius = RADIUS + Math.max(0, controls.groundHeight);
   const altitude = camera.position.length() - RADIUS;
   centerHit = centerRay.intersectSphere(groundSphere, hit);
-  if (centerHit) {
-    cloudFade.focusDistance.value = hit.distanceTo(camera.position);
-  } else {
-    cloudFade.focusDistance.value = Math.sqrt(altitude * (2 * RADIUS + altitude)); // horizonte
-  }
+  const focus = centerHit ? hit.distanceTo(camera.position) : Math.sqrt(altitude * (2 * RADIUS + altitude)); // o el horizonte
+  // Se suaviza (en logaritmo): al moverse rápido el centro pasa del suelo al cielo y la
+  // distancia saltaba, con lo que las nubes se aclaraban y oscurecían de golpe.
+  const now = performance.now();
+  const k = smoothedFocus === null ? 1 : 1 - Math.exp(-Math.min(0.25, (now - lastFocusAt) / 1000) * 14);
+  lastFocusAt = now;
+  smoothedFocus = Math.exp(Math.log(smoothedFocus ?? focus) + (Math.log(focus) - Math.log(smoothedFocus ?? focus)) * k);
+  cloudFade.focusDistance.value = smoothedFocus;
   // Desde el espacio no hace falta: el hueco desaparece entre 400 y 2.500 km.
   cloudFade.strength.value = 1 - THREE.MathUtils.smoothstep(clearance, 400_000, 2_500_000);
   cloudFade.nearDistance.value = Math.max(1_500, clearance * 0.3);

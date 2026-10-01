@@ -371,6 +371,7 @@ function cellClusters(i, j, lonCells) {
       base,
       size,
       seed: Math.floor(rand() * 4294967296),
+      mode: 0, // 0 = no se dibuja, 1 = bola lejana, 2 = cúmulo con todo detalle
       position: dir.clone().multiplyScalar(base),
     });
   }
@@ -402,7 +403,9 @@ class CumulusField {
     const altitude = camera.position.length() - RADIUS;
     const moved = this.lastPosition.distanceTo(camera.position);
     // Reconstruir sólo si la cámara se movió lo suficiente como para notarlo.
-    if (moved < Math.max(100, altitude * 0.02) || now - this.lastBuild < 0.1) return;
+    // Más seguido cuanto más rápido se mueve la cámara: a toda velocidad (un vuelo) con
+    // reconstrucciones cada 0,1 s las nubes aparecían y desaparecían a saltos.
+    if (moved < Math.max(50, altitude * 0.008) || now - this.lastBuild < 0.03) return;
     this.lastPosition.copy(camera.position);
     this.lastBuild = now;
     this.rebuild(camera, viewportHeight);
@@ -453,13 +456,24 @@ class CumulusField {
           if (cluster.dir.dot(cameraDir) < cosSpan) continue;
           const distance = camPos.distanceTo(cluster.position);
           const pixels = (cluster.size / distance) * pixelsPerRadian;
-          if (pixels < MIN_PIXELS) continue;
+          // Histéresis: lo que ya se dibuja sigue un poco más allá del umbral (si no, a toda
+          // velocidad cada cúmulo cruza el límite de un lado a otro y parpadea).
+          const shown = cluster.mode > 0;
+          if (pixels < MIN_PIXELS * (shown ? 0.75 : 1)) {
+            cluster.mode = 0;
+            continue;
+          }
           // Detrás del horizonte (contando la altura de la nube) no se ve.
-          if (distance > horizonDistance + Math.sqrt(cluster.base * cluster.base - RADIUS * RADIUS)) continue;
+          if (distance > horizonDistance + Math.sqrt(cluster.base * cluster.base - RADIUS * RADIUS)) {
+            cluster.mode = 0;
+            continue;
+          }
 
           const grow = THREE.MathUtils.smoothstep(pixels, MIN_PIXELS, MIN_PIXELS * 3);
           const rand = seededRandom(cluster.seed);
-          if (pixels >= DETAIL_PIXELS) {
+          const detailed = pixels >= DETAIL_PIXELS * (cluster.mode === 2 ? 0.8 : 1);
+          cluster.mode = detailed ? 2 : 1;
+          if (detailed) {
             addCumulus(write, rand, cluster.dir, cluster.base, cluster.size, 0.6, origin);
           } else {
             addBlob(writeBlob, cluster, grow, origin);
