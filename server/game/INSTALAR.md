@@ -27,7 +27,7 @@ chmod +x server/game/actualizar.sh
 sudo install -m 644 -o root -g root /opt/colonymaxai/app/server/game/game.env.example /etc/colonymaxai/game.env
 ```
 
-No hace falta cambiar nada: puerto 3100, solo local, y la base en `/var/lib/colonymaxai/game.db`.
+No hace falta cambiar nada: puerto 3100, solo local, y la base en `/var/lib/colonymaxai/game.db`. Esos valores ya vienen en el servicio, así que este archivo es opcional: solo sirve para cambiarlos.
 
 ## 3. Pasar el túnel al código nuevo
 

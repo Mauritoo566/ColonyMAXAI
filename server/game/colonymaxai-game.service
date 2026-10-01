@@ -9,7 +9,9 @@ Wants=network-online.target
 Type=simple
 User=CAMBIAR_USUARIO
 WorkingDirectory=/opt/colonymaxai/app
-EnvironmentFile=/etc/colonymaxai/game.env
+# Valores por defecto; /etc/colonymaxai/game.env (opcional, por el "-") puede cambiarlos.
+Environment=HOST=127.0.0.1 PORT=3100 DB_PATH=/var/lib/colonymaxai/game.db BACKUP_DIR=/var/lib/colonymaxai/backups
+EnvironmentFile=-/etc/colonymaxai/game.env
 ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning server/game/index.js
 Restart=always
 RestartSec=5
