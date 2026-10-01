@@ -2615,3 +2615,4 @@ canvas.is-harvesting {
   .colony-card { top: calc(100px + var(--safe-top)); max-height: calc(100% - 100px - 170px - var(--safe-top) - var(--safe-bottom)); }
   .age-name { font-size: 11px; }
 }
+.build-detail { min-height: 3.9em; }

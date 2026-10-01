@@ -112,12 +112,12 @@ export class BuildUI {
     // Franja de detalle: descripción, coste y motivo completo de lo que esté señalado o elegido.
     this.detail = document.createElement('p');
     this.detail.className = 'build-detail';
-    this.detail.hidden = true;
+    this.detail.textContent = 'Pasa el cursor sobre un edificio para ver su detalle.';
     this.list.after(this.detail);
     const showDetail = (button) => {
       const def = BUILDING_TYPES.find((d) => d.id === button?.dataset.build);
       if (!def) {
-        this.detail.hidden = true;
+        // Se mantiene el último detalle (o el aviso): la franja no aparece y desaparece.
         return;
       }
       const level = def.levels[Math.min(def.levels.length, def.autoLevel ? this.colony.age : 1) - 1];
@@ -127,8 +127,7 @@ export class BuildUI {
     };
     this.list.addEventListener('pointerover', (e) => showDetail(e.target.closest('[data-build]')));
     this.list.addEventListener('focusin', (e) => showDetail(e.target.closest('[data-build]')));
-    this.list.addEventListener('pointerleave', () => showDetail(this.pinned ?? null));
-    for (const button of this.list.querySelectorAll('[data-build]')) {
+        for (const button of this.list.querySelectorAll('[data-build]')) {
       button.addEventListener('click', () => {
         this.pinned = button;
         showDetail(button);
