@@ -2616,3 +2616,7 @@ canvas.is-harvesting {
   .age-name { font-size: 11px; }
 }
 .build-detail { min-height: 3.9em; }
+
+/* La lista de colonos se desplaza dentro de la tarjeta (el <details> es el que hace scroll) */
+.roster-wrap { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.roster { overflow: visible; }
