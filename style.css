@@ -2606,3 +2606,12 @@ canvas.is-harvesting {
 .building-label.is-minor, .colonist-label.is-minor { opacity: 0.72; transform-origin: center bottom; font-size: 11px; padding-top: 2px; padding-bottom: 3px; pointer-events: none; }
 .building-label.is-minor .building-label-bar { display: none; }
 .colonist-label.is-alert { border-color: var(--bad, #e5645a); box-shadow: 0 0 0 1px rgba(229, 100, 90, 0.5); }
+.colony-card > .colony-head { padding-right: 34px; }
+
+/* Móvil: la edad arriba; debajo, los botones en una fila que se desliza, sin tapar la tarjeta */
+@media (max-width: 720px) {
+  .camp-panel { top: calc(52px + var(--safe-top)); left: var(--gap); right: var(--gap); max-width: none; flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .camp-panel .btn { flex: none; }
+  .colony-card { top: calc(100px + var(--safe-top)); max-height: calc(100% - 100px - 170px - var(--safe-top) - var(--safe-bottom)); }
+  .age-name { font-size: 11px; }
+}

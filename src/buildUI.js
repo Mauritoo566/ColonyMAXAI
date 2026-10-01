@@ -412,29 +412,6 @@ export class BuildUI {
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
-    const siteHtml = () => {
-      const stateClass = { building: 'ok', going: 'ok', waiting: 'warn', blocked: 'bad', paused: 'warn' }[site.state] ?? 'ok';
-      const verb = b.upgrading ? 'mejora' : 'obra';
-      const names = (ids) => ids.map((id) => colony.colonist(id)?.name).filter(Boolean);
-      const eligible = colony.colonists.filter((c) => !(c.growth < 1) && !c.soldier);
-      const blockedOnes = colony.colonists.filter((c) => c.growth < 1 || c.soldier);
-      const opts = eligible.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}${site.ordered?.includes(c.id) ? ' (ya asignado)' : ''}</option>`).join('')
-        + blockedOnes.map((c) => `<option value="" disabled>${escapeHtml(c.name)} — ${c.soldier ? 'es soldado' : 'es un niño'}</option>`).join('');
-      return `
-        <p class="site-state site-state--${stateClass}"><strong>${site.label}</strong></p>
-        <p class="reason">${escapeHtml(site.why)}</p>
-        ${site.ids?.length ? `<p class="reason">En la ${verb}: ${escapeHtml(names(site.ids).join(', '))}${site.ordered?.length ? ` · con orden directa: ${escapeHtml(names(site.ordered).join(', '))}` : ''}.</p>` : ''}
-        <div class="prio-row" role="group" aria-label="Prioridad de la ${verb}">
-          <span>Prioridad</span>
-          ${['low', 'normal', 'high'].map((p) => `<button type="button" class="seg ${b.priority === p ? 'is-on' : ''}" data-prio="${p}" aria-pressed="${b.priority === p}">${PRIORITY_NAMES[p]}</button>`).join('')}
-          <button type="button" class="seg" data-pause>${b.paused ? 'Reanudar' : 'Pausar'}</button>
-        </div>
-        <div class="order-box">
-          <label class="order-label">Asignar constructor<select data-site-pick>${opts}</select></label>
-          <div class="order-buttons"><button type="button" class="btn" data-site-assign>Asignar constructor</button></div>
-          <p class="order-msg" data-site-msg role="status"></p>
-        </div>`;
-    };
     this.panel.innerHTML = `
       <header class="cp-head">
         <span class="bp-icon">${icon('wood')}</span>
@@ -578,6 +555,29 @@ export class BuildUI {
               : `<p class="reason">${escapeHtml(upgradeProblem ?? '')}</p>`
           }
         </section>`;
+    const siteHtml = () => {
+      const stateClass = { building: 'ok', going: 'ok', waiting: 'warn', blocked: 'bad', paused: 'warn' }[site.state] ?? 'ok';
+      const verb = b.upgrading ? 'mejora' : 'obra';
+      const names = (ids) => ids.map((id) => colony.colonist(id)?.name).filter(Boolean);
+      const eligible = colony.colonists.filter((c) => !(c.growth < 1) && !c.soldier);
+      const blockedOnes = colony.colonists.filter((c) => c.growth < 1 || c.soldier);
+      const opts = eligible.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}${site.ordered?.includes(c.id) ? ' (ya asignado)' : ''}</option>`).join('')
+        + blockedOnes.map((c) => `<option value="" disabled>${escapeHtml(c.name)} — ${c.soldier ? 'es soldado' : 'es un niño'}</option>`).join('');
+      return `
+        <p class="site-state site-state--${stateClass}"><strong>${site.label}</strong></p>
+        <p class="reason">${escapeHtml(site.why)}</p>
+        ${site.ids?.length ? `<p class="reason">En la ${verb}: ${escapeHtml(names(site.ids).join(', '))}${site.ordered?.length ? ` · con orden directa: ${escapeHtml(names(site.ordered).join(', '))}` : ''}.</p>` : ''}
+        <div class="prio-row" role="group" aria-label="Prioridad de la ${verb}">
+          <span>Prioridad</span>
+          ${['low', 'normal', 'high'].map((p) => `<button type="button" class="seg ${b.priority === p ? 'is-on' : ''}" data-prio="${p}" aria-pressed="${b.priority === p}">${PRIORITY_NAMES[p]}</button>`).join('')}
+          <button type="button" class="seg" data-pause>${b.paused ? 'Reanudar' : 'Pausar'}</button>
+        </div>
+        <div class="order-box">
+          <label class="order-label">Asignar constructor<select data-site-pick>${opts}</select></label>
+          <div class="order-buttons"><button type="button" class="btn" data-site-assign>Asignar constructor</button></div>
+          <p class="order-msg" data-site-msg role="status"></p>
+        </div>`;
+    };
     this.panel.innerHTML = `
       <header class="cp-head">
         <span class="bp-icon">${icon(def.icon)}</span>
