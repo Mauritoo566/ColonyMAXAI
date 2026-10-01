@@ -2440,3 +2440,41 @@ canvas.is-harvesting {
   border-color: currentColor;
   background: rgba(255, 255, 255, 0.12);
 }
+
+/* Motivo por el que algo está bloqueado (edad, edificios previos, límites) */
+.build-lock {
+  display: block;
+  margin-top: 4px;
+  max-width: 120px;
+  font-size: 10px;
+  line-height: 1.25;
+  color: var(--warn, #e8a33c);
+  white-space: normal;
+}
+
+.build-lock[hidden] {
+  display: none;
+}
+
+.age-rows {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.age-rows li {
+  display: grid;
+  gap: 1px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.age-rows li span {
+  color: var(--ui-faint, #9aa3a8);
+}
+
+.age-limits {
+  margin: 0 0 8px;
+}

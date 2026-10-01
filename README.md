@@ -78,6 +78,21 @@ La interfaz (`src/colonyUI.js`) muestra arriba a la izquierda el **bienestar de 
 - El hijo hereda genes de ambos (con mutaciones), nace con un nombre de la **edad de la aldea en ese momento** (los nombres nunca cambian) y crece en 3 días: de niño es más bajo y de cabeza grande, no trabaja. Los genes se ven en el cuerpo: piel, pelo (canas con los años), estatura y complexión.
 - La **bandera** de la aldea se elige de una lista de países (botón Bandera) y la ven los demás jugadores.
 
+### Restricciones por edad
+Las reglas están en un solo sitio (`src/sim/progression.js`) y las usan construir, mejorar, el crecimiento y la interfaz; las valida la simulación del servidor, así que desactivar un botón no basta para saltarlas. La edad es necesaria pero no suficiente: también se exigen costes, edificios previos y condiciones. Lo que llega por comercio o por otra vía no salta nada, porque se mira el estado de la aldea (edificios terminados, nivel, edad), no el almacén. Las partidas anteriores se conservan: nada se borra ni se baja de nivel (un edificio ya mejorado sigue mejorado) y las viviendas se ponen al día con la edad al cargar.
+
+| Edad | Territorio | Viviendas (máx.) | De cada tipo (máx.) | Nivel máx. de edificios | Se desbloquea (implementado) |
+|---|---|---|---|---|---|
+| I Primitiva | 75 m | 3 · Choza de ramas (2 plazas) | 2 (pozos 1) | I | Enramada de recolección, Zona de tala, Pedrera, Recolector de lluvia, Pila de troncos, Choza de ramas (pide una Zona de tala terminada) |
+| II Tribal | 95 m | 6 · Casa de barro (3 plazas) | 4 (pozos 2) | II | Mejoras pagadas: Choza de recolección y Cabaña del leñador (piden Pedrera), Cantera (pide Leñador), Pozo simple, Granero (pide Recolección). Las viviendas existentes evolucionan solas; las nuevas cuestan 24 madera, 8 piedra, 8 fibras |
+| III Bronce | 120 m | 10 | 6 (pozos 3) | — | Sólo suben los límites: aún no hay edificios, recursos ni mejoras de esta edad |
+| IV Hierro | 150 m | 15 | 8 (pozos 4) | — | Ídem |
+| V Medieval | 190 m | 20 | 10 (pozos 5) | — | Ídem |
+
+- **Avanzar a la Edad Tribal** pide: 6 colonos, una vivienda, una zona de tala, una pedrera y una enramada de recolección terminadas, más una ofrenda (30 madera, 15 piedra, 10 fibras) que se cobra una sola vez. Las edades III a V aparecen como «Próximamente» y no se pueden alcanzar.
+- **Población**: el máximo es 10 del campamento + las plazas de las viviendas terminadas. Nacen niños sólo si hay plazas y reservas (1,2 de comida y de agua por colono, contando a los que vienen en camino).
+- **Aún no existe** (y por eso no hay nada que restringir ni se muestra como desbloqueable): fundiciones, herramientas de metal, recetas y cadenas de producción, caminos, energía, investigación, ejército y defensas, y más edificios por edad. El sistema ya admite `minAge`, `requires` y límites por tipo para cuando se añadan.
+
 ### Ropa
 
 Los colonos llegan **sin ropa** (sólo un taparrabos) y en el campamento hay una pila de ropa de pieles para todos. No van a buscarla por costumbre: cuando tienen frío, ir a vestirse pasa a ser una necesidad (abriga para siempre, así que la prefieren a la fogata). Sin ropa se enfrían mucho más; con ropa aguantan bastante aunque el lugar sea frío. El frío baja poco a poco (cada vez más lento al acercarse a la temperatura del ambiente).

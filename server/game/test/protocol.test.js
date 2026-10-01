@@ -117,10 +117,16 @@ try {
 
   // Población: el campamento admite 10 y empiezan 5; las viviendas se pueden encargar.
   assert.equal(colony.maxPopulation, 10);
+  // La vivienda pide un leñador terminado (el del paso anterior sigue en obra): el servidor la rechaza.
   ana.send({ t: 'cmd', name: 'build', args: ['house', -22, -12] });
-  const withHouse = await ana.wait((m) => m.t === 'colony' && m.buildings.some((b) => b.type === 'house'));
-  assert.equal(withHouse.maxPopulation, 10, 'una vivienda en obra todavía no suma');
-  console.log('✓ población 5/10 y viviendas en la categoría de vivienda');
+  assert.equal((await ana.wait('error')).message, 'No se pudo hacer eso ahora.');
+  // Las mejoras necesitan la edad siguiente: en la Edad Primitiva no se puede ni pidiéndola.
+  ana.send({ t: 'cmd', name: 'upgrade', args: [built.buildings[0].id] });
+  assert.equal((await ana.wait('error')).message, 'No se pudo hacer eso ahora.');
+  // Y no se puede avanzar de edad sin cumplir los requisitos.
+  ana.send({ t: 'cmd', name: 'advanceAge', args: [] });
+  assert.equal((await ana.wait('error')).message, 'No se pudo hacer eso ahora.');
+  console.log('✓ población 5/10; el servidor rechaza vivienda sin leñador, mejora y edad sin requisitos');
 
   // Posiciones varias veces por segundo.
   const f1 = await ana.wait('fast');
@@ -159,8 +165,8 @@ try {
   ana2.send({ t: 'resume', token });
   assert.ok((await ana2.wait('auth')).ok);
   const back = await ana2.wait((m) => m.t === 'colony');
-  assert.equal(back.buildings.length, 2);
-  assert.ok(back.buildings.some((b) => b.id === built.buildings[0].id));
+  assert.equal(back.buildings.length, 1);
+  assert.equal(back.buildings[0].id, built.buildings[0].id);
   console.log('✓ volver con el token después de reiniciar el servidor; el edificio sigue ahí');
   ana2.send({ t: 'resume', token: 'x'.repeat(40) });
   await ana2.close();

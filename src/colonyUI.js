@@ -120,6 +120,8 @@ export class ColonyUI {
 
     const popText = `${this.colony.count}/${this.colony.maxPopulation}`;
     if (this.count.textContent !== popText) this.count.textContent = popText;
+    const popTitle = `Colonos: ${popText} (plazas de vivienda).${this.colony.growthBlocker ? ` No crece: ${this.colony.growthBlocker}.` : ' Hay plazas y reservas para crecer.'}`;
+    if (this.count.parentElement.title !== popTitle) this.count.parentElement.title = popTitle;
     this.wellbeingValue.textContent = `${Math.round(summary.wellbeing)}%`;
     setBar(this.wellbeingBar, summary.wellbeing);
     setTone(this.wellbeingValue.closest('.meter'), summary.wellbeing);

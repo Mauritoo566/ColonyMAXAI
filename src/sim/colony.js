@@ -14,7 +14,8 @@ import { BUILDINGS, levelOf, STOCK_NAMES } from './buildingTypes.js';
 import { WeatherState } from './weather.js';
 import { pickName } from './names.js';
 import { FLAG_IDS, DEFAULT_FLAG } from '../flags.js';
-import { updateFamily, assignHomes, maxPopulation } from './family.js';
+import { updateFamily, assignHomes, maxPopulation, growthBlocker } from './family.js';
+import { buildBlocker, upgradeBlocker, evolveHouses, buildCostOf, buildLevelFor, limitsFor } from './progression.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
 // de acopio, recursos del entorno, edades y guardado. No dibuja nada ni toca la página:
@@ -38,7 +39,7 @@ export const ZONE_PER_M2 = 1.5;
 export const MIN_ZONE_SIDE = 2; // metros: más chico no tiene sentido
 export const FOOD_SPOIL_SECONDS = 1.5 * DAY_LENGTH_SECONDS; // día y medio de juego
 export const SAVE_VERSION = 2; // 2: además guarda colonos, recursos agotados y el reloj
-export const BUILD_MAX_DISTANCE = 75; // metros desde la fogata donde se puede construir
+export const BUILD_MAX_DISTANCE = 75; // metros desde la fogata donde se puede construir en la primera edad (ver progression.js)
 
 // Lugares fijos del campamento (coordenadas locales).
 // Al fundar el campamento hay ropa en el suelo para todos; cada colono va a buscar la
@@ -907,6 +908,12 @@ export class ColonySim {
     const time = this.timeLabel();
     for (const [k, n] of Object.entries(status.next.requires.cost)) this.takeStock(k, n);
     this.setAge(status.next.n);
+    // Las viviendas evolucionan solas (mismo sitio, sin pagar); el resto se mejora a mano.
+    const evolved = evolveHouses(this);
+    if (evolved) {
+      this.emit('buildings');
+      this.emit('notice', `${evolved === 1 ? 'Una vivienda evolucionó' : `${evolved} viviendas evolucionaron`} con la ${status.next.name}`);
+    }
     for (const c of this.colonists) {
       addLog(c, time, `Celebró la llegada de la ${status.next.name}`);
       c.needs.mood = Math.min(100, c.needs.mood + 25);
@@ -919,6 +926,21 @@ export class ColonySim {
     this.age = age;
     this.refreshObstacles();
     this.emit('age', age);
+  }
+
+  // Coste de construir un tipo hoy (la vivienda de edades avanzadas cuesta más).
+  costOf(def) {
+    return buildCostOf(def, this.age);
+  }
+
+  // Por qué no se puede construir un tipo ahora (edad, edificios previos, límites), o null.
+  buildBlocker(def) {
+    return buildBlocker(this, def);
+  }
+
+  // Por qué no crece la población (sin plazas o sin reservas), o null.
+  get growthBlocker() {
+    return growthBlocker(this);
   }
 
   get ageInfo() {
@@ -1088,8 +1110,12 @@ export class ColonySim {
 
   // Por qué no se puede construir "def" en (x, z), o null si se puede.
   buildProblem(def, x, z) {
-    if (!this.canAfford(def.cost)) return `Faltan ${this.missing(def.cost).join(' y ')}`;
-    if (Math.hypot(x, z) > BUILD_MAX_DISTANCE) return 'Demasiado lejos del campamento';
+    const blocked = buildBlocker(this, def);
+    if (blocked) return blocked;
+    const cost = buildCostOf(def, this.age);
+    if (!this.canAfford(cost)) return `Faltan ${this.missing(cost).join(' y ')}`;
+    const radius = limitsFor(this.age).radius;
+    if (Math.hypot(x, z) > radius) return `Fuera del territorio de la aldea (${radius} m en la ${ageInfo(this.age).name}; se amplía al avanzar de edad)`;
     const r = def.footprint;
     for (const o of this.obstacles) {
       if (Math.hypot(x - o.x, z - o.z) < o.r + r + 0.8) return 'Choca con otra construcción';
@@ -1122,8 +1148,8 @@ export class ColonySim {
       this.remote('build', [typeId, x, z]);
       return { pending: true };
     }
-    for (const [k, n] of Object.entries(def.cost)) this.takeStock(k, n);
-    const b = this.createBuilding(def, x, z, Math.atan2(-x, -z), 0, 0);
+    for (const [k, n] of Object.entries(buildCostOf(def, this.age))) this.takeStock(k, n);
+    const b = this.createBuilding(def, x, z, Math.atan2(-x, -z), 0, 0, buildLevelFor(def, this.age));
     this.emit('changed');
     return { building: b };
   }
@@ -1213,9 +1239,8 @@ export class ColonySim {
   // Por qué no se puede mejorar (o null si se puede).
   upgradeProblem(b) {
     const next = levelOf(b, 1);
-    if (!b.done) return b.upgrading ? 'Ya se está mejorando' : 'Primero hay que terminar la obra';
-    if (!next) return `Más mejoras en la ${ageInfo(b.level + 1).name} (próximamente)`;
-    if (b.level + 1 > this.age + 1) return `Hace falta llegar a la ${ageInfo(b.level).name}`;
+    const blocked = upgradeBlocker(this, b);
+    if (blocked) return blocked;
     if (!this.canAfford(next.upgradeCost)) return `Faltan ${this.missing(next.upgradeCost).join(' y ')}`;
     return null;
   }
@@ -1392,6 +1417,8 @@ export class ColonySim {
       }
     }
     this.restoreColony(data.colony);
+    // Partidas anteriores: las viviendas toman el nivel de la edad (no se quita nada).
+    evolveHouses(this);
     if (data.weather && this.weather?.load) this.weather.load(data.weather);
     this.emit('buildings');
     return true;

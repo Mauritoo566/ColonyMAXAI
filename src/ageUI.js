@@ -1,5 +1,6 @@
 import { AGES, ageInfo, nextAgeStatus } from './ages.js';
 import { STOCK_NAMES } from './buildings.js';
+import { unlockTable, limitsFor } from './sim/progression.js';
 
 // Barra de edad (arriba al centro): en qué edad está la colonia y cuánto falta para la
 // siguiente. Al pulsarla se abre la lista de edades con los requisitos y el botón para
@@ -64,9 +65,10 @@ export class AgeUI {
     } else if (status.soon) {
       label = `${status.next.name}: próximamente`;
       fill = 1;
-    } else if (status.upgraded < status.needed) {
-      label = `Hacia la ${status.next.name} · ${status.upgraded}/${status.needed} mejoras`;
-      fill = status.upgraded / status.needed;
+    } else if (status.checks.some((c) => !c.ok)) {
+      const done = status.checks.filter((c) => c.ok).length;
+      label = `Hacia la ${status.next.name} · ${done}/${status.checks.length} requisitos`;
+      fill = done / status.checks.length;
     } else if (status.missing.length) {
       label = `Faltan materiales para la ${status.next.name}`;
       fill = 0.95;
@@ -85,10 +87,12 @@ export class AgeUI {
     const colony = this.colony;
     const status = nextAgeStatus(colony);
     const stock = colony.stock;
-    const key = [colony.age, status.upgraded, status.ready, JSON.stringify(status.missing ?? [])].join('|');
+    const key = [colony.age, JSON.stringify(status.checks ?? []), status.ready, JSON.stringify(status.missing ?? []), Math.floor(Object.values(stock).reduce((a, b) => a + b, 0))].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
+    const rows = unlockTable();
+    const lim = limitsFor(colony.age);
     const list = AGES.map((a) => {
       const cls = a.n < colony.age ? 'is-past' : a.n === colony.age ? 'is-now' : a.soon ? 'is-soon' : '';
       const tag = a.n < colony.age ? 'Superada' : a.n === colony.age ? 'Actual' : a.soon ? 'Próximamente' : '';
@@ -98,7 +102,16 @@ export class AgeUI {
           <div>
             <h3>${a.name}${tag ? `<small>${tag}</small>` : ''}</h3>
             <p>${a.desc}</p>
-            <div class="age-unlocks">${a.unlocks.map((u) => `<span>${u}</span>`).join('')}</div>
+            ${
+              a.soon
+                ? `<p class="reason" style="margin:4px 0 0">Aún no disponible. Planeado: ${a.unlocks.join(', ')}.</p>`
+                : a.n < colony.age
+                  ? ''
+                  : `<ul class="age-rows">${rows
+                      .filter((r) => r.age === a.n)
+                      .map((r) => `<li><strong>${r.name}</strong><span>${r.text}</span></li>`)
+                      .join('')}</ul>`
+            }
           </div>
         </li>`;
     }).join('');
@@ -107,9 +120,9 @@ export class AgeUI {
     if (status.next && !status.soon) {
       const cost = status.next.requires.cost;
       const checks = [
-        `<div class="age-check ${status.upgraded >= status.needed ? 'is-ok' : ''}">
-          <span>Edificios mejorados al nivel ${status.next.numeral}</span><strong>${status.upgraded}/${status.needed}</strong>
-        </div>`,
+        ...status.checks.map(
+          (c) => `<div class="age-check ${c.ok ? 'is-ok' : ''}"><span>${c.label}</span><strong>${Math.min(c.have, c.need)}/${c.need}</strong></div>`,
+        ),
         ...Object.entries(cost).map(
           ([k, n]) => `
           <div class="age-check ${(stock[k] ?? 0) >= n ? 'is-ok' : ''}">
@@ -120,7 +133,7 @@ export class AgeUI {
       req = `
         <div class="age-req">
           <h3>Para llegar a la ${status.next.name}</h3>
-          <p class="reason" style="margin:0">Mejora edificios desde su ficha (botón «Mejorar»). Cuando haya suficientes, la tribu celebra el cambio de edad con una ofrenda y levanta su tótem.</p>
+          <p class="reason" style="margin:0">Cuando la aldea cumpla todo, la tribu celebra el cambio con una ofrenda. Las viviendas evolucionan solas; el resto de edificios se mejora desde su ficha, pagando, y sólo hasta el nivel que permite la edad.</p>
           ${checks}
           <button type="button" class="btn btn--primary" data-advance ${status.ready ? '' : 'disabled'}>Avanzar a la ${status.next.name}</button>
         </div>`;
@@ -136,6 +149,7 @@ export class AgeUI {
         </div>
         <button type="button" class="icon-button" data-close aria-label="Cerrar">${icon('close')}</button>
       </div>
+      <p class="reason age-limits">Ahora puedes: territorio de <strong>${lim.radius} m</strong>, hasta <strong>${lim.houses}</strong> viviendas y <strong>${lim.perType}</strong> edificios de cada tipo; los edificios llegan hasta el nivel <strong>${ageInfo(colony.age).numeral}</strong>.</p>
       <ol class="age-list">${list}</ol>
       ${req}`;
     this.panel.querySelector('[data-close]').addEventListener('click', () => this.toggle(false));

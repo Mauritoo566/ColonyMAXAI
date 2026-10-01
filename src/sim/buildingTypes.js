@@ -29,7 +29,7 @@ export const BUILDING_TYPES = [
     noResourceText: 'No hay bayas ni setas cerca',
     levels: [
       { name: 'Enramada de recolección', desc: 'Un techo de ramas con cestas. Un colono recoge bayas y setas, y de paso hierbas para fibras.', yield: 2, model: 'gathererModel1' },
-      { name: 'Choza de recolección', desc: 'Choza de barro y paja con un secadero: cada viaje trae más comida.', yield: 3, model: 'gathererModel2', upgradeCost: { wood: 20, fiber: 8 } },
+      { name: 'Choza de recolección', desc: 'Choza de barro y paja con un secadero: cada viaje trae más comida. Pide una cantera: los cuchillos y raspadores de piedra se tallan allí.', yield: 3, model: 'gathererModel2', upgradeCost: { wood: 20, fiber: 8 }, requires: [{ id: 'quarry' }] },
     ],
   },
   {
@@ -52,7 +52,7 @@ export const BUILDING_TYPES = [
     scavenge: { yield: 1, text: 'Juntando ramas caídas', status: 'No quedan árboles cerca: junta ramas caídas (rinde menos)' },
     levels: [
       { name: 'Zona de tala', desc: 'Un tocón y un hacha de piedra. Un colono tala árboles cercanos.', yield: 4, model: 'woodcutterModel1' },
-      { name: 'Cabaña del leñador', desc: 'Cabaña de troncos con mejores hachas: cada árbol da más madera.', yield: 6, model: 'woodcutterModel2', upgradeCost: { wood: 25, stone: 5, fiber: 6 } },
+      { name: 'Cabaña del leñador', desc: 'Cabaña de troncos con mejores hachas de piedra pulida (salen de la cantera): cada árbol da más madera.', yield: 6, model: 'woodcutterModel2', upgradeCost: { wood: 25, stone: 5, fiber: 6 }, requires: [{ id: 'quarry' }] },
     ],
   },
   {
@@ -75,7 +75,7 @@ export const BUILDING_TYPES = [
     scavenge: { yield: 1, text: 'Juntando piedras sueltas', status: 'No quedan piedras grandes cerca: junta piedras sueltas (rinde menos)' },
     levels: [
       { name: 'Pedrera', desc: 'Un montón de piedras y un percutor. Un colono junta piedra de los alrededores.', yield: 2, model: 'quarryModel1' },
-      { name: 'Cantera', desc: 'Con palancas y una grúa de troncos se sacan bloques más grandes.', yield: 3, model: 'quarryModel2', upgradeCost: { wood: 25, stone: 10, fiber: 6 } },
+      { name: 'Cantera', desc: 'Con palancas y una grúa de troncos se sacan bloques más grandes. Pide un leñador: los troncos y las cuerdas vienen de allí.', yield: 3, model: 'quarryModel2', upgradeCost: { wood: 25, stone: 10, fiber: 6 }, requires: [{ id: 'woodcutter' }] },
     ],
   },
   {
@@ -129,6 +129,7 @@ BUILDING_TYPES.push({
       capacity: { food: 70, water: 35, wood: 90, stone: 70, fiber: 50 },
       model: 'stockpileModel2',
       upgradeCost: { wood: 30, stone: 10, fiber: 12 },
+      requires: [{ id: 'gatherer' }], // comida que guardar
     },
   ],
 });
@@ -141,6 +142,8 @@ BUILDING_TYPES.push({
   cost: { wood: 18, fiber: 6 },
   buildTime: 60,
   footprint: 2.5,
+  autoLevel: true, // se construye con el aspecto de la edad y evoluciona sola (sin pagar)
+  requires: [{ id: 'woodcutter' }], // las ramas y la madera vienen de la tala
   levels: [
     {
       name: 'Choza de ramas',
@@ -150,10 +153,10 @@ BUILDING_TYPES.push({
     },
     {
       name: 'Casa de barro',
-      desc: 'Paredes de barro y techo de paja, más abrigada: caben tres colonos. Aumenta en 3 el máximo de población.',
+      desc: 'Paredes de barro y techo de paja, más abrigada: caben tres colonos. Aumenta en 3 el máximo de población. Las chozas existentes evolucionan solas a esta casa al llegar a la Edad Tribal; las nuevas cuestan más.',
       housing: 3,
       model: 'houseModel2',
-      upgradeCost: { wood: 25, stone: 10, fiber: 10 },
+      buildCost: { wood: 24, stone: 8, fiber: 8 },
     },
   ],
 });

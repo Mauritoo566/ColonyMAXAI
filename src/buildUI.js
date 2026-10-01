@@ -34,7 +34,7 @@ function paintAvatar(el, look) {
 }
 
 function costHtml(def, stock) {
-  return Object.entries(def.cost)
+  return Object.entries(def.cost ?? {})
     .map(([k, n]) => `<span class="${stock[k] < n ? 'is-short' : ''}">${icon(k)}${n}</span>`)
     .join('');
 }
@@ -73,6 +73,7 @@ export class BuildUI {
         <span class="build-icon">${icon(def.icon)}</span>
         <span class="build-name">${def.name}</span>
         <span class="build-cost"></span>
+        <span class="build-lock" hidden></span>
       </button>`,
     ).join('') + `
       <button type="button" class="build-item build-item--zone" data-zone data-cat="storage" aria-pressed="false"
@@ -96,7 +97,7 @@ export class BuildUI {
       button.addEventListener('click', () => {
         const def = BUILDING_TYPES.find((d) => d.id === button.dataset.build);
         if (buildings.placing === def) buildings.stopPlacing();
-        else if (buildings.canAfford(def)) buildings.startPlacing(def.id);
+        else if (!buildings.blocker(def) && buildings.canAfford(def)) buildings.startPlacing(def.id);
       });
     }
     for (const tab of this.tabs.children) {
@@ -223,11 +224,18 @@ export class BuildUI {
     }
     for (const button of this.list.querySelectorAll('[data-build]')) {
       const def = BUILDING_TYPES.find((d) => d.id === button.dataset.build);
+      const blocker = this.buildings.blocker(def);
       const affordable = this.buildings.canAfford(def);
-      button.setAttribute('aria-disabled', String(!affordable));
+      button.setAttribute('aria-disabled', String(!affordable || !!blocker));
       button.setAttribute('aria-pressed', String(this.buildings.placing === def));
-      button.title = affordable ? `${def.desc} Haz clic y elige dónde construirlo.` : `${def.desc} Faltan ${this.buildings.missing(def).join(' y ')}.`;
-      const cost = costHtml(def, stock);
+      const level = def.levels[Math.min(def.levels.length, def.autoLevel ? this.colony.age : 1) - 1];
+      const desc = def.autoLevel ? level.desc : def.desc;
+      button.title = blocker ? `${desc} Bloqueado: ${blocker}.` : affordable ? `${desc} Haz clic y elige dónde construirlo.` : `${desc} Faltan ${this.buildings.missing(def).join(' y ')}.`;
+      const lock = button.querySelector('.build-lock');
+      lock.hidden = !blocker;
+      if (blocker && lock.textContent !== blocker) lock.textContent = blocker;
+      button.querySelector('.build-name').textContent = def.autoLevel ? level.name : def.name;
+      const cost = costHtml({ cost: this.colony.costOf(def) }, stock);
       const el = button.querySelector('.build-cost');
       if (el.dataset.html !== cost) {
         el.innerHTML = cost;
@@ -293,7 +301,7 @@ export class BuildUI {
         <h3>Vecinos (${residents.length}/${level.housing})</h3>
         <p class="reason">${residents.length ? residents.map((c) => escapeHtml(c.name)).join(', ') : 'Aún no vive nadie aquí: se mudarán quienes duerman en las tiendas.'}</p>
         <div class="stat-line"><span>Población máxima de la colonia</span><strong>${this.colony.colonists.length} / ${this.colony.maxPopulation}</strong></div>
-        ${next ? `<p class="reason">Mejorada a ${next.name}: caben ${next.housing}.</p>` : ''}
+        ${next ? `<p class="reason">Al llegar a la ${ageInfo(b.level + 1).name} evoluciona sola a ${next.name} (caben ${next.housing}), en el mismo sitio y sin coste.</p>` : ''}
       </section>`;
   }
 

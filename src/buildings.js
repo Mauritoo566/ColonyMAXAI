@@ -107,11 +107,16 @@ export class BuildingSystem {
   }
 
   canAfford(def) {
-    return this.sim.canAfford(def.cost);
+    return this.sim.canAfford(this.sim.costOf(def));
   }
 
   missing(def) {
-    return this.sim.missing(def.cost);
+    return this.sim.missing(this.sim.costOf(def));
+  }
+
+  // Por qué no se puede construir (edad, edificios previos, límites) o null.
+  blocker(def) {
+    return this.sim.buildBlocker(def);
   }
 
   ranking(b) {

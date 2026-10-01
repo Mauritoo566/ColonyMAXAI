@@ -41,8 +41,22 @@ export function pregnantCount(colony) {
   return colony.colonists.filter((c) => c.pregnant).length;
 }
 
-// Cuántos más caben (contando los que vienen en camino).
+// Reservas que hacen falta por colono para que la aldea crezca (comida y agua).
+const SUPPLY_PER_COLONIST = 1.2;
+
+// Qué impide que la población crezca (texto) o null: plazas libres y abastecimiento.
+export function growthBlocker(colony) {
+  const n = colony.colonists.length + pregnantCount(colony);
+  if (maxPopulation(colony) - n <= 0) return 'Sin plazas: construye más viviendas';
+  const need = Math.ceil(n * SUPPLY_PER_COLONIST);
+  if ((colony.stock.food ?? 0) < need) return `Faltan reservas de comida (${Math.floor(colony.stock.food ?? 0)}/${need})`;
+  if ((colony.stock.water ?? 0) < need) return `Faltan reservas de agua (${Math.floor(colony.stock.water ?? 0)}/${need})`;
+  return null;
+}
+
+// Cuántos más caben (contando los que vienen en camino); 0 si no hay con qué mantenerlos.
 export function populationRoom(colony) {
+  if (growthBlocker(colony)) return 0;
   return maxPopulation(colony) - colony.colonists.length - pregnantCount(colony);
 }
 
