@@ -9,6 +9,8 @@ import { WeatherState } from '../../../src/sim/weather.js';
 import { BUILDINGS } from '../../../src/sim/buildingTypes.js';
 import { naturalSurfaceHeight } from '../../../src/elevation.js';
 import { DAY_LENGTH_SECONDS as DAY } from '../../../src/daynight.js';
+import { chooseTask } from '../../../src/ai.js';
+import { validSpec } from '../../../src/sim/specialties.js';
 
 const dir = new THREE.Vector3(-0.8984470605519815, 0.4271785546817849, 0.10154487582091702).normalize();
 function colony() {
@@ -312,5 +314,81 @@ const site = (sim, id, x, z) => {
   wolf.x = 60; wolf.z = 0; c.x = 60.5; c.z = 0;
   for (let i = 0; i < 6; i++) { sim.mobs[0].x = 60; c.x = 60.5; c.z = 0; sim.update(0.5, { timeScale: 1, isNight: true, timeLabel: () => 'd' }); }
   assert.ok(c.health < 100, 'presente y de noche: el lobo hiere');
+}
+// Especialidades: tres categorías por colono; sólo acepta solo esos trabajos, con prioridad; las órdenes son la excepción.
+{
+  const sim = colony();
+  const c = sim.colonists.find((o) => !o.soldier && (o.growth ?? 1) >= 1);
+  c.spec = ['farming', 'mining', 'woodcutting'];
+  const env = { isNight: false, gameTime: 0, time: 'd' };
+  c.needs = { food: 100, water: 100, rest: 100, warmth: 100, mood: 100 };
+  const site = site_(sim);
+  // 1) Con obras pero sin Construcción entre sus especialidades, no construye solo.
+  for (let i = 0; i < 20; i++) assert.notEqual(chooseTask(sim, c, env)?.type, 'build', 'no construye automáticamente');
+  // 2) Sin tareas agrícolas, acepta el puesto de Cantería (su segunda); y la tala marcada (tercera).
+  const q = sim.createBuilding(BUILDINGS.quarry, 30, 14, 0, 1, 0);
+  sim.assignWorker(q);
+  assert.ok(q.workers.length === 1, 'la pedrera la toma alguien con Cantería');
+  const miner = q.workers[0];
+  sim.stock.stone = 0;
+  miner.spec = ['mining', 'farming', 'woodcutting'];
+  miner.needs = { food: 100, water: 100, rest: 100, warmth: 100, mood: 100 };
+  assert.equal(chooseTask(sim, miner, env).type, 'work', 'trabaja en su puesto de especialidad');
+  // 3) Una orden directa lo habilita temporalmente a construir y al terminar vuelve a sus especialidades.
+  assert.equal(sim.orderColonist(c, 'build', site), null);
+  assert.equal(chooseTask(sim, c, env).type, 'build');
+  sim.cancelOrder(c);
+  assert.notEqual(chooseTask(sim, c, env)?.type, 'build');
+  // 4) Cambiar especialidades: tres distintas, conserva niveles y se aplica en un punto seguro.
+  const lvl = { ...c.skills };
+  assert.equal(sim.setSpec(c, ['farming', 'farming', 'mining']), false, 'sin duplicados');
+  c.task = { type: 'build', building: site, score: 1 };
+  assert.equal(sim.setSpec(c, ['building', 'mining', 'farming']), true);
+  assert.deepEqual(c.spec, ['farming', 'mining', 'woodcutting'], 'espera al punto seguro');
+  assert.ok(c.pendingSpec, 'hay un cambio pendiente');
+  c.task = null;
+  sim.step(c, 0.1, env);
+  assert.deepEqual(c.spec, ['building', 'mining', 'farming']);
+  assert.deepEqual(c.skills, lvl, 'no se pierde experiencia');
+  assert.equal(chooseTask(sim, c, env).type, 'build', 'ahora sí construye');
+  // 5) Guardar y cargar conserva la organización; una aldea antigua recibe un reparto una sola vez.
+  const save = JSON.parse(JSON.stringify(sim.serialize()));
+  const copy = colony();
+  copy.restore(save);
+  assert.deepEqual(copy.colonist(c.id).spec, ['building', 'mining', 'farming']);
+  delete save.colony.colonists.forEach((o) => delete o.spec);
+  const old = colony();
+  old.restore(save);
+  assert.ok(old.colonists.every((o) => (o.growth ?? 1) < 1 || validSpec(o.spec)), 'reparto válido para todos');
+  const first = old.colonists.map((o) => o.spec?.join());
+  const again = JSON.parse(JSON.stringify(old.serialize()));
+  const old2 = colony();
+  old2.restore(again);
+  assert.deepEqual(old2.colonists.map((o) => o.spec?.join()), first, 'no se reasigna al recargar');
+  // 6) Los cinco de Primitiva cubren lo esencial (recolección, construcción y agua), cada uno con tres distintas.
+  const start = colony();
+  start.seedPrimitive();
+  const cov = start.coverage();
+  for (const id of ['gathering', 'building', 'hauling']) assert.ok(cov.rows.find((r) => r.id === id).first >= 1, `${id} es la primera de alguien`);
+  assert.ok(start.colonists.every((o) => validSpec(o.spec)));
+  assert.equal(cov.gaps.length, 0);
+  // 7) Pedrera: trabaja en la estructura y produce por minuto, sin salir a buscar piedras.
+  const sq = colony();
+  sq.age = 2;
+  sq.stock = { food: 99, water: 99, wood: 99, stone: 0, fiber: 99 };
+  sq.colonists.forEach((o) => (o.spec = ['mining', 'gathering', 'building']));
+  const quarry = sq.createBuilding(BUILDINGS.quarry, 22, 10, 0, 1, 0);
+  sq.assignWorker(quarry);
+  for (let t = 0; t < 360; t += 0.5) {
+    for (const k of ['food', 'water']) sq.stock[k] = 99;
+    sq.update(0.5, { timeScale: 1, isNight: false, timeLabel: () => 'd' });
+  }
+  assert.ok(sq.stock.stone >= 6 && sq.stock.stone <= 24, `~2 piedras por minuto en 6 min (${sq.stock.stone})`);
+}
+function site_(sim) {
+  const b = sim.createBuilding(BUILDINGS.stockpile, 24, -12, 0, 0, 0);
+  b.done = false;
+  b.progress = 0;
+  return b;
 }
 console.log('tasks.test ✓');

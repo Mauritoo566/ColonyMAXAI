@@ -19,6 +19,8 @@ function colony(age, stock = {}) {
   sim.age = age;
   sim.clothesLeft = 0;
   sim.colonists.forEach((c) => (c.clothed = true));
+  const SPECS = [['smelting', 'engineering', 'crafting'], ['trading', 'service', 'research'], ['smelting', 'engineering', 'crafting'], ['trading', 'service', 'research'], ['mining', 'farming', 'service']];
+  sim.colonists.forEach((c, i) => (c.spec = SPECS[i % 5])); // los oficios de cada prueba
   sim.stock = { food: 900, water: 900, wood: 900, stone: 600, fiber: 300, ...stock };
   return sim;
 }
@@ -39,6 +41,8 @@ const spots = [[22, 10], [22, -8], [-24, 12], [-22, -14], [10, 28], [-10, 28]];
   const cu = sim.deposits.find((d) => d.kind === 'copper');
   const tin = sim.deposits.find((d) => d.kind === 'tin');
   assert.match(sim.buildProblem(BUILDINGS.copper_mine, 5, 40), /yacimiento de cobre/);
+  // Con tres especialidades por colono, el jugador elige quién cubre cada oficio de la cadena.
+  sim.colonists.forEach((c) => (c.spec = ['mining', 'smelting', 'crafting']));
   sim.createBuilding(BUILDINGS.copper_mine, cu.x, cu.z, 0, 1, 0);
   sim.createBuilding(BUILDINGS.tin_mine, tin.x, tin.z, 0, 1, 0);
   sim.createBuilding(BUILDINGS.smelter, ...spots[0], 0, 1, 0);

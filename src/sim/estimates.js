@@ -75,6 +75,17 @@ export function productionEstimate(colony, b) {
     return out;
   }
 
+  // 2b) Puestos fijos (pedrera, cantera): trabajan en la propia estructura.
+  if (def.station && lv.yield) {
+    const seconds = 60 * (1.4 - (skill / 10) * 0.7);
+    out.seconds = seconds;
+    out.perDay[def.stock] = ((DAY * ACTIVE_FRACTION * 1.5) / seconds) * lv.yield * Math.max(1, workers);
+    out.lines.push(`Trabaja en la propia estructura: +${lv.yield} ${name(def.stock)} cada ~${fmt(seconds)} s (≈ ${fmt((60 / seconds) * lv.yield)} por minuto).`);
+    out.lines.push(`Unas ${fmt(out.perDay[def.stock])} por día${workers > 1 ? ` con ${workers} trabajadores` : ''}${b.virtual ? ' (con un colono de habilidad media)' : ''}; sólo de día y con sitio en el almacén.`);
+    if (!b.virtual && !b.workers.length) out.lines.push('Sin trabajador no produce: asigna a alguien.');
+    return out;
+  }
+
   // 3) Recolectores de recursos del terreno (enramada, leñador, pedrera): viajes de ida y vuelta.
   if (def.resource && def.stock && lv.yield) {
     let distance = TYPICAL_DISTANCE;

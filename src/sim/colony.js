@@ -23,6 +23,7 @@ import { generateDeposits, depositAt, updateProduction, updatePower, applyHospit
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
+import { specOf, defaultSpec, validSpec, migrateSpecs, primitiveSplit, coverage, waitReason, isWorker, WORK_TYPES, spotCategory, SPEC_IDS, SPEC_NAMES } from './specialties.js';
 import { MOB_TYPES, spawnMobs, updateMobs, mobThreat } from './mobs.js';
 import { remainingOf, waterHint, DEW_RATE, RAIN_RATE, PRIMITIVE_STOCK, PRIMITIVE_COLLECTOR_WATER, DISCOVERY, LEARNABLE, shelterInfo, populationInfo, waterReport, foodReport, alertsOf, discoveryProblem, resourceHelp, harvestBlocker } from './primitive.js';
 
@@ -382,6 +383,7 @@ export class ColonySim {
     const collector = this.placeStarter(BUILDINGS.well, 3.6);
     if (collector) collector.store = PRIMITIVE_COLLECTOR_WATER;
     this.primitiveMigrated = true; // una partida nueva ya empieza completa
+    primitiveSplit(this); // tres especialidades por colono que cubren el inicio
     assignHomes(this);
     this.emit('changed');
     return { house, collector };
@@ -702,6 +704,10 @@ export class ColonySim {
       arrived: st.arrived ?? null,
       age: dyn.age ?? (growth < 1 ? Math.round(growth * 17) : 18),
       job: null,
+      spec: validSpec(dyn.spec) ? [...dyn.spec] : null, // tres especialidades por prioridad
+      pendingSpec: validSpec(dyn.pendingSpec) ? [...dyn.pendingSpec] : null, // cambio a aplicar en un punto seguro
+      xp: { ...(dyn.xp ?? {}) }, // práctica acumulada por categoría (segundos de trabajo)
+      idle: null,
       needs: { ...dyn.needs },
       health: dyn.health ?? 100,
       log: dyn.log ?? [],
@@ -1001,7 +1007,13 @@ export class ColonySim {
         c.thinkTimer = result === 'failed' ? 0.5 : 0;
       }
     }
+    // Punto seguro: sin tarea de trabajo en curso (o con una orden directa) se aplica el cambio de especialidades.
+    if (c.pendingSpec && (!c.task || !WORK_TYPES.has(c.task.type) || c.task.ordered)) this.applySpec(c);
+    if (isWorker(c) && !c.spec) specOf(this, c);
+    // Práctica: trabajar sube poco a poco el nivel de esa categoría (también con una orden temporal).
+    if (c.working && c.task && WORK_TYPES.has(c.task.type)) this.practice(c, c.task, dt);
     c.activity = c.task ? taskActivity(this, c, c.task) : 'Descansando un momento';
+    if (c.task?.type === 'wander' && c.idle) c.activity = c.idle;
     c.orderState = !c.order ? null : c.task?.ordered ? 'active' : 'interrupted';
     if (c.orderState === 'interrupted') c.activity += ' (orden en pausa: necesidad urgente)';
   }
@@ -1060,6 +1072,72 @@ export class ColonySim {
     c.orderState = null;
     if (c.task?.ordered) c.task.ordered = false;
     addLog(c, this.timeLabel(), `Terminó su orden (${why})`);
+  }
+
+  // ---- Especialidades ----------------------------------------------------------------------
+
+  // Categoría de lo que hace en una tarea de trabajo.
+  categoryOf(task) {
+    if (task.type === 'build') return 'building';
+    if (task.type === 'work') return task.building.def.skill;
+    if (task.type === 'harvest') return spotCategory(task.spot, this.age);
+    return null;
+  }
+
+  practice(c, task, dt) {
+    const cat = this.categoryOf(task);
+    if (!cat || c.skills[cat] === undefined) return;
+    c.xp ??= {};
+    c.xp[cat] = (c.xp[cat] ?? 0) + dt;
+    // Sube un nivel con ~12 minutos de práctica por nivel actual (máx. 10).
+    if (c.xp[cat] >= 240 * (c.skills[cat] + 2) && c.skills[cat] < 10) {
+      c.xp[cat] = 0;
+      c.skills[cat]++;
+      this.skillsRevision = (this.skillsRevision ?? 0) + 1;
+    }
+  }
+
+  // Pedir un cambio de especialidades (tres distintas, en orden de prioridad). Se aplica al llegar a un punto
+  // seguro: no se pierde experiencia ni se interrumpe la acción en curso.
+  setSpec(c, list) {
+    if (!c || !isWorker(c) || !validSpec(list)) return false;
+    if (this.remote) {
+      this.remote('setSpec', [c.id, list]);
+      return true;
+    }
+    const cur = specOf(this, c);
+    if (cur.join() === list.join()) {
+      c.pendingSpec = null;
+      return true;
+    }
+    c.pendingSpec = [...list];
+    if (!c.task || !WORK_TYPES.has(c.task.type) || c.task.ordered) this.applySpec(c);
+    this.emit('changed');
+    return true;
+  }
+
+  applySpec(c) {
+    if (!c.pendingSpec) return;
+    c.spec = c.pendingSpec;
+    c.pendingSpec = null;
+    addLog(c, this.timeLabel(), `Nuevas especialidades: ${c.spec.map((id) => SPEC_NAMES[id]).join(', ')}`);
+    // Si su puesto asignado solo se le dio automáticamente y ya no es de sus especialidades, lo deja libre.
+    if (c.job && c.jobAuto && !c.spec.includes(c.job.def.skill)) {
+      const b = c.job;
+      b.workers = b.workers.filter((w) => w !== c);
+      c.job = null;
+      b.reason = `${c.name} cambió de especialidades.`;
+      this.emit('buildings');
+    }
+    this.emit('changed');
+  }
+
+  coverage() {
+    return coverage(this);
+  }
+
+  waitReason(c) {
+    return waitReason(this, c);
   }
 
   startTask(c, task, env) {
@@ -1553,13 +1631,13 @@ export class ColonySim {
   // ---- Órdenes de recolección ---------------------------------------------------------------
 
   // Recursos marcados para recolectar (herramienta de recolección).
-  nearestMarked(x, z, gameTime) {
+  nearestMarked(x, z, gameTime, allow = null) {
     if (!this.markedCount) return null;
     let best = null;
     let bestD = Infinity;
     for (const s of this.spots) {
       if (!s.marked || s.gone || s.taken || s.readyAt > gameTime || !this.usable(s)) continue;
-      if (this.isFull(s.kind) || this.blockedByBuilding(s.x, s.z)) continue;
+      if (this.isFull(s.kind) || this.blockedByBuilding(s.x, s.z) || (allow && !allow(s))) continue;
       const d = Math.hypot(s.x - x, s.z - z);
       if (d < bestD) {
         best = s;
@@ -2159,22 +2237,23 @@ export class ColonySim {
     if (this.remote || !b.done) return;
     const needed = this.crewNeeded(b);
     if (!needed || b.workers.length >= needed) return;
-    const free = this.ranking(b).filter((c) => !c.job && this.available(c));
+    // Sólo se ofrece el puesto a quien tiene esa categoría entre sus especialidades (no hay un cuarto oficio automático).
+    const free = this.ranking(b).filter((c) => !c.job && this.available(c) && specOf(this, c).includes(b.def.skill));
     if (!free.length) {
-      b.reason = 'No hay colonos libres. Puedes elegir a uno de la lista.';
+      b.reason = `Nadie libre tiene ${SPEC_NAMES[b.def.skill]} entre sus especialidades: cámbialas en la tabla de trabajo o elige a alguien a mano.`;
       return;
     }
     const skillName = SKILLS.find((s) => s.id === b.def.skill).name;
     while (b.workers.length < needed && free.length) {
       const best = free.shift();
       const others = free.length ? ' entre los colonos libres' : '';
-      this.setWorker(b, best, `La colonia le eligió por tener la mejor ${skillName.toLowerCase()} (${this.skillOf(best, b.def.skill)}/10)${others}.`);
+      this.setWorker(b, best, `La colonia le eligió por tener la mejor ${skillName.toLowerCase()} (${this.skillOf(best, b.def.skill)}/10)${others}.`, true);
     }
   }
 
   // Asignar a mano (desde la ficha del edificio). Si la dotación está completa, sale el
   // que lleva más tiempo.
-  setWorker(b, c, reason = 'Elegido por ti.') {
+  setWorker(b, c, reason = 'Elegido por ti.', auto = false) {
     if (this.remote) {
       this.remote('setWorker', [b.id, c.id]);
       return;
@@ -2190,6 +2269,7 @@ export class ColonySim {
     b.workers.push(c);
     b.reason = reason;
     c.job = b;
+    c.jobAuto = auto; // a mano = orden del jugador (vale aunque no sea de sus especialidades)
     addLog(c, this.timeLabel(), `Ahora trabaja en: ${b.name}`);
     this.emit('buildings');
     this.emit('changed');
@@ -2505,6 +2585,9 @@ export class ColonySim {
           pregnant: c.pregnant,
           home: c.home,
           order: c.order ?? null,
+          spec: c.spec,
+          pendingSpec: c.pendingSpec,
+          xp: c.xp,
           age: c.age,
           soldier: c.soldier,
           static: c.id >= START_COLONISTS ? this.staticOf(c) : undefined, // los nacidos o llegados no salen de la semilla
@@ -2576,6 +2659,7 @@ export class ColonySim {
     // Partidas anteriores: las viviendas toman el nivel de la edad (no se quita nada).
     evolveHouses(this);
     this.pruneRoads();
+    migrateSpecs(this); // aldeas anteriores: tres especialidades razonables, una sola vez
     this.migratePrimitive();
     this.autoConnect();
     if (data.weather && this.weather?.load) this.weather.load(data.weather);
@@ -2634,6 +2718,10 @@ export class ColonySim {
       case 'cancelOrder': {
         const c = this.colonist(args[0]);
         return !!c && this.cancelOrder(c);
+      }
+      case 'setSpec': {
+        const c = this.colonist(args[0]);
+        return !!c && this.setSpec(c, args[1]);
       }
       case 'learn':
         return typeof args[0] === 'string' && this.learn(args[0]);
@@ -2766,6 +2854,9 @@ export class ColonySim {
         pregnant: c.pregnant?.due ?? null,
         home: c.home,
         order: c.order ? { ...c.order, state: c.orderState } : null,
+        spec: c.spec,
+        pspec: c.pendingSpec,
+        idle: c.idle,
         age: c.age,
         sd: c.soldier ? c.soldier.unit : null,
         x: r2(c.x),
@@ -2854,6 +2945,9 @@ export class ColonySim {
       c.mate = row.mate ?? null;
       c.pregnant = row.pregnant != null ? { due: row.pregnant } : null;
       c.home = row.home ?? null;
+      c.spec = row.spec ?? null;
+      c.pendingSpec = row.pspec ?? null;
+      c.idle = row.idle ?? null;
       c.order = row.order ?? null;
       c.orderState = row.order?.state ?? null;
       c.soldier = row.sd && UNITS_BY_ID[row.sd] ? { unit: row.sd, tier: UNITS_BY_ID[row.sd].age } : null;
@@ -3038,6 +3132,9 @@ export class ColonySim {
       c.mate = saved.mate ?? null;
       c.pregnant = saved.pregnant && Number.isFinite(saved.pregnant.due) ? saved.pregnant : null;
       c.home = saved.home ?? null;
+      if (validSpec(saved.spec)) c.spec = [...saved.spec];
+      if (validSpec(saved.pendingSpec)) c.pendingSpec = [...saved.pendingSpec];
+      c.xp = saved.xp && typeof saved.xp === 'object' ? { ...saved.xp } : {};
       c.order = saved.order?.kind === 'build' ? { kind: 'build', building: saved.order.building } : saved.order?.kind === 'harvest' ? { kind: 'harvest' } : null;
       c.soldier = saved.soldier && UNITS_BY_ID[saved.soldier.unit] ? { unit: saved.soldier.unit, tier: saved.soldier.tier ?? UNITS_BY_ID[saved.soldier.unit].age } : null;
       if (Number.isFinite(saved.age)) c.age = saved.age;

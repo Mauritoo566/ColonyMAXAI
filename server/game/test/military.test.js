@@ -21,6 +21,7 @@ function colony(age, stock = {}) {
   sim.age = age;
   sim.clothesLeft = 0;
   sim.colonists.forEach((c) => (c.clothed = true));
+  sim.colonists.forEach((c) => (c.spec = ['gathering', 'combat', 'crafting'])); // los oficios de cada prueba
   sim.stock = { food: 900, water: 900, wood: 900, stone: 600, fiber: 300, ...stock };
   sim.timeLabel = () => 'Día 1';
   return sim;

@@ -94,13 +94,14 @@ add({
   stock: 'stone',
   workTime: 16,
   range: 200,
+  station: true, // el colono trabaja en la propia estructura (no sale a buscar piedras): produce ~"yield" por minuto
   goingText: 'Va a picar piedra',
   workingText: 'Picando piedra',
-  returningText: 'Lleva piedra al almacén',
+  returningText: 'Pica piedra en la pedrera',
   noResourceText: 'No hay piedras cerca',
   scavenge: { yield: 1, text: 'Juntando piedras sueltas', status: 'No quedan piedras grandes cerca: junta piedras sueltas (rinde menos)' },
   levels: [
-    L(1, 'Pedrera', 'Un montón de piedras y un percutor. Un colono junta piedra de los alrededores.', 'quarryModel1', { yield: 2 }),
+    L(1, 'Pedrera', 'Un montón de piedras y un percutor. Un colono trabaja aquí y saca unas 2 piedras por minuto.', 'quarryModel1', { yield: 2 }),
     L(2, 'Cantera', 'Con palancas y una grúa de troncos se sacan bloques más grandes. Pide un leñador: los troncos y las cuerdas vienen de allí.', 'quarryModel2', { yield: 3, upgradeCost: { wood: 25, stone: 10, fiber: 6 }, requires: [{ id: 'woodcutter' }] }),
     L(4, 'Cantera de cuñas', 'Picos y cuñas de hierro parten bloques enormes.', 'gen:mine:4', { yield: 5, upgradeCost: { wood: 30, stone: 20, iron_tools: 2 } }),
     L(6, 'Cantera con grúa', 'Una grúa de rueda y poleas de hierro levanta sillares enteros.', 'gen:mine:6', { yield: 7, upgradeCost: { wood: 40, cut_stone: 10, iron_tools: 3 } }),

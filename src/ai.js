@@ -10,6 +10,7 @@ import { hasTrait } from './needs.js';
 import { isChild, loveOptions, runLove, endLove, homeOf } from './sim/family.js';
 import { levelOf, STOCK_NAMES } from './sim/buildingTypes.js';
 import { DAY_LENGTH_SECONDS } from './daynight.js';
+import { specOf, spotCategory, WORK_TYPES, waitReason } from './sim/specialties.js';
 
 const DAY = DAY_LENGTH_SECONDS;
 
@@ -210,6 +211,15 @@ export function chooseTask(colony, c, env) {
   if (!env.isNight && !isChild(c) && !c.soldier) {
     const diligence = hasTrait(c, 'hardworking') ? 1.3 : hasTrait(c, 'lazy') ? 0.6 : 1;
     const fine = Math.min(n.food, n.water, n.rest, n.warmth) > 30 ? 1 : 0.4;
+    // Sólo se aceptan solos los trabajos de sus tres especialidades. Se busca en la primera; si no hay nada
+    // realizable, en la segunda y luego en la tercera (los puestos que alguien eligió a mano valen como última).
+    const spec = specOf(colony, c);
+    const tierOf = (cat) => spec.indexOf(cat);
+    const jobTier = c.job && c.job.done ? (tierOf(c.job.def.skill) >= 0 ? tierOf(c.job.def.skill) : c.jobAuto ? -1 : 3) : -1;
+    const work = [];
+    const addWork = (tier, score, task) => {
+      if (tier >= 0) work.push({ tier, score, task });
+    };
     for (const b of colony.buildings) {
       if (b.done || b.paused) continue;
       const skill = c.skills.building / 10;
@@ -218,22 +228,28 @@ export function chooseTask(colony, c, env) {
       const others = builders(colony, b) - (mine ? 1 : 0);
       if (others >= siteCap(b) && !mine) continue;
       const crowd = 1 / (1 + 0.7 * others);
-      // La prioridad manda: la alta gana al trabajo fijo, la baja sólo la hacen los que no tienen nada mejor.
+      // La prioridad de la obra manda entre obras; la baja sólo la hacen los que no tienen nada mejor.
       let score = (0.42 + skill * 0.12) * diligence * fine * (1 / (1 + dist(c, b) / 400)) * (PRIORITY[b.priority] ?? 1) * crowd;
       if (mine) score *= 1.15; // no cambia de obra por un empate
-      add(score - b.id * 1e-5, { type: 'build', building: b });
+      addWork(tierOf('building'), score - b.id * 1e-5, { type: 'build', building: b });
     }
     const job = c.job;
-    // Con el almacén lleno de lo que produce su puesto, no se queda parado esperando: hace otra cosa
-    // (obras, recolectar, pasear) y vuelve cuando haya sitio.
+    // Con el almacén lleno o sin materiales no se queda esperando: hace otra cosa y vuelve cuando se pueda.
     const full = job?.def.stock && colony.isFull(job.def.stock);
-    if (job && job.done && !full) add(0.34 * diligence * fine, { type: 'work', building: job, phase: 'start' });
-    // Recolectar lo que el jugador marcó: es una orden, así que va antes que el trabajo
-    // fijo y las obras (las necesidades urgentes siguen primero). La distancia pesa poco.
-    const marked = colony.nearestMarked(c.x, c.z, env.gameTime);
+    const stalled = job?.status && /Faltan materiales|Sin energ/i.test(job.status) && job.def.kind;
+    if (job && job.done && !full && !stalled) addWork(jobTier, 0.34 * diligence * fine, { type: 'work', building: job, phase: 'start' });
+    // Recolectar lo que el jugador marcó (herramienta de recolección): sólo la categoría de cada sitio.
+    const marked = colony.nearestMarked(c.x, c.z, env.gameTime, (sp) => tierOf(spotCategory(sp, colony.age)) >= 0);
     if (marked) {
       const near = 1 / (1 + dist(c, marked) / 600);
-      add((job ? 0.5 : 0.56) * diligence * fine * near, { type: 'harvest', spot: marked, phase: 'going' });
+      addWork(tierOf(spotCategory(marked, colony.age)), (job ? 0.5 : 0.56) * diligence * fine * near, { type: 'harvest', spot: marked, phase: 'going' });
+    }
+    if (work.length) {
+      const best = Math.min(...work.map((w) => w.tier));
+      for (const w of work) if (w.tier === best) add(w.score, w.task);
+      c.idle = null;
+    } else {
+      c.idle = waitReason(colony, c);
     }
   }
 
@@ -273,6 +289,9 @@ export function shouldSwitch(current, next) {
     if (same) current.ordered = true;
     return !same;
   }
+  // Una acción de trabajo se mantiene hasta su punto seguro (cada unidad recogida, ciclo o tanda de obra); sólo la
+  // interrumpen necesidades urgentes o peligro, no otra tarea de trabajo que aparezca.
+  if (WORK_TYPES.has(current.type)) return next.score > 0.95;
   if (current.type === next.type && current.type !== 'build' && current.type !== 'eat') return false;
   if (current.type === 'sleep' && current.phase === 'sleeping') return next.score > current.score * 1.6 + 0.2;
   if (current.type === 'love' && current.phase === 'inside') return next.score > 1.1;
@@ -402,7 +421,9 @@ export function runTask(colony, c, task, dt, env) {
       // Trabajo necesario según el edificio; los hábiles construyen más rápido.
       b.progress = Math.min(1, b.progress + (dt / (b.buildTime ?? b.def.buildTime)) * (0.5 + c.skills.building / 10));
       if (b.progress >= 1) b.finish?.(c);
-      return b.done ? 'done' : 'running';
+      // Punto seguro cada 15 s de obra: ahí puede cambiar de tarea o de especialidad (sin dejar la obra a medias de golpe).
+      task.worked = (task.worked ?? 0) + dt;
+      return b.done || (task.worked >= 15 && !task.ordered) ? 'done' : 'running';
     }
 
     case 'love':
@@ -500,6 +521,21 @@ function runWork(colony, c, task, dt, env) {
     return 'done';
   }
 
+  // Edificios de puesto fijo (pedrera, cantera): el colono trabaja junto a la estructura y produce solo,
+  // "yield" unidades por minuto (más rápido si es hábil), sin salir a buscar recursos ni transportar.
+  if (def.station) {
+    if (!go(colony, c, task, edgeOf(b, c), dt, 0.9)) return 'running';
+    c.working = true;
+    colony.faceTowards(c, b.x, b.z, dt);
+    b.status = null;
+    const skill = c.skills[def.skill] / 10;
+    if (!busy(task, dt, 60 * (1.4 - skill * 0.7))) return 'running';
+    const added = colony.produce(def.stock, level.yield);
+    b.produced += added;
+    task.delivered = true;
+    return 'done';
+  }
+
   if (task.phase === 'start') {
     task.spot = colony.nearestSpot(def.resource, b.x, b.z, def.range, env.gameTime);
     if (!task.spot && def.scavenge) {
@@ -543,6 +579,7 @@ function runWork(colony, c, task, dt, env) {
     const amount = task.spot.scavenge ? def.scavenge.yield : level.yield;
     const added = colony.produce(def.stock, amount);
     for (const [k, n] of Object.entries(def.extra || {})) colony.produce(k, n);
+    task.delivered = true;
     b.produced += added;
     if (!task.spot.scavenge) b.status = null;
     return 'done';
@@ -588,7 +625,7 @@ function runHarvest(colony, c, task, dt, env) {
   if (task.phase === 'gathering') {
     c.working = true;
     colony.faceTowards(c, spot.x, spot.z, dt);
-    const skill = c.skills[info.skill] / 10;
+    const skill = c.skills[spotCategory(spot, colony.age)] / 10;
     if (!busy(task, dt, (spot.stick ? 8 : info.time) * (1.4 - skill * 0.7))) return 'running';
     task.load = harvestYield(spot);
     colony.consumeSpot(spot, env.gameTime);
@@ -599,6 +636,7 @@ function runHarvest(colony, c, task, dt, env) {
     task.drop ??= colony.dropPoint(spot.kind);
     if (!go(colony, c, task, task.drop, dt, task.drop.r ? task.drop.r * 0.6 : 1.6)) return 'running';
     for (const [k, n] of Object.entries(task.load)) colony.produce(k, n);
+    task.delivered = true;
     return 'done';
   }
   return 'running';
@@ -607,6 +645,14 @@ function runHarvest(colony, c, task, dt, env) {
 // Al abandonar una tarea (por otra más urgente), liberar lo que tenía reservado.
 export function endTask(colony, c, task) {
   if (task.spot && task.spot.taken === c) task.spot.taken = null;
+  // Lo que llevaba no se pierde ni se duplica: se entrega ahora en el almacén.
+  if (task.type === 'harvest' && task.load && !task.delivered) {
+    for (const [k, n] of Object.entries(task.load)) colony.produce(k, n);
+    task.delivered = true;
+  } else if (task.type === 'work' && task.phase === 'returning' && !task.delivered && !task.spot?.scavenge && task.building?.def.stock) {
+    colony.produce(task.building.def.stock, levelOf(task.building).yield);
+    task.delivered = true;
+  }
   if (task.type === 'sleep') c.sleeping = false;
   if (task.type === 'love') endLove(colony, c);
 }
