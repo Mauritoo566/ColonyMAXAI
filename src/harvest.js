@@ -25,6 +25,7 @@ export class HarvestTool {
     this.campObject = campObject;
     this.active = false;
     this.mode = 'mark'; // 'mark' | 'unmark' | 'zone'
+    this.kinds = new Set(['food', 'wood', 'stone']); // filtro: qué recursos marca o desmarca
     this.message = null; // aviso si la zona no se puede poner
     this.drag = null; // esquinas { ax, az, bx, bz } y giro, en coordenadas del campamento
     this.onChange = null;
@@ -123,14 +124,26 @@ export class HarvestTool {
         else this.onChange?.();
         return;
       }
-      if (moved) colony.markRect(rect, this.mode === 'mark');
-      else colony.markArea(d.ax, d.az, CLICK_RADIUS, this.mode === 'mark');
+      const kinds = this.kindsFilter();
+      if (moved) colony.markRect(rect, this.mode === 'mark', kinds);
+      else colony.markArea(d.ax, d.az, CLICK_RADIUS, this.mode === 'mark', kinds);
     };
     canvas.addEventListener('pointerup', finish);
     canvas.addEventListener('pointercancel', finish);
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.active) this.setActive(false);
     });
+  }
+
+  // Lista de tipos elegidos, o null si están todos.
+  kindsFilter() {
+    return this.kinds.size === 3 ? null : [...this.kinds];
+  }
+
+  toggleKind(kind) {
+    if (this.kinds.has(kind)) this.kinds.delete(kind);
+    else this.kinds.add(kind);
+    this.onChange?.();
   }
 
   setActive(active, mode = this.mode) {

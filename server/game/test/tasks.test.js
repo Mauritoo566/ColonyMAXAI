@@ -165,4 +165,20 @@ const site = (sim, id, x, z) => {
   for (const [k, n] of Object.entries(cost)) assert.equal(sim.stock[k] - before[k], Math.floor(n / 2), `devuelve la mitad de ${k}`);
   assert.equal(sim.applyCommand('demolish', [moved.id]), false);
 }
+// Recolección por filtros: sólo se marca lo elegido; el servidor limpia el filtro recibido.
+{
+  const sim = colony();
+  const rect = { cx: 0, cz: 0, hw: 120, hd: 120, angle: 0 };
+  const kinds = new Set(sim.spots.filter((s) => !s.gone).map((s) => s.kind));
+  assert.ok(kinds.has('wood') && (kinds.has('stone') || kinds.has('food')), 'hay varios tipos');
+  assert.equal(sim.applyCommand('markRect', [rect, true, ['wood']]), true);
+  const marked = sim.spots.filter((s) => s.marked);
+  assert.ok(marked.length > 0 && marked.every((s) => s.kind === 'wood'), 'sólo madera');
+  sim.applyCommand('markRect', [rect, true, ['peligro', 7]]);
+  assert.ok(sim.spots.filter((s) => s.marked).every((s) => s.kind === 'wood'), 'un filtro inválido no marca nada');
+  sim.applyCommand('markRect', [rect, true, null]);
+  assert.ok(sim.spots.some((s) => s.marked && s.kind !== 'wood'), 'sin filtro marca todo');
+  sim.applyCommand('clearMarks', [['wood']]);
+  assert.ok(!sim.spots.some((s) => s.marked && s.kind === 'wood') && sim.spots.some((s) => s.marked), 'quita sólo lo elegido');
+}
 console.log('tasks.test ✓');

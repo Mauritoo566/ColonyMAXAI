@@ -2650,3 +2650,8 @@ canvas.is-harvesting {
 .delete-form { display: grid; gap: 8px; margin-top: 8px; }
 .delete-form input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid var(--ui-line); background: rgba(255, 255, 255, 0.06); color: inherit; font: inherit; box-sizing: border-box; }
 .order-msg.is-bad { color: var(--bad, #e5645a); }
+
+/* Filtro de recolección: qué tipos marca o desmarca la herramienta */
+.harvest-filters { display: flex; gap: 4px; flex-wrap: wrap; }
+.harvest-filters button { flex: 1; height: 28px; padding: 0 10px; border: 1px solid var(--ui-line); border-radius: 7px; background: none; color: var(--ui-muted); font: 700 12px/1 var(--font-display); cursor: pointer; }
+.harvest-filters button[aria-pressed='true'] { border-color: var(--accent); color: var(--ui-text); background: rgba(242, 178, 76, 0.16); }

@@ -198,7 +198,14 @@ export class BuildUI {
     for (const button of this.harvestTools.querySelectorAll('[data-harvest-mode]')) {
       button.addEventListener('click', () => harvest.setActive(true, button.dataset.harvestMode));
     }
-    $('harvest-clear').addEventListener('click', () => colony.clearMarks());
+    for (const button of this.harvestTools.querySelectorAll('[data-harvest-kind]')) {
+      button.addEventListener('click', () => {
+        // Siempre queda al menos un tipo elegido.
+        if (harvest.kinds.size === 1 && harvest.kinds.has(button.dataset.harvestKind)) return;
+        harvest.toggleKind(button.dataset.harvestKind);
+      });
+    }
+    $('harvest-clear').addEventListener('click', () => colony.clearMarks(harvest.kindsFilter()));
     harvest.onChange = () => this.refreshHarvest();
     buildings.onPlacingStart = () => harvest.setActive(false);
     this.refreshHarvest();
@@ -231,6 +238,8 @@ export class BuildUI {
       return;
     }
     this.showZoneHint(null, true);
+    for (const b of this.harvestTools.querySelectorAll('[data-harvest-kind]')) b.setAttribute('aria-pressed', String(h.kinds.has(b.dataset.harvestKind)));
+    document.getElementById('harvest-clear').textContent = h.kindsFilter() ? 'Quitar las marcas de lo elegido' : 'Quitar todas las marcas';
     for (const b of this.harvestTools.querySelectorAll('[data-harvest-mode]')) b.setAttribute('aria-pressed', String(b.dataset.harvestMode === h.mode));
     this.harvestHint.innerHTML =
       h.mode === 'mark'

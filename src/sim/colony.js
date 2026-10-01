@@ -46,6 +46,14 @@ export const CAMP_OTHER_CAPACITY = 30; // de cada uno de los demás bienes, hast
 export const ZONE_PER_M2 = 1.5;
 export const MIN_ZONE_SIDE = 2; // metros: más chico no tiene sentido
 export const FOOD_SPOIL_SECONDS = 1.5 * DAY_LENGTH_SECONDS; // día y medio de juego
+// Filtro de recolección que llega de la red: lista de tipos conocidos, o null (todos).
+const MARK_KINDS = ['food', 'wood', 'stone'];
+function cleanKinds(k) {
+  if (!Array.isArray(k)) return null;
+  const out = k.filter((x) => MARK_KINDS.includes(x));
+  return out.length === MARK_KINDS.length ? null : out;
+}
+
 export const SAVE_VERSION = 3; // 2: además guarda colonos, recursos agotados y el reloj; 3: bienes, tecnologías, territorio
 export const BUILD_MAX_DISTANCE = 75; // metros desde la fogata donde se puede construir en la primera edad (ver progression.js)
 
@@ -1248,11 +1256,11 @@ export class ColonySim {
   }
 
   // Marcar o desmarcar los recursos dentro de un rectángulo (coordenadas del campamento).
-  markRect(rect, marked) {
-    this.remote?.('markRect', [rect, marked]);
+  markRect(rect, marked, kinds = null) {
+    this.remote?.('markRect', [rect, marked, kinds]);
     let changed = 0;
     for (const s of this.spots) {
-      if (s.gone || !insideRect(rect, s.x, s.z)) continue;
+      if (s.gone || !insideRect(rect, s.x, s.z) || (kinds && !kinds.includes(s.kind))) continue;
       if (!!s.marked !== marked) {
         s.marked = marked;
         changed++;
@@ -1263,11 +1271,11 @@ export class ColonySim {
   }
 
   // Marcar o desmarcar los recursos dentro de un círculo (coordenadas del campamento).
-  markArea(x, z, radius, marked) {
-    this.remote?.('markArea', [x, z, radius, marked]);
+  markArea(x, z, radius, marked, kinds = null) {
+    this.remote?.('markArea', [x, z, radius, marked, kinds]);
     let changed = 0;
     for (const s of this.spots) {
-      if (s.gone || Math.hypot(s.x - x, s.z - z) > radius) continue;
+      if (s.gone || Math.hypot(s.x - x, s.z - z) > radius || (kinds && !kinds.includes(s.kind))) continue;
       if (!!s.marked !== marked) {
         s.marked = marked;
         changed++;
@@ -1277,9 +1285,9 @@ export class ColonySim {
     return changed;
   }
 
-  clearMarks() {
-    this.remote?.('clearMarks', []);
-    for (const s of this.spots) s.marked = false;
+  clearMarks(kinds = null) {
+    this.remote?.('clearMarks', [kinds]);
+    for (const s of this.spots) if (!kinds || kinds.includes(s.kind)) s.marked = false;
     this.marksChanged();
   }
 
@@ -2025,15 +2033,15 @@ export class ColonySim {
         return true;
       case 'markRect': {
         const r = rect(args[0]);
-        return !!r && this.markRect(r, !!args[1]) >= 0;
+        return !!r && this.markRect(r, !!args[1], cleanKinds(args[2])) >= 0;
       }
       case 'markArea': {
         const [x, z, radius, marked] = args;
         if (num(x, 1000) === null || num(z, 1000) === null || num(radius, 50) === null) return false;
-        return this.markArea(x, z, radius, !!marked) >= 0;
+        return this.markArea(x, z, radius, !!marked, cleanKinds(args[4])) >= 0;
       }
       case 'clearMarks':
-        this.clearMarks();
+        this.clearMarks(cleanKinds(args[0]));
         return true;
     }
     return false;
