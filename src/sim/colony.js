@@ -23,7 +23,7 @@ import { generateDeposits, depositAt, updateProduction, updatePower, applyHospit
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
-import { PRIMITIVE_STOCK, PRIMITIVE_COLLECTOR_WATER, DISCOVERY, LEARNABLE, shelterInfo, populationInfo, waterReport, foodReport, alertsOf, discoveryProblem, resourceHelp, harvestBlocker } from './primitive.js';
+import { remainingOf, PRIMITIVE_STOCK, PRIMITIVE_COLLECTOR_WATER, DISCOVERY, LEARNABLE, shelterInfo, populationInfo, waterReport, foodReport, alertsOf, discoveryProblem, resourceHelp, harvestBlocker } from './primitive.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
 // de acopio, recursos del entorno, edades y guardado. No dibuja nada ni toca la página:
@@ -301,6 +301,10 @@ export class ColonySim {
 
   harvestBlocker(kind) {
     return harvestBlocker(this, kind);
+  }
+
+  remaining(kind) {
+    return remainingOf(this, kind);
   }
 
   // Campamento inicial de una partida nueva: un refugio de ramas, el recolector de lluvia ya

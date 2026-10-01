@@ -262,6 +262,15 @@ export class BuildUI {
       h.mode === 'mark'
         ? `Arrastra sobre el terreno para marcar un área (o haz clic en un recurso). ${n ? `<strong>${n} marcados</strong>: los colonos dejan su trabajo para recogerlos (de día y si no tienen hambre, sed, sueño o frío).` : 'Los colonos dejarán su trabajo para recolectar lo marcado: árboles, bayas, setas y piedras (hasta ~230 m del campamento).'}`
         : `Arrastra sobre un área marcada para quitar las marcas. ${n ? `<strong>${n} marcados</strong>.` : ''}`;
+    // Qué hay en el terreno, qué está marcado, quién trabaja (y qué lleva) y por qué no se recoge algo.
+    const colony = this.colony;
+    const rows = [['food', 'Comida'], ['wood', 'Ramas y madera'], ['stone', 'Piedras']].map(([k, name]) => {
+      const r = colony.remaining(k);
+      const why = r.marked ? colony.harvestBlocker(k) : null;
+      return `<li><span>${name}</span><strong>${r.left} en el terreno${r.waiting ? ` (${r.waiting} rebrotan)` : ''} · ${r.marked} marcados</strong>${why ? `<em>${escapeHtml(why)}</em>` : ''}</li>`;
+    });
+    const workers = colony.colonists.filter((c) => /recog|recolect|lleva .* (al almacén|a la zona)/i.test(c.activity ?? '')).slice(0, 6);
+    this.harvestHint.innerHTML += `<ul class="harvest-info">${rows.join('')}</ul>${workers.length ? `<p class="harvest-workers"><strong>Trabajando:</strong> ${workers.map((c) => `${escapeHtml(c.name)} (${escapeHtml(c.activity)})`).join(' · ')}</p>` : ''}<p class="harvest-legend">En el terreno: lo que aún se puede recoger. Transportado: lo que lleva un colono. Depositado: lo que ya está en el almacén y se puede gastar.</p>`;
   }
 
   showZoneHint(problem, hide = false) {
@@ -320,7 +329,9 @@ export class BuildUI {
       li.classList.toggle('is-empty', v <= 0);
       const out = Math.floor(this.colony.outdoor[li.dataset.stock] ?? 0);
       li.classList.toggle('is-full', this.colony.isFull(li.dataset.stock));
-      li.title = `${STOCK_NAMES[li.dataset.stock]}: ${v - out} de ${cap} en el almacén${out ? ` + ${out} al aire libre` : ''}`;
+      // Qué es, dónde se consigue, cómo se ordena y para qué sirve (y por qué no se recoge).
+      const help = this.colony.resourceHelp(li.dataset.stock);
+      li.title = `${STOCK_NAMES[li.dataset.stock]}: ${v - out} de ${cap} en el almacén${out ? ` + ${out} al aire libre` : ''}${help ? `\n\n${help}` : ''}`;
     }
     // Sólo se ofrece lo de la edad actual (y lo que ya existe en el juego): lo futuro se ve en
     // el panel de edades, con su edad y requisitos.
@@ -589,7 +600,7 @@ export class BuildUI {
           ${recipeHtml}
           ${b.cycle != null && level.recipe ? `<div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.cycle * 100)}%"></i></div>` : ''}
           <div class="stat-line"><span>Ha producido</span><strong>${produced}</strong></div>
-          ${stored !== null ? `<div class="stat-line"><span>Agua en las vasijas</span><strong>${stored} / ${level.capacity}</strong></div>` : ''}
+          ${stored !== null ? `<div class="stat-line"><span>Agua en las vasijas</span><strong>${stored} / ${level.capacity}</strong></div><div class="stat-line"><span>Consumo de la aldea</span><strong>~${colony.waterReport().perDay.toFixed(1)} jarras por día</strong></div><div class="stat-line"><span>La reserva total dura</span><strong>~${colony.waterReport().days.toFixed(1)} días</strong></div><p class="reason">Con lluvia se llena rápido; con tiempo seco sólo junta un poco de rocío. Conviene tener reserva para los periodos secos.</p>` : ''}
         </section>`
       : '';
     const effectsHtml = !needed && !isHouse && !isStorage ? this.effectsHtml(b, level) : '';

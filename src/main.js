@@ -27,6 +27,8 @@ import { FlagUI } from './flagUI.js';
 import { VillageUI } from './villageUI.js';
 import { makeFoldable } from './panelFold.js';
 import { GridSystem } from './grid.js';
+import { GuideUI } from './guideUI.js';
+import { levelOf } from './sim/buildingTypes.js';
 import { MilitaryUI } from './militaryUI.js';
 import { RoadSystem } from './roads.js';
 import { ensureIcons } from './icons.js';
@@ -251,6 +253,57 @@ ageUI.onOpen = () => {
   colonyView.select(null);
   buildings.select(null);
 };
+
+// Guía de la edad: cada paso abre la acción que corresponde (sin bloquear nada más).
+const guideUI = new GuideUI({
+  colony,
+  actions: {
+    tour: () => {
+      colony.learn('tour');
+      if (colony.colonists[0]) colonyUI.focusColonist(colony.colonists[0]);
+    },
+    materials: () => {
+      buildings.stopPlacing();
+      harvest.kinds = new Set(['wood', 'food', 'stone']);
+      harvest.setActive(true, 'mark');
+    },
+    food: () => {
+      buildings.stopPlacing();
+      harvest.kinds = new Set(['food']);
+      harvest.setActive(true, 'mark');
+    },
+    water: () => {
+      const b = colony.buildings.find((o) => o.done && levelOf(o).rainOnly);
+      const view = buildings.list.find((o) => o.id === b?.id);
+      if (view) buildings.select(view);
+      colony.learn('water_seen');
+    },
+    shelter: () => {
+      buildUI.setTab('housing');
+      buildings.startPlacing('house');
+    },
+    stockpile: () => {
+      buildUI.setTab('storage');
+      buildings.startPlacing('stockpile');
+    },
+    discovery: () => {
+      if (!colony.discover()) showNotice(colony.discoveryProblem() ?? 'Todavía no se puede', true);
+    },
+    advance: () => {
+      ageUI.tab = 'siguiente';
+      ageUI.renderedFor = null;
+      ageUI.toggle(true);
+    },
+  },
+});
+// Mirar el recolector de lluvia cuenta como entender el agua.
+{
+  const prev = buildings.onSelect;
+  buildings.onSelect = (b) => {
+    prev?.(b);
+    if (b && !b.isStore && levelOf(b).rainOnly) colony.learn('water_seen');
+  };
+}
 
 // ---- Los demás jugadores: sus campamentos, edificios y colonos, en vivo ---------------
 const others = new OtherCamps({ scene, terrain: planet.terrain, camera, canvas, labelsRoot: document.getElementById('labels') });
@@ -539,6 +592,7 @@ renderer.setAnimationLoop(() => {
   colonyUI.update(delta);
   buildUI.update(delta);
   ageUI.update(delta);
+  guideUI.update(delta);
   villageUI.update(delta);
   militaryUI.update(delta);
   harvest.update(waterUniforms.uTime.value, delta);

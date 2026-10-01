@@ -50,7 +50,7 @@ Un edificio sin mejorar conserva modelo, nivel y rendimiento. Los soldados exist
 
 | Edad | Territorio base | Ampliaciones | Viviendas | Bloques | Edificios de cada tipo | Población máx. |
 |---|---|---|---|---|---|---|
-| I Edad Primitiva | 75 m | 0 | 3 | — | 2 | 14 |
+| I Edad Primitiva | 75 m | 0 | 3 | — | 2 | 10 |
 | II Edad de Piedra | 85 m | 1 | 6 | — | 3 | 22 |
 | III Edad del Bronce | 95 m | 2 | 9 | — | 4 | 32 |
 | IV Edad del Hierro | 110 m | 2 | 13 | — | 5 | 42 |
@@ -76,7 +76,7 @@ Ramas, pieles y piedras apiladas. La colonia vive de lo que recoge.
 | Pedrera | edificio | Coste: 10 madera · 1 trabajador |
 | Recolector de lluvia | edificio | Coste: 8 madera, 4 fibras · 1 trabajador |
 | Pila de troncos y cestas | edificio | Coste: 12 madera, 4 fibras |
-| Choza de ramas | edificio | Coste: 18 madera, 6 fibras · Requiere un edificio Zona de tala terminado · Aloja a 2 |
+| Choza de ramas | edificio | Coste: 18 madera, 6 fibras · Aloja a 2 |
 | Atalaya de ramas | edificio | Coste: 10 madera, 6 fibras · Defensa 2 |
 
 **Bienes nuevos:** comida, agua, madera, piedra, fibras.
@@ -87,7 +87,7 @@ Chozas de barro y paja, senderos, tótem y herramientas de piedra pulida.
 
 **Cambia sola:** Las chozas pasan a barro y paja; senderos de piedra alrededor del fuego y tótem de la tribu; ropa de pieles mejor cosida.
 
-**Para llegar aquí:** 6 colonos · una vivienda · una zona de tala · una pedrera · una enramada de recolección. Ofrenda (se cobra una vez): 30 madera, 15 piedra, 10 fibras.
+**Para llegar aquí:** undefined colonos · el almacén primitivo. Ofrenda (se cobra una vez): 30 madera, 15 piedra, 10 fibras.
 
 | Se desbloquea | Tipo | Detalle y requisitos |
 |---|---|---|

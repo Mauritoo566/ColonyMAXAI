@@ -60,6 +60,7 @@ export class ColonyUI {
     const $ = (id) => document.getElementById(id);
     this.card = $('colony-card');
     this.count = $('colonists');
+    this.popLine = $('pop-line');
     this.wellbeingValue = $('colony-wellbeing');
     this.wellbeingBar = $('colony-wellbeing-bar');
     this.needSummary = $('need-summary');
@@ -123,6 +124,11 @@ export class ColonyUI {
     if (this.count.textContent !== popText) this.count.textContent = popText;
     const popTitle = `Colonos: ${popText} (plazas de vivienda).${this.colony.growthBlocker ? ` No crece: ${this.colony.growthBlocker}.` : ' Hay plazas y reservas para crecer.'}`;
     if (this.count.parentElement.title !== popTitle) this.count.parentElement.title = popTitle;
+    // Población actual, plazas de refugio y límite de la edad: tres cosas distintas.
+    const pop = this.colony.populationInfo();
+    const sh = pop.shelter;
+    const line = `Población ${pop.count}/${pop.cap} (límite de la edad) · Refugio: ${sh.housed}/${sh.adults} adultos con plaza (${sh.slots} plazas)${sh.unhoused ? ` · ${sh.unhoused} duermen junto a la fogata` : ''}${this.colony.growthBlocker ? ` · Sin nacimientos: ${this.colony.growthBlocker}` : ''}`;
+    if (this.popLine.textContent !== line) this.popLine.textContent = line;
     this.wellbeingValue.textContent = `${Math.round(summary.wellbeing)}%`;
     setBar(this.wellbeingBar, summary.wellbeing);
     setTone(this.wellbeingValue.closest('.meter'), summary.wellbeing);
