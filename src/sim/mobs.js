@@ -52,7 +52,9 @@ export function spawnMobs(sim, biomeId, rand) {
       }
     }
   };
-  for (let i = 0; i < set.n; i++) place(set.peaceful[Math.floor(rand() * set.peaceful.length)], 45, 200);
+  // Más y más cerca: unos pocos a la vista del campamento y el resto repartido por el territorio.
+  for (let i = 0; i < Math.ceil(set.n * 0.4); i++) place(set.peaceful[Math.floor(rand() * set.peaceful.length)], 22, 55);
+  for (let i = 0; i < set.n * 1.2; i++) place(set.peaceful[Math.floor(rand() * set.peaceful.length)], 45, 150);
   for (let i = 0; i < set.h; i++) place(set.hostile[Math.floor(rand() * set.hostile.length)], 110, 220);
 }
 
@@ -124,11 +126,11 @@ export function updateMobs(sim, dt, isNight) {
     if (d < 0.8) {
       if (m.state === 1) {
         m.state = 0;
-        m.wait = 3 + rand() * 9;
+        m.wait = 2 + rand() * 5;
       }
       continue;
     }
-    const speed = st.speed * (m.state === 2 ? 1 : 0.45) * dt;
+    const speed = st.speed * (m.state === 2 ? 1 : 0.6) * dt;
     let nx = m.x + (dx / d) * Math.min(speed, d);
     let nz = m.z + (dz / d) * Math.min(speed, d);
     // Los hostiles no entran en el círculo de la fogata; todos rodean edificios y muros.

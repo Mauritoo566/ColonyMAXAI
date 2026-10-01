@@ -127,7 +127,7 @@ export class ColonyUI {
     // Población actual, plazas de refugio y límite de la edad: tres cosas distintas.
     const pop = this.colony.populationInfo();
     const sh = pop.shelter;
-    const line = `Población ${pop.count}/${pop.cap} (límite de la edad) · Refugio: ${sh.housed}/${sh.adults} adultos con plaza (${sh.slots} plazas)${sh.unhoused ? ` · ${sh.unhoused} duermen junto a la fogata` : ''}${this.colony.growthBlocker ? ` · Sin nacimientos: ${this.colony.growthBlocker}` : ''}`;
+    const line = `Población ${pop.count}/${pop.cap} (límite de la edad) · Refugio: ${sh.housed}/${sh.adults} adultos con plaza (${sh.slots} plazas)${sh.unhoused ? ` · ${sh.unhoused} duermen junto a la fogata` : ''}${this.colony.mobs?.length ? ` · Animales cerca: ${this.colony.mobs.filter((m) => m.type !== 'lobo' && m.type !== 'oso').length} pacíficos, ${this.colony.mobs.filter((m) => m.type === 'lobo' || m.type === 'oso').length} hostiles` : ''}${this.colony.growthBlocker ? ` · Sin nacimientos: ${this.colony.growthBlocker}` : ''}`;
     if (this.popLine.textContent !== line) this.popLine.textContent = line;
     this.wellbeingValue.textContent = `${Math.round(summary.wellbeing)}%`;
     setBar(this.wellbeingBar, summary.wellbeing);
