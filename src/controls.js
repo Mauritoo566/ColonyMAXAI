@@ -337,7 +337,7 @@ export class PlanetControls {
       this.cancelFlight();
       this.target.heading -= dx * 0.005;
       const base = tiltFor(this.orbit?.clearance ?? Math.max(1, this.target.altitude - this.groundHeight));
-      this.target.lookUp = THREE.MathUtils.clamp(this.target.lookUp + dy * 0.004, MIN_ORBIT_TILT - base, MAX_ORBIT_TILT - base);
+      if (this.orbit) this.target.lookUp = THREE.MathUtils.clamp(this.target.lookUp + dy * 0.004, Math.min(0, MIN_ORBIT_TILT - base), MAX_ORBIT_TILT - base);
       if (this.orbit && !this.follow) {
         this.aimAt(this.orbit.pivot, this.orbit.clearance);
         // La órbita se aplica al instante (sin suavizado) para que el pivote no se desplace.
@@ -364,6 +364,8 @@ export class PlanetControls {
   }
 
   update(delta) {
+    // Desde el espacio la vista nunca queda inclinada ni levantada (el planeta se ve centrado).
+    if (this.lowness < 0.05 && !this.flight) this.target.lookUp = 0;
     this.lookUp += (this.target.lookUp - this.lookUp) * (1 - Math.exp(-delta * 8));
     if (this.flight) {
       this.updateFlight(delta);
