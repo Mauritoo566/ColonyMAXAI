@@ -2657,3 +2657,9 @@ canvas.is-harvesting {
 .harvest-filters button[aria-pressed='true'] { border-color: var(--accent); color: var(--ui-text); background: rgba(242, 178, 76, 0.16); }
 .worker-actions { display: grid; gap: 4px; }
 .worker-actions .btn { padding: 6px 12px; min-width: 72px; }
+
+/* Botón de la cuadrícula */
+.grid-toggle { padding: 4px 10px; border: 1px solid var(--ui-line); border-radius: 7px; background: none; color: var(--ui-muted); font: 700 12px/1 var(--font-display); cursor: pointer; }
+.grid-toggle[aria-pressed='true'] { border-color: var(--accent); color: var(--ui-text); background: rgba(242, 178, 76, 0.16); }
+.build-head { grid-template-columns: 1fr auto; align-items: center; }
+.build-head .build-tabs { grid-column: 1 / -1; }

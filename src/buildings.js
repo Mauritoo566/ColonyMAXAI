@@ -209,7 +209,10 @@ export class BuildingSystem {
     const hit = pickSurface(this.raycaster.ray, this.sim.camp.height);
     if (!hit) return;
     const local = this.sim.toLocal(hit.point, this.tmp);
-    this.candidate = { x: local.x, z: local.z, problem: this.moving ? this.sim.moveProblem(this.moving, local.x, local.z) : this.sim.buildProblem(this.placing, local.x, local.z) };
+    // Con la cuadrícula activa el edificio se pega al centro de su casilla.
+    const gx = this.grid ? this.grid.snap(local.x) : local.x;
+    const gz = this.grid ? this.grid.snap(local.z) : local.z;
+    this.candidate = { x: gx, z: gz, problem: this.moving ? this.sim.moveProblem(this.moving, gx, gz) : this.sim.buildProblem(this.placing, gx, gz) };
   }
 
   // Mover un edificio: se elige el nuevo sitio como al construir (sin coste).

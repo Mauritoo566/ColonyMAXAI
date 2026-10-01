@@ -26,6 +26,7 @@ import { OtherCamps } from './world.js';
 import { FlagUI } from './flagUI.js';
 import { VillageUI } from './villageUI.js';
 import { makeFoldable } from './panelFold.js';
+import { GridSystem } from './grid.js';
 import { MilitaryUI } from './militaryUI.js';
 import { RoadSystem } from './roads.js';
 import { ensureIcons } from './icons.js';
@@ -227,6 +228,15 @@ const colonyUI = new ColonyUI({
 });
 const roads = new RoadSystem({ scene, camera, canvas, colony, controls });
 roadsRef = roads;
+const grid = new GridSystem({ scene, colony, isDrawing: () => !!buildings.placing || roads.active });
+buildings.grid = grid;
+{
+  const gridButton = document.getElementById('grid-toggle');
+  const syncGrid = () => gridButton.setAttribute('aria-pressed', String(grid.enabled));
+  gridButton.addEventListener('click', () => grid.toggle());
+  grid.onChange = syncGrid;
+  syncGrid();
+}
 controls.blockLeftDrag = () => harvest.active || roads.active;
 const buildUI = new BuildUI({ buildings, colony, harvest, roads, onFocusColonist: (c) => colonyUI.focusColonist(c) });
 // Sólo una ficha abierta a la vez.
@@ -532,6 +542,7 @@ renderer.setAnimationLoop(() => {
   militaryUI.update(delta);
   harvest.update(waterUniforms.uTime.value, delta);
   roads.update();
+  grid.update();
   others.update(delta);
   viewTimer -= delta;
   if (viewTimer <= 0 && lastView.angleTo(resourceFocus) * RADIUS > 500) {

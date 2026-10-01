@@ -106,6 +106,9 @@ Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s 
 - La ficha separa **oficio fijo**, **orden actual**, **actividad ahora** y **disponibilidad**; la lista agrupa por oficio fijo («Sin oficio fijo» no significa que esté parado).
 - Aldeas guardadas antes de estas mejoras: al cargarlas las viviendas toman el aspecto de la edad real (sin coste ni recursos duplicados) y los tipis iniciales desaparecen cuando todos viven en casas. El contador de vivienda cuenta sólo adultos (los niños viven con su madre): antes mostraba «4/3».
 
+### Cuadrícula
+La aldea tiene una **cuadrícula simétrica de 4 m centrada en la fogata** (la misma de los caminos). Con el botón «▦ Cuadrícula» (o la tecla **G**, activa por defecto) los edificios se colocan y se mueven pegados al centro de su casilla, y la malla se dibuja sobre el terreno (con los ejes en dorado) mientras se construye o se pintan caminos. Apagada, se coloca libremente.
+
 ### Caminos automáticos y manuales
 Desde la Edad de Piedra (camino de tierra) la aldea **traza sola caminos** que unen cada edificio terminado con la red o con el centro (gratis, dentro del límite de casillas de la edad; mejoran solos al cambiar de edad). En Infraestructura: **Caminos** (pintar a mano, se paga y se mejora con «Mejorar caminos»), **Quitar caminos** (arrastrar; lo quitado no vuelve a trazarse solo) y **Caminos automáticos** (activar/apagar; apagarlos quita los que trazó la aldea y deja los tuyos). Cada edad da un camino mejor: tierra, empedrado, adoquinado y asfaltado, cada uno más rápido.
 
