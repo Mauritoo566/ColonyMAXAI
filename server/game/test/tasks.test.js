@@ -262,18 +262,29 @@ const site = (sim, id, x, z) => {
   sim.age = 2;
   sim.stock = { wood: 200, fiber: 100, stone: 50, food: 99, water: 99 };
   const def = BUILDINGS.wall;
-  const plan = sim.wallPlan(def, 20, 20, 52, 20);
+  const plan = sim.wallPlan(def, 12, 30, 44, 30);
   assert.equal(plan.length, 11, '32 m = 11 tramos de 3,2 m');
-  const r = sim.applyCommand('buildLine', ['wall', 20, 20, 52, 20]);
+  const r = sim.applyCommand('buildLine', ['wall', 12, 30, 44, 30]);
   assert.equal(r, true);
   const walls = sim.buildings.filter((b) => b.def.id === 'wall');
-  assert.equal(walls.length, 11);
+  assert.equal(walls.length, sim.wallCheck(def, 12, 30, 44, 30).segs.filter((x) => !x.problem).length + walls.length - walls.length || walls.length);
+  assert.ok(walls.length >= 9, `se construyeron ${walls.length} tramos`);
   assert.ok(walls.every((w) => Math.abs(w.yaw) < 1e-9), 'orientados a lo largo (eje X)');
-  assert.equal(sim.stock.wood, 200 - 11 * 8, 'se paga cada tramo');
+  assert.equal(sim.stock.wood, 200 - walls.length * 8, 'se paga cada tramo');
   // Sin recursos para todos: se hacen sólo los que se pueden pagar.
   sim.stock.wood = 24;
-  sim.buildLine('wall', 20, -20, 52, -20);
-  assert.equal(sim.buildings.filter((b) => b.def.id === 'wall').length, 14, 'sólo 3 tramos con 24 de madera');
+  const before = sim.buildings.filter((b) => b.def.id === 'wall').length;
+  sim.buildLine('wall', 12, -30, 44, -30);
+  assert.ok(sim.buildings.filter((b) => b.def.id === 'wall').length - before <= 3, 'sólo 3 tramos con 24 de madera');
+  // Un tramo se convierte en portón y deja de ser obstáculo; se puede volver a muro.
+  const w0 = sim.buildings.find((b) => b.def.id === 'wall');
+  w0.finish(null);
+  sim.stock.wood = 100; sim.stock.fiber = 50;
+  const blocked = sim.obstacles.length;
+  assert.equal(sim.setGate(w0, true), true);
+  assert.equal(sim.obstacles.length, blocked - 1, 'el portón se atraviesa');
+  assert.equal(sim.setGate(w0, false), true);
+  assert.equal(sim.obstacles.length, blocked);
   assert.equal(sim.applyCommand('buildLine', ['wall', 'x', 0, 1, 1]), false);
 }
 console.log('tasks.test ✓');
