@@ -371,7 +371,11 @@ export class BuildUI {
     }
     if (this.rotateHint) {
       this.rotateHint.hidden = !this.buildings.placing;
-      this.rotateHint.textContent = `Colocando: R gira el edificio ${this.buildings.turn ? `(giro ${this.buildings.turn * 90}°)` : ''}· Mayús + R al revés · G cuadrícula · Esc cancela`;
+      const li = this.buildings.lineInfo;
+      if (this.buildings.placing?.line) {
+        const cost = li ? Object.entries(li.cost).map(([k, n]) => `${n} ${STOCK_NAMES[k] ?? k}`).join(', ') : '';
+        this.rotateHint.textContent = li ? `Muro: ${li.count}/${li.total} tramos${cost ? ` · cuesta ${cost}` : ''}${li.problem ? ` · ${li.problem}` : ''} · suelta para construir · Mayús: ángulos de 45° · Esc cancela` : 'Muro: mantén pulsado y arrastra por donde quieras la línea · Mayús: ángulos de 45° · G cuadrícula · Esc cancela';
+      } else this.rotateHint.textContent = `Colocando: R gira el edificio ${this.buildings.turn ? `(giro ${this.buildings.turn * 90}°)` : ''}· Mayús + R al revés · G cuadrícula · Esc cancela`;
     }
     for (const tab of this.tabs.children) {
       const n = counts[tab.dataset.cat] ?? 0;

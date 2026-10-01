@@ -83,10 +83,27 @@ export class BuildingSystem {
     let pressed = null;
     canvas.addEventListener('pointerdown', (e) => {
       if (e.button === 0) pressed = { x: e.clientX, y: e.clientY };
+      // Muros: se arrastra una línea (como en un juego de estrategia); el inicio queda fijo.
+      if (e.button === 0 && this.placing?.line && !this.moving) {
+        this.pointer = { x: e.clientX, y: e.clientY };
+        this.updateCandidate();
+        if (this.groundPoint) this.lineStart = { ...this.groundPoint };
+      }
     });
     canvas.addEventListener('pointerup', (e) => {
       const p = pressed;
       pressed = null;
+      if (this.lineStart) {
+        const start = this.lineStart;
+        this.lineStart = null;
+        const end = this.lineEnd(start);
+        this.hideLine();
+        if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > CLICK_TOLERANCE && this.placing?.line && e.button === 0) {
+          const r = this.sim.buildLine(this.placing.id, start.x, start.z, end.x, end.z);
+          if (!r.made) this.sim.emit('notice', r.problem ?? 'No se pudo trazar el muro');
+          return; // la herramienta sigue activa: se pueden trazar más tramos
+        }
+      }
       if (!p || e.button !== 0 || Math.hypot(e.clientX - p.x, e.clientY - p.y) > CLICK_TOLERANCE) return;
       if (this.placing) {
         this.pointer = { x: e.clientX, y: e.clientY };
@@ -102,6 +119,8 @@ export class BuildingSystem {
       }
       this.select(this.pickAt(e.clientX, e.clientY));
     });
+    window.addEventListener('keydown', (e) => (e.key === 'Shift' ? (this.shiftDown = true) : null));
+    window.addEventListener('keyup', (e) => (e.key === 'Shift' ? (this.shiftDown = false) : null));
     // R gira el edificio 90° al colocarlo o moverlo (Mayús + R, al revés).
     window.addEventListener('keydown', (e) => {
       if ((e.key === 'r' || e.key === 'R') && this.placing && !e.ctrlKey && !e.metaKey && !/INPUT|TEXTAREA|SELECT/.test(e.target?.tagName ?? '')) {
@@ -201,6 +220,8 @@ export class BuildingSystem {
     if (!this.placing && !this.ghost.visible) return;
     this.placing = null;
     this.moving = null;
+    this.lineStart = null;
+    this.hideLine();
     this.candidate = null;
     this.ghost.visible = false;
     this.canvas.classList.remove('is-placing');
@@ -221,8 +242,61 @@ export class BuildingSystem {
     // Con la cuadrícula activa el edificio se pega al centro de su casilla.
     const gx = this.grid ? this.grid.snap(local.x) : local.x;
     const gz = this.grid ? this.grid.snap(local.z) : local.z;
+    this.groundPoint = { x: gx, z: gz };
     const yaw = Math.atan2(-gx, -gz) + this.turn * (Math.PI / 2);
     this.candidate = { x: gx, z: gz, yaw, problem: this.moving ? this.sim.moveProblem(this.moving, gx, gz) : this.sim.buildProblem(this.placing, gx, gz) };
+  }
+
+  // Final de la línea: con Mayús se ajusta a 8 direcciones.
+  lineEnd(start) {
+    const e = this.groundPoint ?? start;
+    if (!this.shiftDown) return e;
+    const a = Math.round(Math.atan2(e.z - start.z, e.x - start.x) / (Math.PI / 4)) * (Math.PI / 4);
+    const len = Math.hypot(e.x - start.x, e.z - start.z);
+    const x = start.x + Math.cos(a) * len;
+    const z = start.z + Math.sin(a) * len;
+    return this.grid ? { x: this.grid.snap(x), z: this.grid.snap(z) } : { x, z };
+  }
+
+  hideLine() {
+    for (const m of this.linePool ?? []) m.visible = false;
+    this.lineInfo = null;
+  }
+
+  // Vista previa del muro: un tramo fantasma por cada uno (verde si se puede, rojo si no).
+  updateLine() {
+    const def = this.placing;
+    const start = this.lineStart;
+    if (!def?.line || !start || !this.groundPoint || !this.sim.camp) return this.hideLine();
+    const end = this.lineEnd(start);
+    const plan = this.sim.wallCheck(def, start.x, start.z, end.x, end.z);
+    this.linePool ??= [];
+    this.lineMats ??= ['#5fe08a', '#ff5a4f'].map((c) => {
+      const m = material.clone();
+      m.transparent = true;
+      m.opacity = 0.6;
+      m.depthWrite = false;
+      m.color.set(c);
+      return m;
+    });
+    const level = def.levels[buildLevelFor(def, this.sim.age) - 1];
+    while (this.linePool.length < plan.segs.length) {
+      const m = levelModel(level.model);
+      m.renderOrder = 4;
+      this.scene.add(m);
+      this.linePool.push(m);
+    }
+    const camp = this.sim.camp;
+    this.linePool.forEach((m, i) => {
+      const seg = plan.segs[i];
+      m.visible = !!seg;
+      if (!seg) return;
+      m.material = this.lineMats[seg.problem ? 1 : 0];
+      const dir = this.sim.toDirection(seg.x, seg.z, this.tmp);
+      m.position.copy(dir).multiplyScalar(RADIUS + this.sim.heightAt(seg.x, seg.z));
+      m.quaternion.copy(camp.quaternion).multiply(this.tmpQuat.setFromAxisAngle(Y_AXIS, seg.yaw));
+    });
+    this.lineInfo = { count: plan.count, total: plan.segs.length, cost: plan.total, problem: plan.segs.find((s) => s.problem)?.problem ?? null };
   }
 
   // Mover un edificio: se elige el nuevo sitio como al construir (sin coste).
@@ -413,6 +487,7 @@ export class BuildingSystem {
   update() {
     if (this.placing) {
       this.updateCandidate();
+      if (this.placing.line) this.updateLine();
       const c = this.candidate;
       this.ghost.visible = !!c;
       if (c) {

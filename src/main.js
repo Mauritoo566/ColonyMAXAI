@@ -257,7 +257,7 @@ roads.onMessage = (text) => showNotice(text, true);
   grid.onChange = syncGrid;
   syncGrid();
 }
-controls.blockLeftDrag = () => harvest.active || roads.active;
+controls.blockLeftDrag = () => harvest.active || roads.active || !!buildings.placing?.line;
 const buildUI = new BuildUI({ buildings, colony, harvest, roads, onFocusColonist: (c) => colonyUI.focusColonist(c) });
 // Sólo una ficha abierta a la vez.
 colonyUI.onOpen = () => buildings.select(null);

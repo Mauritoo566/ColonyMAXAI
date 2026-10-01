@@ -256,4 +256,24 @@ const site = (sim, id, x, z) => {
   const save = JSON.parse(JSON.stringify(sim.serialize()));
   assert.ok(save.buildings.some((o) => Math.abs(o.yaw - Math.PI / 2) < 1e-9), 'el giro se guarda');
 }
+// Muros por línea: tramos pegados entre sí, orientados a lo largo, pagados uno a uno y validados.
+{
+  const sim = colony();
+  sim.age = 2;
+  sim.stock = { wood: 200, fiber: 100, stone: 50, food: 99, water: 99 };
+  const def = BUILDINGS.wall;
+  const plan = sim.wallPlan(def, 20, 20, 52, 20);
+  assert.equal(plan.length, 11, '32 m = 11 tramos de 3,2 m');
+  const r = sim.applyCommand('buildLine', ['wall', 20, 20, 52, 20]);
+  assert.equal(r, true);
+  const walls = sim.buildings.filter((b) => b.def.id === 'wall');
+  assert.equal(walls.length, 11);
+  assert.ok(walls.every((w) => Math.abs(w.yaw) < 1e-9), 'orientados a lo largo (eje X)');
+  assert.equal(sim.stock.wood, 200 - 11 * 8, 'se paga cada tramo');
+  // Sin recursos para todos: se hacen sólo los que se pueden pagar.
+  sim.stock.wood = 24;
+  sim.buildLine('wall', 20, -20, 52, -20);
+  assert.equal(sim.buildings.filter((b) => b.def.id === 'wall').length, 14, 'sólo 3 tramos con 24 de madera');
+  assert.equal(sim.applyCommand('buildLine', ['wall', 'x', 0, 1, 1]), false);
+}
 console.log('tasks.test ✓');

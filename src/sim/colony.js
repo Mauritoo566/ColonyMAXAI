@@ -1623,7 +1623,9 @@ export class ColonySim {
     const r = def.footprint;
     for (const o of this.obstacles) {
       if (self && o.kind === 'building' && o.x === self.x && o.z === self.z) continue;
-      if (Math.hypot(x - o.x, z - o.z) < o.r + r + 0.8) return 'Choca con otra construcción';
+      // Los tramos de un muro se pegan entre sí (sin el margen de 0,8 m de los demás edificios).
+      const gap = def.line && o.kind === 'building' && o.line ? -0.1 : 0.8;
+      if (Math.hypot(x - o.x, z - o.z) < o.r + r + gap) return 'Choca con otra construcción';
     }
     for (const zone of this.zones) {
       if (rectDistance(zone, x, z) < r + 0.5) return 'Choca con la zona de acopio';
@@ -1641,6 +1643,64 @@ export class ColonySim {
     }
     if (hi - lo > r * 1.1) return 'El terreno es demasiado empinado';
     return null;
+  }
+
+  // Muros: tramos de 3,2 m a lo largo de una línea de A a B (máx. 60). Cada tramo mira a lo largo de la línea.
+  wallPlan(def, ax, az, bx, bz) {
+    const len = Math.hypot(bx - ax, bz - az);
+    const step = def.footprint * 2;
+    const dx = len > 1e-6 ? (bx - ax) / len : 1;
+    const dz = len > 1e-6 ? (bz - az) / len : 0;
+    const yaw = Math.atan2(-dz, dx);
+    const n = Math.min(60, Math.floor(len / step + 1e-6) + 1);
+    return Array.from({ length: n }, (_, i) => ({ x: ax + dx * step * i, z: az + dz * step * i, yaw }));
+  }
+
+  // Cada tramo con su problema (null = se puede) y el coste acumulado, para la vista previa y para construir.
+  wallCheck(def, ax, az, bx, bz) {
+    const segs = this.wallPlan(def, ax, az, bx, bz);
+    const cost = buildCostOf(def, this.age);
+    let have = { ...this.stock };
+    let blocked = buildBlocker(this, def);
+    let count = 0;
+    for (const s of segs) {
+      s.problem = blocked || this.siteProblem(def, s.x, s.z);
+      if (!s.problem) {
+        const lack = Object.entries(cost).find(([k, n]) => (have[k] ?? 0) < n);
+        if (lack) {
+          s.problem = `Faltan ${GOOD_NAMES[lack[0]] ?? lack[0]}`;
+          blocked = blocked || s.problem; // los siguientes tampoco se pagan
+        } else {
+          for (const [k, n] of Object.entries(cost)) have[k] -= n;
+          count++;
+        }
+      }
+    }
+    const total = Object.fromEntries(Object.entries(cost).map(([k, n]) => [k, n * count]));
+    return { segs, count, total };
+  }
+
+  // Encargar un muro de A a B: se construyen los tramos válidos y que se puedan pagar.
+  buildLine(typeId, ax, az, bx, bz) {
+    const def = BUILDINGS[typeId];
+    if (!def?.line || !this.camp) return { made: 0 };
+    const plan = this.wallCheck(def, ax, az, bx, bz);
+    if (!plan.count) return { made: 0, problem: plan.segs.find((s) => s.problem)?.problem ?? 'No se puede construir ahí' };
+    if (this.remote) {
+      this.remote('buildLine', [typeId, ax, az, bx, bz]);
+      return { made: plan.count, pending: true };
+    }
+    let made = 0;
+    for (const s of plan.segs) {
+      if (buildBlocker(this, def) || this.siteProblem(def, s.x, s.z)) continue;
+      const cost = buildCostOf(def, this.age);
+      if (!this.canAfford(cost)) break;
+      for (const [k, n] of Object.entries(cost)) this.takeStock(k, n);
+      this.createBuilding(def, s.x, s.z, s.yaw, 0, 0, buildLevelFor(def, this.age));
+      made++;
+    }
+    this.emit('changed');
+    return { made };
   }
 
   // Encargar un edificio: se paga y queda en obra. Devuelve el edificio o el problema.
@@ -2191,7 +2251,7 @@ export class ColonySim {
     this.obstacles = [
       ...campObstacles(),
       ...(this.age >= 2 ? [{ x: TOTEM_SPOT.x, z: TOTEM_SPOT.z, r: 0.9, kind: 'prop' }] : []),
-      ...this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint, kind: 'building' })),
+      ...this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint, kind: 'building', line: !!b.def.line })),
       // Objetos del centro que aparecen con la edad (no se pisan ni se construye encima).
       ...centerProps(this.age, this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint }))).map((p) => ({ x: p.x, z: p.z, r: p.r, kind: 'prop' })),
     ];
@@ -2379,6 +2439,11 @@ export class ColonySim {
         return typeof args[0] === 'string' && this.learn(args[0]);
       case 'discover':
         return this.discover();
+      case 'buildLine': {
+        const [type, ax, az, bx, bz] = args;
+        if (typeof type !== 'string' || [ax, az, bx, bz].some((v) => num(v, 500) === null)) return false;
+        return this.buildLine(type, ax, az, bx, bz).made > 0;
+      }
       case 'demolish':
         return this.demolish(this.building(args[0]));
       case 'moveBuilding': {

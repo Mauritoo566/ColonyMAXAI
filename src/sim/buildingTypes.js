@@ -802,6 +802,7 @@ defense({
 
 defense({
   id: 'wall',
+  line: true, // se traza arrastrando una línea (tramos de 3,2 m pegados entre sí)
   icon: 'shield',
   cost: { wood: 8, fiber: 4 },
   footprint: 1.6,
