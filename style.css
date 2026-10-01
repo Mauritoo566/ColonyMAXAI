@@ -2349,3 +2349,13 @@ canvas.is-harvesting {
 .world-note {
   margin: 10px 0 0;
 }
+
+/* De lejos el campamento de otro jugador se ve como un punto con su nombre. */
+.camp-marker--other.is-far small {
+  display: none;
+}
+
+.camp-marker--other.is-far .camp-marker-pin {
+  width: 12px;
+  height: 12px;
+}

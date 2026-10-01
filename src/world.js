@@ -13,7 +13,7 @@ import { WeatherState } from './sim/weather.js';
 // veces por segundo. Los colonos de cada colonia ajena salen de una copia de su
 // simulación (misma semilla: mismos nombres y aspecto) que sólo refleja lo que llega.
 
-const LABEL_MAX_DISTANCE = 400_000; // metros: más lejos no se muestra el nombre
+const LABEL_FULL_DISTANCE = 400_000; // metros: más lejos el punto sigue, pero sólo con el nombre
 const MODEL_MAX_DISTANCE = 30_000; // metros: más lejos no se dibujan sus edificios ni colonos
 
 export class OtherCamps {
@@ -155,9 +155,12 @@ export class OtherCamps {
       const horizon = Math.acos(Math.min(1, RADIUS / camR)) + Math.acos(Math.min(1, RADIUS / markerR));
       const behind = cam.clone().divideScalar(camR).angleTo(entry.dir) > horizon;
       pos.project(this.camera);
-      const hidden = behind || dist > LABEL_MAX_DISTANCE || pos.z > 1 || Math.abs(pos.x) > 1.1 || Math.abs(pos.y) > 1.1;
+      // El punto del campamento se ve siempre (a cualquier distancia) mientras no esté
+      // detrás del planeta ni fuera de la pantalla; de lejos se acorta a sólo el nombre.
+      const hidden = behind || pos.z > 1 || Math.abs(pos.x) > 1.1 || Math.abs(pos.y) > 1.1;
       entry.label.hidden = hidden;
       if (hidden) continue;
+      entry.label.classList.toggle('is-far', dist > LABEL_FULL_DISTANCE);
       const x = rect.left + ((pos.x + 1) / 2) * rect.width;
       const y = rect.top + ((1 - pos.y) / 2) * rect.height;
       entry.label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -100%)`;
