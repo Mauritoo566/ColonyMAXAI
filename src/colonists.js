@@ -18,6 +18,7 @@ const LABEL_MAX = 10; // etiquetas a la vez (además del elegido)
 const FAR_DISTANCE = 90; // metros: más lejos se dibuja la versión simple del colono
 const PICK_RADIUS_PX = 26; // tolerancia al hacer clic sobre un colono
 const LOINCLOTH = '#6b4a2e'; // lo único que llevan al llegar
+const X_AXIS = new THREE.Vector3(1, 0, 0);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 // ---------------------------------------------------------------------------
@@ -249,6 +250,7 @@ export class ColonyView {
       local: new THREE.Vector3(),
       world: new THREE.Vector3(),
       yaw: new THREE.Quaternion(),
+      lie: new THREE.Quaternion(),
       proj: new THREE.Vector3(),
     };
     sim.on('camp', () => this.rebuild());
@@ -404,8 +406,8 @@ export class ColonyView {
     for (const prop of [this.clothesPile, this.totem, this.center.group]) {
       if (prop && campObject && prop.parent !== campObject) campObject.add(prop);
     }
-    // Los tipis iniciales sólo se ven mientras alguien duerme en ellos o en las primeras edades.
-    if (campObject?.userData.tipis) campObject.userData.tipis.visible = sim.age <= 2 || sim.colonists.some((o) => (o.growth ?? 1) >= 1 && o.home == null);
+    // Ya no hay tipis: el campamento inicial es una fogata, un acopio y un refugio de ramas.
+    if (campObject?.userData.tipis) campObject.userData.tipis.visible = false;
     const follow = 1 - Math.exp(-delta * 10);
     for (const e of this.entries.values()) {
       const { c } = e;
@@ -427,7 +429,9 @@ export class ColonyView {
   place(e, animDelta) {
     const { c, object } = e;
     // Durmiendo o en casa: está dentro y no se ve.
-    object.visible = !c.sleeping && !c.inside;
+    // (A la intemperie, junto a la fogata, sí se ve: tumbado.)
+    const lying = c.sleeping && c.outdoorSleep;
+    object.visible = (!c.sleeping || lying) && !c.inside;
     // La ropa cambia sola con la edad de la aldea y con el oficio del colono.
     const outfit = outfitFor(this.sim.age, c);
     if (outfit.key !== e.outfitKey) {
@@ -449,6 +453,11 @@ export class ColonyView {
     object.position.copy(world).multiplyScalar(RADIUS + h);
     // Orientación: la del campamento (su "arriba" es el del planeta allí) y el rumbo.
     object.quaternion.copy(this.sim.camp.quaternion).multiply(yaw.setFromAxisAngle(Y_AXIS, e.facing));
+    if (lying) {
+      // Tumbado en el suelo: se gira el cuerpo hacia atrás y se baja un poco.
+      object.quaternion.multiply(this.tmp.lie.setFromAxisAngle(X_AXIS, -Math.PI / 2));
+      object.position.addScaledVector(world.normalize(), 0.25);
+    }
 
     const ud = object.userData;
     // De lejos se dibuja una versión simple y no se anima (con aldeas grandes ahorra miles de piezas).

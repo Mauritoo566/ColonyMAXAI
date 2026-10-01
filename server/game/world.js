@@ -120,6 +120,7 @@ export class World {
     const camp = { dir: { x: dir.x, y: dir.y, z: dir.z }, height: naturalSurfaceHeight(dir), yaw: Math.random() * Math.PI * 2, seed: seedFromDir(dir) };
     this.store.sql.addColony.run(playerId, JSON.stringify(camp), Date.now());
     this.createColony(playerId, camp);
+    this.colonies.get(playerId).sim.seedPrimitive(); // refugio, recolector de lluvia y acopio inicial
     this.saveColony(this.colonies.get(playerId));
     this.log(`${this.names.get(playerId)} fundó su campamento`);
     return null;

@@ -10,6 +10,7 @@ import { BUILDINGS } from '../../../src/sim/buildingTypes.js';
 import { AGES, MAX_AGE, nextAgeStatus } from '../../../src/ages.js';
 import { naturalSurfaceHeight } from '../../../src/elevation.js';
 import { maxLevelFor } from '../../../src/sim/progression.js';
+import { assignHomes } from '../../../src/sim/family.js';
 
 const dir = new THREE.Vector3(-0.8984470605519815, 0.4271785546817849, 0.10154487582091702).normalize();
 const sim = new ColonySim();
@@ -44,6 +45,11 @@ for (let n = 2; n <= MAX_AGE; n++) {
   grow(req.population);
   for (const r of req.buildings ?? []) {
     if (!sim.buildings.some((b) => b.def.id === r.id && b.level >= (r.level ?? 1))) place(r.id, r.level ?? 1);
+  }
+  for (const m of req.milestones ?? []) sim.milestones.add(m.id);
+  if (req.shelter) {
+    while (sim.shelterInfo().slots < sim.colonists.length) place('house');
+    assignHomes(sim);
   }
   for (const [good, qty] of Object.entries(req.produced ?? {})) sim.produced[good] = Math.max(sim.produced[good] ?? 0, qty);
   for (const t of req.techs ?? []) sim.techs.add(t);

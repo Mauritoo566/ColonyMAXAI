@@ -53,7 +53,7 @@ export function levelImplemented(def, lv) {
 //   perType     edificios de cada tipo de producción o taller
 //   popCap      techo de población de la edad (rendimiento y equilibrio)
 export const LIMITS = [
-  { radius: 75, expansions: 0, houses: 3, apartments: 0, perType: 2, popCap: 14 },
+  { radius: 75, expansions: 0, houses: 3, apartments: 0, perType: 2, popCap: 10 },
   { radius: 85, expansions: 1, houses: 6, apartments: 0, perType: 3, popCap: 22 },
   { radius: 95, expansions: 2, houses: 9, apartments: 0, perType: 4, popCap: 32 },
   { radius: 110, expansions: 2, houses: 13, apartments: 0, perType: 5, popCap: 42 },

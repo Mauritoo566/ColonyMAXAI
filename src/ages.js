@@ -20,14 +20,13 @@ export const AGES = [
     theme: 'Asentamiento estable',
     desc: 'Chozas de barro y paja, senderos, tótem y herramientas de piedra pulida.',
     auto: 'Las chozas pasan a barro y paja; senderos de piedra alrededor del fuego y tótem de la tribu; ropa de pieles mejor cosida.',
+    // Todo se consigue en Primitiva: refugio para todos, reservas de comida y agua (se conservan),
+    // el almacén primitivo, la primera herramienta de piedra y materiales (esto sí se gasta).
     requires: {
-      population: 6,
-      buildings: [
-        { id: 'house', name: 'una vivienda' },
-        { id: 'woodcutter', name: 'una zona de tala' },
-        { id: 'quarry', name: 'una pedrera' },
-        { id: 'gatherer', name: 'una enramada de recolección' },
-      ],
+      shelter: true,
+      reserves: { food: 12, water: 12 },
+      buildings: [{ id: 'stockpile', name: 'el almacén primitivo' }],
+      milestones: [{ id: 'stone_tool', name: 'la primera herramienta de piedra' }],
       cost: { wood: 30, stone: 15, fiber: 10 },
     },
   },
@@ -224,6 +223,18 @@ export function nextAgeStatus(colony) {
   if (req.population) {
     const have = colony.colonists.length;
     checks.push({ label: 'Colonos en la aldea', have, need: req.population, ok: have >= req.population });
+  }
+  if (req.shelter) {
+    const s = colony.shelterInfo();
+    checks.push({ label: 'Refugio para todos los adultos', have: s.housed, need: Math.max(1, s.adults), ok: s.ok });
+  }
+  for (const [good, n] of Object.entries(req.reserves ?? {})) {
+    const have = Math.floor(good === 'water' ? colony.waterReport().stock + colony.waterReport().store : (colony.stock[good] ?? 0));
+    checks.push({ label: `Reserva de ${goodName(good).toLowerCase()} (se conserva)`, have, need: n, ok: have >= n });
+  }
+  for (const m of req.milestones ?? []) {
+    const ok = !!colony.milestones?.has?.(m.id);
+    checks.push({ label: `Descubrir ${m.name}`, have: ok ? 1 : 0, need: 1, ok });
   }
   for (const r of req.buildings ?? []) {
     const ok = colony.buildings.some((b) => b.def.id === r.id && b.done && b.level >= (r.level ?? 1));

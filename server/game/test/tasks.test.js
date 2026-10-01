@@ -52,7 +52,7 @@ const site = (sim, id, x, z) => {
   assert.equal(sim.setPriority(low, 'low'), true);
   assert.equal(sim.setPriority(high, 'high'), true);
   assert.equal(sim.setPriority(high, 'inventada'), false);
-  run(sim, 60);
+  run(sim, 22);
   assert.ok(high.progress > low.progress, `alta ${high.progress} > baja ${low.progress}`);
 }
 

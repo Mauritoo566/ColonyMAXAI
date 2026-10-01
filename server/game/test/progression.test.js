@@ -9,7 +9,7 @@ import { WeatherState } from '../../../src/sim/weather.js';
 import { BUILDINGS } from '../../../src/sim/buildingTypes.js';
 import { naturalSurfaceHeight } from '../../../src/elevation.js';
 import { LIMITS, unlockTable } from '../../../src/sim/progression.js';
-import { growthBlocker, maxPopulation } from '../../../src/sim/family.js';
+import { growthBlocker, maxPopulation, assignHomes } from '../../../src/sim/family.js';
 import { nextAgeStatus } from '../../../src/ages.js';
 
 const dir = new THREE.Vector3(-0.8984470605519815, 0.4271785546817849, 0.10154487582091702).normalize();
@@ -24,11 +24,12 @@ function colony() {
 const spots = [[22, 10], [22, -8], [-24, 12], [-22, -14], [10, 28], [-10, 28], [30, 0], [-30, 0], [0, -30], [12, -28]];
 const place = (sim, id, k, level) => sim.createBuilding(BUILDINGS[id], ...spots[k], 0, 1, 0, level);
 
-// Edad I: la vivienda pide un leñador terminado; las mejoras esperan a la edad II.
+// Edad I: el refugio no pide ningún edificio previo (ni tala ni cantera); la cantera sí pide leñador;
+// las mejoras esperan a la edad II.
 let sim = colony();
-assert.match(sim.buildProblem(BUILDINGS.house, 22, 10), /leñador|zona de tala|Zona de tala/i);
+assert.equal(sim.buildProblem(BUILDINGS.house, 22, 10), null, 'el refugio se puede encargar desde el principio');
 const wood = place(sim, 'woodcutter', 0);
-assert.equal(sim.buildProblem(BUILDINGS.house, 22, -8), null, 'con un leñador ya se puede');
+assert.equal(sim.buildProblem(BUILDINGS.house, 22, -8), null);
 assert.match(sim.upgradeProblem(wood), /Edad de Piedra/);
 assert.equal(sim.upgradeProblem(wood) && sim.upgrade(wood), false);
 console.log('✓ edificios previos y mejoras bloqueadas por la edad');
@@ -39,16 +40,18 @@ assert.match(sim.buildProblem(BUILDINGS.woodcutter, -24, 12), /Límite de la Eda
 for (let k = 0; k < LIMITS[0].houses; k++) place(sim, 'house', 2 + k);
 assert.match(sim.buildProblem(BUILDINGS.house, 30, 0), /Límite de la Edad Primitiva: 3/);
 assert.match(sim.buildProblem(BUILDINGS.quarry, 80, 0), /Fuera del territorio/);
-assert.equal(maxPopulation(sim), 14, "10 + 3 viviendas = 16, pero la edad I admite 14");
-console.log('✓ límites de edificios y territorio de la edad I; tope de población 14');
+assert.equal(maxPopulation(sim), 10, '10 + 3 viviendas = 16, pero la edad I admite 10');
+console.log('✓ límites de edificios y territorio de la edad I; tope de población 10');
 
 // Avanzar de edad: requisitos (no sólo materiales), cobra una vez y evoluciona las viviendas.
 assert.equal(nextAgeStatus(sim).ready, false);
-place(sim, 'quarry', 5);
-place(sim, 'gatherer', 6);
-assert.equal(nextAgeStatus(sim).checks.find((c) => c.label === 'Colonos en la aldea').ok, false, 'hacen falta 6 colonos');
-sim.colonists.push(sim.makeColonist({ ...sim.staticOf(sim.colonists[0]), id: 99, name: 'Extra' }, { needs: { ...sim.colonists[0].needs }, growth: 1 }));
-assert.equal(nextAgeStatus(sim).ready, true);
+place(sim, 'stockpile', 5);
+assignHomes(sim);
+const st = nextAgeStatus(sim);
+assert.equal(st.checks.find((c) => c.label.startsWith('Descubrir')).ok, false, 'falta la primera herramienta de piedra');
+assert.equal(st.ready, false);
+sim.milestones.add('stone_tool');
+assert.equal(nextAgeStatus(sim).ready, true, `Piedra se alcanza sólo con lo de Primitiva: ${JSON.stringify(nextAgeStatus(sim).checks.filter((c) => !c.ok))}`);
 const woodBefore = sim.stock.wood;
 assert.equal(sim.advanceAge(), true);
 assert.equal(sim.age, 2);
@@ -57,10 +60,12 @@ assert.equal(sim.advanceAge(), false, 'no se puede repetir (la edad siguiente a�
 assert.equal(woodBefore - sim.stock.wood, 30);
 assert.ok(sim.buildings.filter((b) => b.def.id === 'house').every((b) => b.level === 2), 'las viviendas evolucionan solas');
 assert.equal(maxPopulation(sim), 10 + 3 * 3);
-assert.equal(sim.buildings.find((b) => b.def.id === 'quarry').level, 1, 'lo demás no mejora gratis');
+assert.equal(sim.buildings.find((b) => b.def.id === 'stockpile').level, 1, 'lo demás no mejora gratis');
 console.log('✓ avanzar de edad cobra una vez, evoluciona las viviendas y no mejora lo demás');
 
 // Edad II: mejorar cuesta y pide su edificio previo; los límites suben; vivienda nueva más cara.
+place(sim, 'quarry', 7);
+place(sim, 'gatherer', 8);
 const q = sim.buildings.find((b) => b.def.id === 'quarry');
 assert.equal(sim.upgradeProblem(q), null);
 assert.equal(sim.upgradeProblem(sim.buildings.find((b) => b.def.id === 'gatherer')), null);

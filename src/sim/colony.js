@@ -23,6 +23,7 @@ import { generateDeposits, depositAt, updateProduction, updatePower, applyHospit
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
+import { PRIMITIVE_STOCK, PRIMITIVE_COLLECTOR_WATER, DISCOVERY, LEARNABLE, shelterInfo, populationInfo, waterReport, foodReport, alertsOf, discoveryProblem, resourceHelp, harvestBlocker } from './primitive.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
 // de acopio, recursos del entorno, edades y guardado. No dibuja nada ni toca la página:
@@ -131,6 +132,12 @@ export class ColonySim {
     this.flow = { in: {}, out: {} }; // lo que entra y sale del almacén en el tramo actual
     this.flowBuckets = []; // los últimos tramos (para producción y consumo por día)
     this.flowTimer = 0;
+    this.milestones = new Set(); // hitos conseguidos (p. ej. la primera herramienta de piedra)
+    this.learned = new Set(); // acciones que el jugador ya aprendió (la guía las reconoce)
+    this.discovery = null; // { progress } mientras se fabrica la primera herramienta
+    this.defeat = null; // { cause, day } cuando mueren todos
+    this.deaths = []; // { name, cause, day }
+    this.alertKeys = new Set();
     this.roads = new Map(); // caminos: casilla -> nivel
     this.autoRoads = true; // la aldea traza sola caminos entre sus edificios
     this.autoRoadKeys = new Set(); // casillas hechas por la aldea (gratis; mejoran solas con la edad)
@@ -213,6 +220,7 @@ export class ColonySim {
     this.updateBuildings(gameDt, rain);
     updateFamily(this, gameDt, time);
     updateImmigration(this, gameDt, time);
+    this.updateAlerts(gameDt, absent);
     this.rollFlows(gameDt);
     // Desde la Edad del Bronce vivir sin casa pesa en el ánimo; la molestia entra poco a poco
     // en los dos días siguientes a cada cambio de edad para que no sea una crisis de golpe.
@@ -224,6 +232,7 @@ export class ColonySim {
       simTime -= dt;
       this.gameTime += dt;
       env.gameTime = this.gameTime;
+      const dying = [];
       for (const c of this.colonists) {
         c.companion = c.sleeping || c.inside ? null : this.nearestColonist(c, COMPANY_RADIUS);
         c.nearFire = Math.hypot(c.x, c.z) < FIRE_WARMTH_RADIUS;
@@ -231,7 +240,7 @@ export class ColonySim {
           dt,
           ambient,
           nearFire: c.nearFire,
-          sheltered: c.sleeping || c.inside,
+          sheltered: (c.sleeping && !c.outdoorSleep) || c.inside,
           clothed: c.clothed,
           companion: c.companion,
           walking: c.walking,
@@ -240,6 +249,18 @@ export class ColonySim {
           homeless: c.home == null && (c.growth ?? 1) >= 1 ? homeless : 0,
         });
         this.step(c, dt, env);
+        if (!absent && c.health <= 0.01) dying.push(c);
+      }
+      for (const c of dying) this.die(c, c.needs.water <= 0 ? 'de sed' : c.needs.food <= 0 ? 'de hambre' : c.needs.warmth < 8 ? 'de frío' : 'por agotamiento');
+      // La primera herramienta de piedra: se talla mientras el dueño está (no cambia las ausencias).
+      if (this.discovery && !absent) {
+        this.discovery.progress = Math.min(1, this.discovery.progress + dt / DISCOVERY.seconds);
+        if (this.discovery.progress >= 1) {
+          this.discovery = null;
+          this.milestones.add(DISCOVERY.id);
+          this.emit('notice', `¡Descubierta: ${DISCOVERY.name}!`);
+          this.emit('changed');
+        }
       }
       // Talleres, servicios y energía avanzan en cada paso (así también cuentan al ponerse al día).
       for (const b of this.buildings) if (b.done && b.def.kind) updateProduction(this, b, dt);
@@ -250,6 +271,141 @@ export class ColonySim {
         updatePower(this);
       }
     }
+  }
+
+  // ---- Edad Primitiva: consultas y acciones -------------------------------------------------
+
+  shelterInfo() {
+    return shelterInfo(this);
+  }
+
+  populationInfo() {
+    return populationInfo(this);
+  }
+
+  waterReport() {
+    return waterReport(this);
+  }
+
+  foodReport() {
+    return foodReport(this);
+  }
+
+  get alerts() {
+    return this.alertsView ?? alertsOf(this);
+  }
+
+  resourceHelp(id) {
+    return resourceHelp(this, id);
+  }
+
+  harvestBlocker(kind) {
+    return harvestBlocker(this, kind);
+  }
+
+  // Campamento inicial de una partida nueva: un refugio de ramas, el recolector de lluvia ya
+  // funcionando y un pequeño acopio. Sólo lo hace el servidor al fundar (no al cargar una partida).
+  seedPrimitive() {
+    this.stock = { ...PRIMITIVE_STOCK };
+    this.clothesLeft = 0;
+    const place = (def, angle0) => {
+      for (let ring = 0; ring < 8; ring++) {
+        for (let k = 0; k < 16; k++) {
+          const a = angle0 + (k / 16) * Math.PI * 2;
+          const r = 16 + ring * 4;
+          const x = Math.round((Math.cos(a) * r) / 4) * 4;
+          const z = Math.round((Math.sin(a) * r) / 4) * 4;
+          if (!this.siteProblem(def, x, z)) return this.createBuilding(def, x, z, Math.atan2(-x, -z), 1, 0, 1);
+        }
+      }
+      return null;
+    };
+    const house = place(BUILDINGS.house, 0.5);
+    const collector = place(BUILDINGS.well, 3.6);
+    if (collector) collector.store = PRIMITIVE_COLLECTOR_WATER;
+    assignHomes(this);
+    this.emit('changed');
+    return { house, collector };
+  }
+
+  // Acción aprendida: queda reconocida para siempre (la guía no la vuelve a pedir).
+  learn(id) {
+    if (!LEARNABLE.includes(id)) return false;
+    if (this.remote) {
+      this.remote('learn', [id]);
+      return true;
+    }
+    if (!this.learned.has(id)) {
+      this.learned.add(id);
+      this.emit('changed');
+    }
+    return true;
+  }
+
+  noteLearned(id) {
+    if (this.remote || this.learned.has(id)) return;
+    this.learned.add(id);
+    this.emit('changed');
+  }
+
+  discoveryProblem() {
+    return discoveryProblem(this);
+  }
+
+  // Empezar a fabricar la primera herramienta de piedra (se pagan los materiales y tarda un rato).
+  discover() {
+    if (discoveryProblem(this)) return false;
+    if (this.remote) {
+      this.remote('discover', []);
+      return true;
+    }
+    for (const [k, n] of Object.entries(DISCOVERY.cost)) this.takeStock(k, n);
+    this.discovery = { progress: 0 };
+    this.emit('notice', 'Los colonos empiezan a tallar la primera herramienta de piedra');
+    this.emit('changed');
+    return true;
+  }
+
+  // Un colono muere (sólo con el dueño presente: durante las ausencias la salud tiene su suelo).
+  die(c, cause) {
+    const time = this.timeLabel();
+    this.deaths.push({ name: c.name, cause, day: time });
+    this.colonists = this.colonists.filter((o) => o !== c);
+    if (c.task) endTask(this, c, c.task);
+    for (const b of this.buildings) b.workers = b.workers.filter((w) => w !== c);
+    for (const o of this.colonists) {
+      if (o.mate === c.id) o.mate = null;
+      if (o.task?.partner === c) o.task = null;
+    }
+    this.staticsRevision++;
+    this.emit('colonists');
+    this.emit('notice', `${c.name} murió ${cause}`);
+    this.emit('changed');
+    if (!this.colonists.length && !this.defeat) {
+      const last = this.deaths[this.deaths.length - 1];
+      this.defeat = { cause: this.defeatCause(), day: time, last: last?.name ?? '' };
+      this.emit('defeat', this.defeat);
+    }
+  }
+
+  // Avisos de escasez: se calculan cada pocos segundos y sólo se anuncian los nuevos (con el dueño presente).
+  updateAlerts(gameDt, absent) {
+    this.alertTimer = (this.alertTimer ?? 0) - gameDt;
+    if (this.alertTimer > 0) return;
+    this.alertTimer = 5;
+    const list = alertsOf(this);
+    this.alertsView = list;
+    const keys = new Set(list.map((a) => `${a.id}:${a.level}`));
+    if (!absent) for (const a of list) if (!this.alertKeys.has(`${a.id}:${a.level}`)) this.emit('notice', `${a.text}. ${a.hint}`);
+    this.alertKeys = keys;
+  }
+
+  // Causa de la derrota con lo que se sabe: lo que más mató.
+  defeatCause() {
+    const count = {};
+    for (const d of this.deaths) count[d.cause] = (count[d.cause] ?? 0) + 1;
+    const top = Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'por falta de recursos';
+    return `Los colonos murieron ${top}.`;
   }
 
   // ---- Campamento -------------------------------------------------------------------
@@ -280,6 +436,12 @@ export class ColonySim {
     this.age = 1;
     this.armyUnpaid = false;
     this.nextRaidDay = null;
+    this.milestones = new Set(); // hitos conseguidos (p. ej. la primera herramienta de piedra)
+    this.learned = new Set(); // acciones que el jugador ya aprendió (la guía las reconoce)
+    this.discovery = null; // { progress } mientras se fabrica la primera herramienta
+    this.defeat = null; // { cause, day } cuando mueren todos
+    this.deaths = []; // { name, cause, day }
+    this.alertKeys = new Set();
     this.roads = new Map();
     this.autoRoadKeys = new Set();
     this.roadsOff = new Set();
@@ -1291,6 +1453,7 @@ export class ColonySim {
         changed++;
       }
     }
+    if (changed && marked) this.noteMarked(kinds);
     if (changed) this.marksChanged();
     return changed;
   }
@@ -1306,8 +1469,15 @@ export class ColonySim {
         changed++;
       }
     }
+    if (changed && marked) this.noteMarked(kinds);
     if (changed) this.marksChanged();
     return changed;
+  }
+
+  // Marcar una zona queda como acción aprendida (y comida, si se marcó comida).
+  noteMarked(kinds) {
+    this.noteLearned('zone_marked');
+    if ((!kinds || kinds.includes('food')) && this.spots.some((sp) => sp.marked && !sp.gone && sp.kind === 'food')) this.noteLearned('food_marked');
   }
 
   clearMarks(kinds = null) {
@@ -1324,10 +1494,12 @@ export class ColonySim {
   // Un recurso usado: los árboles y las piedras desaparecen; las bayas vuelven a crecer.
   consumeSpot(spot, gameTime) {
     spot.taken = null;
+    const wasMarked = spot.marked;
     if (spot.marked) {
       spot.marked = false;
       this.emit('marks');
     }
+    if (wasMarked && !this.spots.some((o) => o.marked && !o.gone)) this.emit('notice', 'Se recogió todo lo marcado: señala otra zona si hace falta');
     if (spot.kind === 'food') {
       spot.readyAt = gameTime + REGROW_SECONDS;
     } else {
@@ -1957,6 +2129,11 @@ export class ColonySim {
         nextRaidDay: this.nextRaidDay,
         armyUnpaid: this.armyUnpaid,
         roads: [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]),
+        milestones: [...this.milestones],
+        learned: [...this.learned],
+        discovery: this.discovery,
+        defeat: this.defeat,
+        deaths: this.deaths.slice(-20),
         autoRoads: this.autoRoads,
         autoRoadKeys: [...this.autoRoadKeys],
         roadsOff: [...this.roadsOff],
@@ -2104,6 +2281,10 @@ export class ColonySim {
         const c = this.colonist(args[0]);
         return !!c && this.cancelOrder(c);
       }
+      case 'learn':
+        return typeof args[0] === 'string' && this.learn(args[0]);
+      case 'discover':
+        return this.discover();
       case 'demolish':
         return this.demolish(this.building(args[0]));
       case 'moveBuilding': {
@@ -2169,7 +2350,7 @@ export class ColonySim {
   // cuando nace alguien; después no hace falta repetirlos).
   snapshot(part = 'full', { statics = true } = {}) {
     const r2 = (v) => Math.round(v * 100) / 100;
-    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0);
+    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0);
     if (part === 'fast') return { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]) };
     const camp = this.camp;
     return {
@@ -2187,6 +2368,11 @@ export class ColonySim {
       tradeDay: this.tradeDay,
       armyUnpaid: this.armyUnpaid,
       grid: this.grid,
+      milestones: [...this.milestones],
+      learned: [...this.learned],
+      discovery: this.discovery,
+      defeat: this.defeat,
+      alerts: this.alerts,
       autoRoads: this.autoRoads,
       roads: statics ? [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]) : undefined,
       growthBlocker: this.growthBlocker,
@@ -2263,6 +2449,14 @@ export class ColonySim {
       arrived = true;
     }
     if (arrived) this.emit('colonists');
+    // Colonos que murieron: ya no vienen en el estado completo.
+    if (part === 'full' && Array.isArray(s.colonists)) {
+      const ids = new Set(s.colonists.map((r) => (Array.isArray(r) ? r[0] : r.id)));
+      if (this.colonists.some((c) => !ids.has(c.id))) {
+        this.colonists = this.colonists.filter((c) => ids.has(c.id));
+        this.emit('colonists');
+      }
+    }
     if (s.maxPopulation) this.maxPop = s.maxPopulation;
     for (const row of s.colonists ?? []) {
       const fast = Array.isArray(row);
@@ -2277,6 +2471,7 @@ export class ColonySim {
       c.sleeping = !!(f & 4);
       c.loving = !!(f & 16);
       c.inside = !!(f & 32);
+      c.outdoorSleep = !!(f & 64);
       if (c.clothed !== !!(f & 8)) {
         c.clothed = !!(f & 8);
         this.emit('clothes');
@@ -2319,6 +2514,14 @@ export class ColonySim {
     if (s.grid) this.grid = s.grid;
     this.armyUnpaid = !!s.armyUnpaid;
     if (typeof s.autoRoads === 'boolean') this.autoRoads = s.autoRoads;
+    if (s.milestones) this.milestones = new Set(s.milestones);
+    if (s.learned) this.learned = new Set(s.learned);
+    this.discovery = s.discovery ?? null;
+    this.alertsView = s.alerts ?? null;
+    if (JSON.stringify(s.defeat ?? null) !== JSON.stringify(this.defeat)) {
+      this.defeat = s.defeat ?? null;
+      if (this.defeat) this.emit('defeat', this.defeat);
+    }
     if (s.roads) {
       this.roads = new Map(s.roads.map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
       this.emit('roads');
@@ -2433,6 +2636,11 @@ export class ColonySim {
     this.nextRaidDay = Number.isFinite(data.nextRaidDay) ? data.nextRaidDay : null;
     this.armyUnpaid = !!data.armyUnpaid;
     this.roads = new Map((Array.isArray(data.roads) ? data.roads : []).filter((r) => r.length === 3).map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
+    this.milestones = new Set(Array.isArray(data.milestones) ? data.milestones.filter((m) => typeof m === 'string') : []);
+    this.learned = new Set(Array.isArray(data.learned) ? data.learned.filter((m) => LEARNABLE.concat(['zone_marked', 'food_marked']).includes(m)) : []);
+    this.discovery = data.discovery && Number.isFinite(data.discovery.progress) ? { progress: Math.min(1, Math.max(0, data.discovery.progress)) } : null;
+    this.defeat = data.defeat && typeof data.defeat.cause === 'string' ? { cause: data.defeat.cause, day: String(data.defeat.day ?? ''), last: String(data.defeat.last ?? '') } : null;
+    this.deaths = Array.isArray(data.deaths) ? data.deaths.filter((d) => d && typeof d.name === 'string').slice(-20) : [];
     this.autoRoads = data.autoRoads !== false;
     const keys = (list) => new Set((Array.isArray(list) ? list : []).filter((k) => typeof k === 'string' && /^-?\d+,-?\d+$/.test(k)));
     this.autoRoadKeys = new Set([...keys(data.autoRoadKeys)].filter((k) => this.roads.has(k)));
@@ -2444,7 +2652,12 @@ export class ColonySim {
       if (!saved.static || this.colonist(saved.id)) continue;
       this.colonists.push(this.makeColonist(saved.static, { ...saved, needs: saved.needs }));
     }
-    this.nextColonistId = Math.max(START_COLONISTS, ...this.colonists.map((o) => o.id + 1));
+    // Los fundadores que murieron no vuelven (la lista guardada manda).
+    if (Array.isArray(data.colonists)) {
+      const alive = new Set(data.colonists.map((o) => o.id));
+      this.colonists = this.colonists.filter((o) => alive.has(o.id));
+    }
+    this.nextColonistId = Math.max(START_COLONISTS, ...this.colonists.map((o) => o.id + 1), ...this.deaths.map(() => 0));
     this.birthRand = seededRandom((this.camp.seed ?? 1) ^ 0x2c1b3c6d ^ Math.floor(this.gameTime));
     for (const saved of data.colonists || []) {
       const c = this.colonists.find((o) => o.id === saved.id);

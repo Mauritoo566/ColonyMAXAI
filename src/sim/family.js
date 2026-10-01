@@ -29,7 +29,7 @@ export const isAdult = (c) => !isChild(c);
 // ---- Viviendas y población máxima -------------------------------------------------------
 
 // Una vivienda sirve mientras está terminada o en mejora (conserva su nivel anterior).
-const usable = (b) => b.def.levels[0].housing != null && (b.done || b.upgrading);
+export const usable = (b) => b.def.levels[0].housing != null && (b.done || b.upgrading);
 
 // Máximo de colonos: el campamento admite 10 y cada vivienda terminada suma lo suyo.
 export function maxPopulation(colony) {
@@ -78,6 +78,7 @@ const defExists = (id) => !!BUILDINGS[id];
 
 // Qué impide que la población crezca (texto) o null: plazas libres, abastecimiento y servicios.
 export function growthBlocker(colony) {
+  if (colony.age === 1 && colony.colonists.some((c) => isAdult(c) && c.home == null)) return 'Hay colonos sin refugio: construye refugios (cada uno aloja a 2)';
   const n = colony.colonists.length + pregnantCount(colony);
   if (maxPopulation(colony) - n <= 0) return n >= limitsFor(colony.age).popCap ? `Límite de población de la ${ageName(colony.age)}: ${limitsFor(colony.age).popCap}` : 'Sin plazas: construye más viviendas';
   const need = Math.ceil(n * SUPPLY_PER_COLONIST);
@@ -146,9 +147,10 @@ export function homeOf(colony, c) {
     const r = house.def.footprint + 0.9;
     return { x: house.x, z: house.z, top: 4.6, door: { x: house.x - (house.x / d) * r, z: house.z - (house.z / d) * r } };
   }
-  const tents = colony.layout.tents;
-  const tent = tents[c.id % tents.length];
-  return { x: tent.x, z: tent.z, top: 3.6, door: tent.door };
+  // Sin plaza de refugio: duerme a la intemperie junto a la fogata (descansa peor).
+  const a = (c.id * 2.399963) % (Math.PI * 2);
+  const spot = { x: Math.cos(a) * 3.6, z: Math.sin(a) * 3.6 };
+  return { x: spot.x, z: spot.z, top: 1.2, door: spot, outdoor: true };
 }
 
 // ---- Ganas, parejas y afinidad -------------------------------------------------------------
@@ -405,6 +407,7 @@ export const IMMIGRATION_EVERY = DAY;
 
 // Por qué no llega nadie (texto) o null.
 export function immigrationBlocker(colony) {
+  if (colony.age < 2) return 'En la Edad Primitiva la población sólo crece con nacimientos';
   const block = growthBlocker(colony);
   if (block) return block;
   const n = colony.colonists.length + 1;
@@ -419,6 +422,7 @@ const SHIRTS_IN = ['#8a5a34', '#a0764a', '#b8905a', '#7a5230', '#9a6a3e', '#c2a0
 const PANTS_IN = ['#5a3a22', '#6b4a2e', '#4a3220', '#7a5a3a'];
 
 export function updateImmigration(colony, dt, time) {
+  if (colony.age < 2) return; // en Primitiva la población sólo crece con nacimientos
   colony.immigrationTimer = (colony.immigrationTimer ?? IMMIGRATION_EVERY) - dt;
   if (colony.immigrationTimer > 0) return;
   colony.immigrationTimer = IMMIGRATION_EVERY;

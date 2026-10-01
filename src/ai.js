@@ -350,10 +350,11 @@ export function runTask(colony, c, task, dt, env) {
       if (!c.sleeping) {
         if (!go(colony, c, task, task.tent.door, dt, 0.9)) return 'running';
         c.sleeping = true;
+        c.outdoorSleep = !!task.tent.outdoor;
         task.phase = 'sleeping';
       }
-      // Recupera el descanso en un tercio de día.
-      n.rest = Math.min(100, n.rest + (100 / (0.33 * DAY)) * dt);
+      // Recupera el descanso en un tercio de día (a la intemperie, junto a la fogata, bastante peor).
+      n.rest = Math.min(100, n.rest + (100 / (0.33 * DAY)) * (c.outdoorSleep ? 0.55 : 1) * dt);
       // Se levanta al estar descansado: de día con casi todo, de noche al llenarse del
       // todo (no se queda en la tienda con el descanso al 100 %).
       if (n.rest >= 99.5 || (n.rest >= 97 && !env.isNight)) {
@@ -561,8 +562,8 @@ function runStation(colony, c, task, dt, env) {
 // Lo que da cada recurso natural recolectado a mano y cuánto se tarda.
 const HARVEST = {
   food: { skill: 'gathering', time: 9, verb: 'Recogiendo', noun: 'comida' },
-  wood: { skill: 'woodcutting', time: 16, verb: 'Talando', noun: 'madera' },
-  stone: { skill: 'mining', time: 16, verb: 'Picando piedra', noun: 'piedra' },
+  wood: { skill: 'woodcutting', time: 16, verb: 'Recogiendo ramas y leña', noun: 'madera' },
+  stone: { skill: 'mining', time: 16, verb: 'Recogiendo piedras sueltas', noun: 'piedra' },
 };
 const HARVEST_YIELD = { berryBush: { food: 3, fiber: 1 }, mushrooms: { food: 2 }, stone: { stone: 3 }, flint: { stone: 2 } };
 
@@ -623,7 +624,8 @@ export function taskActivity(colony, c, task) {
       if (task.source === 'stock') return walking ? 'Va a beber de las vasijas' : 'Bebiendo';
       return walking ? 'Va a beber agua' : 'Bebiendo agua';
     case 'sleep':
-      return c.sleeping ? 'Durmiendo en la tienda' : 'Va a dormir';
+      if (task.tent?.outdoor) return c.sleeping ? 'Durmiendo junto a la fogata (sin refugio)' : 'Va a dormir junto a la fogata';
+      return c.sleeping ? 'Durmiendo en su refugio' : 'Va a dormir';
     case 'love':
       if (task.phase === 'inside') return `En casa con ${task.partner.name}`;
       if (task.phase === 'asking') return walking ? `Va a buscar a ${task.partner.name}` : `Le propone a ${task.partner.name} estar juntos`;

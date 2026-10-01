@@ -69,10 +69,7 @@ export function campLayout() {
 // Obstáculos del campamento como círculos { x, z, r } en coordenadas locales.
 export function campObstacles() {
   const list = [{ x: 0, z: 0, r: 2.3, kind: 'fire' }];
-  for (const t of TIPIS) {
-    const [x, z] = polar(t);
-    list.push({ x, z, r: 3.5 * t.size + 0.4, kind: 'tent' });
-  }
+  // Sin tipis: el campamento inicial es una fogata, un acopio y un refugio de ramas.
   for (const a of BENCH_ANGLES) {
     const x = Math.sin(a) * BENCH_DIST;
     const z = Math.cos(a) * BENCH_DIST;

@@ -243,14 +243,14 @@ export function updateNeeds(c, env) {
   const moodRate = 100 / (0.8 * DAY);
   n.mood += Math.sign(moodTarget - n.mood) * Math.min(Math.abs(moodTarget - n.mood), moodRate * dt);
 
-  // Salud: baja si falta lo básico; si no, se recupera despacio. Aún no mueren.
+  // Salud: baja si falta lo básico; si no, se recupera despacio. Con el dueño presente, a 0 muere.
   const critical = n.food <= 0 || n.water <= 0 || n.warmth < 8;
   const vigor = gene(g, 'vigor');
   const healthBefore = c.health;
   if (critical) c.health -= (100 / (1.5 * DAY)) * (1.3 - vigor * 0.6) * dt;
   else if (Math.min(n.food, n.water, n.warmth) > 25) c.health += (100 / (3 * DAY)) * (0.7 + vigor * 0.6) * dt;
   // Ausente: no baja de la salud crítica (si ya estaba por debajo, al menos no empeora).
-  const floor = env.absent ? Math.min(CRITICAL_HEALTH, healthBefore) : 1;
+  const floor = env.absent ? Math.min(CRITICAL_HEALTH, healthBefore) : 0;
   c.health = Math.min(100, Math.max(floor, c.health));
 
   // Registro: avisos cuando una necesidad cruza un umbral (con margen para no repetir).

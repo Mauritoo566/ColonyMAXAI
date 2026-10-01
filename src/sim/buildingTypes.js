@@ -243,7 +243,6 @@ add({
   buildTime: 60,
   footprint: 2.5,
   autoLevel: true,
-  requires: [{ id: 'woodcutter' }], // las ramas y la madera vienen de la tala
   levels: [
     L(1, 'Choza de ramas', 'Ramas, pieles y hojas sobre un armazón: un techo propio para dos colonos.', 'houseModel1', { housing: 2 }),
     L(2, 'Choza de barro', 'Paredes de barro y techo de paja, más abrigada. Las chozas evolucionan solas a esta casa al llegar a la Edad de Piedra; las nuevas cuestan más.', 'houseModel2', { housing: 3, buildCost: { wood: 24, stone: 8, fiber: 8 } }),
