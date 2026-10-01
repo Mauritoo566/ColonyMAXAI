@@ -13,7 +13,7 @@ const DAY = DAY_LENGTH_SECONDS;
 export const PRIMITIVE_STOCK = { food: 18, water: 10, wood: 40, stone: 14, fiber: 14 };
 export const PRIMITIVE_COLLECTOR_WATER = 6; // lo que ya tiene el recolector de lluvia al fundar
 // Reservas que se conservan (no se gastan al avanzar de edad): unos 4 días de agua y comida para cinco.
-export const RESERVE = { food: 12, water: 12 };
+export const RESERVE = { food: 12, water: 10 };
 // Consumo por colono y día (jarras / raciones), según cuánto restaura cada una.
 export const WATER_PER_DAY = 100 / 3 / 60;
 export const FOOD_PER_DAY = 100 / 4 / 55;

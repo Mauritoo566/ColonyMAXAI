@@ -491,6 +491,26 @@ export function campProblem(dir, otherCamps = []) {
   );
 }
 
+// Qué tan buena es la ubicación para sobrevivir: mira el bioma del lugar y de su entorno (~60 m).
+// Devuelve { level: 'good' | 'ok' | 'hard', text }. Es una orientación, no una prohibición.
+const FERTILE = new Set(['grassland', 'forest', 'rainforest', 'savanna', 'jungle']);
+export function siteReport(dir) {
+  const e = elevation(dir.x, dir.y, dir.z);
+  tangentBasis(dir, siteTmp.east, siteTmp.north);
+  const biomes = [biomeAt(dir.x, dir.y, dir.z)];
+  for (let i = 0; i < 8; i++) {
+    const p = pointAround(dir, (i / 8) * Math.PI * 2, 60, siteTmp.p);
+    biomes.push(biomeAt(p.x, p.y, p.z));
+  }
+  const green = biomes.filter((b) => b.vegetated).length / biomes.length;
+  const lush = biomes.filter((b) => FERTILE.has(b.id) || /forest|grass|jungle|rain/.test(b.id)).length / biomes.length;
+  const here = biomes[0];
+  const harsh = ['snow', 'ice', 'mountain', 'tundra', 'desert', 'beach'].includes(here.id);
+  if (green >= 0.7 && lush >= 0.4 && !harsh) return { level: 'good', text: `Zona fértil (${here.name}): hay vegetación cerca para comida y ramas.` };
+  if (green >= 0.35 && !['snow', 'ice'].includes(here.id)) return { level: 'ok', text: `Zona moderada (${here.name}): algo de vegetación; la supervivencia exigirá buscar.` };
+  return { level: 'hard', text: `Zona difícil (${here.name}): poca vegetación cerca. Comida y ramas escasas; puedes fundar aquí, pero será duro.` };
+}
+
 const yawQuat = new THREE.Quaternion();
 
 // Crea el modelo de un campamento en su sitio y nivela el terreno debajo (también para
@@ -719,7 +739,8 @@ export class CampSystem {
     if (!hit) return;
     const problem =
       this.clearance() > MAX_PICK_CLEARANCE ? 'Acércate más para elegir el lugar' : campProblem(hit.dir, this.otherCamps());
-    this.candidate = { dir: hit.dir, height: hit.height, point: hit.point, problem };
+    const report = !problem && this.clearance() <= MAX_PICK_CLEARANCE ? siteReport(hit.dir) : null;
+    this.candidate = { dir: hit.dir, height: hit.height, point: hit.point, problem, report };
   }
 
   update(delta) {
@@ -739,8 +760,8 @@ export class CampSystem {
       const { tooltip } = this.ui;
       tooltip.hidden = !c || !this.pointer;
       if (!tooltip.hidden) {
-        tooltip.textContent = c.problem || 'Clic para fundar el campamento aquí';
-        tooltip.classList.toggle('is-invalid', !!c.problem);
+        tooltip.textContent = c.problem || `Clic para fundar aquí. ${c.report?.text ?? ''}`;
+        tooltip.classList.toggle('is-invalid', !!c.problem || c.report?.level === 'hard');
         tooltip.style.transform = `translate(${this.pointer.x + 16}px, ${this.pointer.y + 16}px)`;
       }
     }

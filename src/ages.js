@@ -24,7 +24,7 @@ export const AGES = [
     // el almacén primitivo, la primera herramienta de piedra y materiales (esto sí se gasta).
     requires: {
       shelter: true,
-      reserves: { food: 12, water: 12 },
+      reserves: { food: 12, water: 10 },
       buildings: [{ id: 'stockpile', name: 'el almacén primitivo' }],
       milestones: [{ id: 'stone_tool', name: 'la primera herramienta de piedra' }],
       cost: { wood: 30, stone: 15, fiber: 10 },

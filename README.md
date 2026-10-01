@@ -106,6 +106,16 @@ Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s 
 - La ficha separa **oficio fijo**, **orden actual**, **actividad ahora** y **disponibilidad**; la lista agrupa por oficio fijo («Sin oficio fijo» no significa que esté parado).
 - Aldeas guardadas antes de estas mejoras: al cargarlas las viviendas toman el aspecto de la edad real (sin coste ni recursos duplicados) y los tipis iniciales desaparecen cuando todos viven en casas. El contador de vivienda cuenta sólo adultos (los niños viven con su madre): antes mostraba «4/3».
 
+### Edad Primitiva (la primera etapa, de principio a fin)
+- **Fundar:** fogata, 5 colonos, un refugio de ramas (2 plazas), un recolector de lluvia ya funcionando y un acopio inicial pequeño (18 comida, 10 agua, 40 madera, 14 piedra, 14 fibra). Antes de fundar, el puntero dice si la zona es fértil, moderada o difícil.
+- **Sin herramientas:** ramas, piedras sueltas, fibras (vienen de regalo al recoger comida o madera) y comida silvestre se recogen con «Recolectar» o solos. El agua sale del recolector de lluvia: no hace falta un río. Pasa el cursor sobre cada recurso para ver dónde se consigue, cómo se ordena, para qué sirve, cuánto queda y por qué no se recoge.
+- **Refugio:** cada choza aloja a 2 adultos. Quien no tiene plaza duerme junto a la fogata (tumbado, descansa un 45 % peor). La tarjeta de la colonia separa población actual (máx. 10 en esta edad), plazas de refugio y el motivo por el que no hay nacimientos.
+- **Población:** sólo por nacimientos (sin inmigración); no nacen niños mientras haya adultos sin refugio.
+- **Escasez real:** los recursos se agotan, sin lluvia baja el agua, y con el dueño presente los colonos pueden morir de sed, hambre o frío (las ausencias no cambian: nadie muere mientras no estás). Alertas con días de reserva.
+- **Guía** (plegable, con progreso en el servidor): conocer el campamento → recoger materiales → comida → agua → refugio para todos → almacén primitivo → estabilizar → descubrir la primera herramienta de piedra → avanzar. Reconoce lo ya hecho aunque se haga antes.
+- **Pasar a Piedra:** refugio para todos, reservas de comida y agua (se conservan), almacén primitivo, la primera herramienta (6 piedras, 4 madera, 4 fibra; tarda un rato) y 30 madera, 15 piedra y 10 fibra. Sin población mínima. Todo se consigue en Primitiva (tabla de auditoría en `docs/PRIMITIVA.md`, verificada por `primitive.test.js`).
+- **Derrota:** si mueren todos se explica la causa y se puede «Volver a fundar» con las condiciones iniciales (no hereda nada ni afecta a otros jugadores).
+
 ### Cuadrícula
 La aldea tiene una **cuadrícula simétrica de 4 m centrada en la fogata** (la misma de los caminos). Con el botón «▦ Cuadrícula» (o la tecla **G**, activa por defecto) los edificios se colocan y se mueven pegados al centro de su casilla, y la malla se dibuja sobre el terreno (con los ejes en dorado) mientras se construye o se pintan caminos. Apagada, se coloca libremente.
 

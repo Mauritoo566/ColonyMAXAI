@@ -164,6 +164,19 @@ export class World {
     this.playersKey = '';
   }
 
+  // Volver a fundar tras una derrota: sólo si la aldea terminó (cero colonos). Se borra esa colonia
+  // (con sus recursos y órdenes) y el jugador queda como uno nuevo; nada de esto toca a los demás.
+  refound(playerId) {
+    const colony = this.colonies.get(playerId);
+    if (!colony || !colony.sim.defeat) return 'Tu aldea todavía no ha terminado';
+    this.colonies.delete(playerId);
+    this.store.sql.deleteColony.run(playerId);
+    for (const c of this.clients) if (c.player.id === playerId) c.send({ t: 'colonyReset' });
+    this.playersKey = '';
+    this.log(`${this.names.get(playerId)} perdió su aldea y volverá a fundar`);
+    return null;
+  }
+
   // Borrar a un jugador: se cierra su sesión en todas sus conexiones, desaparece su colonia del
   // mundo y de la base de datos (la cuenta y las sesiones caen en cascada).
   removePlayer(playerId) {

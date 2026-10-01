@@ -196,6 +196,23 @@ net.on('colony', (s) => {
 });
 net.on('fast', (s) => colony.camp && colony.applySnapshot(s, 'fast'));
 net.on('away', (summary) => showAwaySummary(summary));
+// Derrota: si mueren todos, se explica la causa y se puede volver a fundar.
+{
+  const modal = document.getElementById('defeat-modal');
+  const show = (d) => {
+    if (!d) {
+      modal.hidden = true;
+      return;
+    }
+    document.getElementById('defeat-cause').textContent = d.cause;
+    const list = colony.deaths?.length ? colony.deaths : [];
+    document.getElementById('defeat-list').innerHTML = (d.last ? `<li>Último en caer: ${d.last.replace(/[&<>]/g, '')}</li>` : '') + list.map((x) => `<li>${x.name.replace(/[&<>]/g, '')}: ${x.cause}</li>`).join('');
+    modal.hidden = false;
+  };
+  colony.on('defeat', show);
+  document.getElementById('defeat-refound').addEventListener('click', () => net.send({ t: 'refound' }));
+  net.on('colonyReset', () => location.reload());
+}
 net.on('error', (m) => {
   if (m.about === 'found') camps.foundFailed(m.message);
   else showNotice(m.message, true);

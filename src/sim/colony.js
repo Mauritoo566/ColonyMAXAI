@@ -2376,6 +2376,7 @@ export class ColonySim {
       learned: [...this.learned],
       discovery: this.discovery,
       defeat: this.defeat,
+      deaths: this.deaths.slice(-10),
       alerts: this.alerts,
       autoRoads: this.autoRoads,
       roads: statics ? [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]) : undefined,
@@ -2520,6 +2521,7 @@ export class ColonySim {
     if (typeof s.autoRoads === 'boolean') this.autoRoads = s.autoRoads;
     if (s.milestones) this.milestones = new Set(s.milestones);
     if (s.learned) this.learned = new Set(s.learned);
+    if (s.deaths) this.deaths = s.deaths;
     this.discovery = s.discovery ?? null;
     this.alertsView = s.alerts ?? null;
     if (JSON.stringify(s.defeat ?? null) !== JSON.stringify(this.defeat)) {

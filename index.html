@@ -168,6 +168,17 @@
 
     <!-- Al volver: la colonia siguió viviendo mientras no estabas -->
     <div id="notice" class="panel place-banner notice" hidden role="status"></div>
+    <div class="age-modal" id="defeat-modal" hidden>
+      <section class="panel age-panel defeat-panel" role="alertdialog" aria-modal="true" aria-label="Fin de la aldea">
+        <p class="eyebrow">Fin de la aldea</p>
+        <h2 class="cp-name">Tu aldea ha caído</h2>
+        <p class="reason" id="defeat-cause"></p>
+        <ul class="away-list" id="defeat-list"></ul>
+        <p class="reason">Puedes volver a fundar un campamento con las condiciones iniciales. Lo de esta aldea no se hereda.</p>
+        <button type="button" class="btn btn--primary" id="defeat-refound">Volver a fundar</button>
+      </section>
+    </div>
+
     <section id="away-card" class="panel away-card" hidden aria-label="Mientras no estabas">
       <p class="eyebrow">Mientras no estabas</p>
       <h2 class="away-title" id="away-title"></h2>

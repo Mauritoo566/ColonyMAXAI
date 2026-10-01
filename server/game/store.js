@@ -58,6 +58,7 @@ export class Store {
       dropPlayerSessions: q('DELETE FROM sessions WHERE player_id = ?'),
       dropOldSessions: q('DELETE FROM sessions WHERE last_used < ?'),
       colonies: q('SELECT * FROM colonies'),
+      deleteColony: q('DELETE FROM colonies WHERE player_id = ?'),
       addColony: q('INSERT INTO colonies (player_id, camp, save, away, updated_at) VALUES (?, ?, NULL, NULL, ?)'),
       saveColony: q('UPDATE colonies SET save = ?, away = ?, updated_at = ? WHERE player_id = ?'),
     };

@@ -194,6 +194,11 @@ wss.on('connection', (ws, req) => {
           accounts.logout(client.token);
           ws.close(1000, 'Sesión cerrada');
           break;
+        case 'refound': {
+          const problem = world.refound(client.player.id);
+          if (problem) client.send({ t: 'error', message: problem });
+          break;
+        }
         case 'deleteAccount': {
           try {
             await accounts.deleteAccount(client.player.id, msg.password, ip);
