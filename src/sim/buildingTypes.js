@@ -97,7 +97,7 @@ export const BUILDING_TYPES = [
         capacity: 14,
         model: 'wellModel1',
       },
-      { name: 'Pozo simple', desc: 'Un anillo de piedras y un cubo de cuero: da agua siempre, llueva o no.', yield: 2, model: 'wellModel2', upgradeCost: { wood: 15, stone: 20, fiber: 5 } },
+      { name: 'Pozo simple', desc: 'Un anillo de piedras y un cubo de cuero: da agua siempre, llueva o no. Todos beben de él gratis; el aguatero saca entre 6 y 10 jarras por día para el almacén (la colonia gasta unas 3).', yield: 2, workTime: 60, model: 'wellModel2', upgradeCost: { wood: 15, stone: 20, fiber: 5 } },
     ],
   },
 ];

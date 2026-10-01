@@ -14,7 +14,7 @@ import { ColonyView } from './colonists.js';
 import { ColonyUI } from './colonyUI.js';
 import { BuildingSystem } from './buildings.js';
 import { BuildUI } from './buildUI.js';
-import { WeatherSystem } from './weather.js';
+import { WeatherSystem, WEATHER } from './weather.js';
 import { AgeUI } from './ageUI.js';
 import { HarvestTool } from './harvest.js';
 import { Connection } from './net.js';
@@ -235,7 +235,10 @@ function renderPlayers(players) {
     name.textContent = p.isMe ? `${p.name} (tú)` : p.name;
     const detail = document.createElement('span');
     const state = p.isMe || p.online ? 'conectado' : 'desconectado';
-    detail.textContent = p.camp ? `Edad ${['I', 'II', 'III', 'IV', 'V'][p.age - 1] ?? p.age} · ${p.population} colonos · ${state}` : `Todavía sin campamento · ${state}`;
+    const sky = WEATHER[p.weather]?.name; // clima de su zona (cambia en vivo)
+    detail.textContent = p.camp
+      ? `Edad ${['I', 'II', 'III', 'IV', 'V'][p.age - 1] ?? p.age} · ${p.population} colonos · ${sky ? sky + ' · ' : ''}${state}`
+      : `Todavía sin campamento · ${state}`;
     info.append(name, detail);
     li.append(info);
     if (p.camp) {
@@ -464,15 +467,20 @@ renderer.setAnimationLoop(() => {
   resources.update(camera, resourceFocus, clearance, delta);
   camps.update(delta);
   const campDir = camps.camp?.dir;
-  // El clima es el del campamento; sin campamento, el del lugar que se mira.
+  // El clima es el de la colonia más cercana a lo que se mira: la propia o la de otro
+  // jugador (el servidor manda el de cada zona en vivo). Sin ninguna cerca, uno inventado.
   weatherPlaceTimer -= delta;
   if (weatherPlaceTimer <= 0) {
     weatherPlaceTimer = 2;
-    weather.setPlace(campDir ?? controls.dir);
+    weather.setPlace(controls.dir);
   }
-  const nearCamp = campDir ? 1 - THREE.MathUtils.smoothstep(controls.dir.angleTo(campDir) * RADIUS, 40_000, 150_000) : 1;
-  weatherNear = nearCamp * (1 - THREE.MathUtils.smoothstep(clearance, 8_000, 80_000));
-  if (colony.weather && campDir) weather.follow(colony.weather, delta, camera, nearCamp > 0.5 ? clearance : Infinity);
+  let source = campDir && colony.weather ? { weather: colony.weather, distance: controls.dir.angleTo(campDir) * RADIUS } : null;
+  const theirs = others.nearestWeather(controls.dir);
+  if (theirs && (!source || theirs.distance < source.distance)) source = theirs;
+  const nearZone = source ? 1 - THREE.MathUtils.smoothstep(source.distance, 40_000, 150_000) : 1;
+  weatherNear = nearZone * (1 - THREE.MathUtils.smoothstep(clearance, 8_000, 80_000));
+  weather.density = THREE.MathUtils.clamp(1 / quality.scale, 0.35, 1); // menos gotas si va lento
+  if (source) weather.follow(source.weather, delta, camera, nearZone > 0.5 ? clearance : Infinity);
   else weather.update(delta, delta, camera, clearance);
   colonyView.update(delta, delta);
   buildings.update();
@@ -502,8 +510,8 @@ renderer.setAnimationLoop(() => {
         weatherIcon.setAttribute('href', `#i-w-${w.icon}`);
         weatherName.textContent = w.name;
         weatherChip.title = w.rain
-          ? `${w.name} en el campamento: el pozo rinde más y las bayas y setas crecen antes`
-          : `${w.name} en el campamento`;
+          ? `${w.name} en esta zona: con lluvia el pozo rinde más y las bayas y setas crecen antes`
+          : `${w.name} en esta zona`;
       }
     }
     if (biomeLabel) {

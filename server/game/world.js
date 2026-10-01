@@ -210,7 +210,7 @@ export class World {
       if (others && client.view) {
         for (const colony of this.colonies.values()) {
           if (colony === own || colony.dir.angleTo(client.view) * RADIUS > NEAR_OTHERS) continue;
-          client.sendRaw(once(`other:${colony.playerId}`, () => ({ t: 'other', id: colony.playerId, ...colony.sim.snapshot('fast') })));
+          client.sendRaw(once(`other:${colony.playerId}`, () => ({ t: 'other', id: colony.playerId, w: colony.sim.weather?.brief(), ...colony.sim.snapshot('fast') })));
         }
       }
       if (t % TIME_EVERY === 0) client.sendRaw(once('time', () => ({ t: 'time', elapsed: this.elapsed })));
@@ -230,6 +230,7 @@ export class World {
         camp: colony ? { ...colony.camp } : null,
         age: sim?.age ?? 1,
         population: sim?.count ?? 0,
+        w: sim?.weather?.state.id ?? null, // clima de su zona (sólo el estado: la intensidad va en "other")
         buildings: sim
           ? sim.buildings.map((b) => ({ t: b.def.id, l: b.level, x: Math.round(b.x * 10) / 10, z: Math.round(b.z * 10) / 10, yaw: Math.round(b.yaw * 100) / 100, d: b.done || b.upgrading }))
           : [],

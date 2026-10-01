@@ -5,6 +5,7 @@ import { buildingModel } from './buildings.js';
 import { ageInfo } from './ages.js';
 import { ColonySim } from './sim/colony.js';
 import { ColonyView } from './colonists.js';
+import { WeatherState } from './sim/weather.js';
 
 // Los demás jugadores del mundo: sus campamentos, sus edificios y sus colonos, en vivo.
 // El servidor manda la lista de jugadores (con campamento, edad, población y edificios) y,
@@ -42,7 +43,7 @@ export class OtherCamps {
       if (typeof p?.name !== 'string') continue;
       const camp = parseCamp(p.camp);
       const isMe = p.id === this.myId;
-      this.players.push({ id: p.id, name: p.name.slice(0, 20), online: !!p.online, camp, age: p.age | 0 || 1, population: p.population | 0, isMe });
+      this.players.push({ id: p.id, name: p.name.slice(0, 20), online: !!p.online, camp, age: p.age | 0 || 1, population: p.population | 0, weather: typeof p.w === 'string' ? p.w : null, isMe });
       if (isMe || !camp) continue;
       seen.add(p.id);
       this.upsert(p, camp);
@@ -70,7 +71,7 @@ export class OtherCamps {
       const sim = new ColonySim();
       const view = new ColonyView({ scene: this.scene, camera: this.camera, canvas: this.canvas, labelsRoot: this.labelsRoot, sim, campObject: () => object, selectable: false });
       sim.setCamp(camp);
-      entry = { key, object, zone, dir: camp.dir, height: camp.height, label, buildingsKey: '', buildings: new THREE.Group(), sim, view };
+      entry = { key, object, zone, dir: camp.dir, height: camp.height, label, buildingsKey: '', buildings: new THREE.Group(), sim, view, weather: new WeatherState(1) };
       object.add(entry.buildings);
       this.camps.set(p.id, entry);
     }
@@ -85,9 +86,24 @@ export class OtherCamps {
     }
   }
 
-  // Dónde están ahora los colonos de otro jugador (mensaje "other" del servidor).
+  // Dónde están ahora los colonos de otro jugador y cómo está el clima en su zona
+  // (mensaje "other" del servidor, dos veces por segundo mientras está cerca).
   applyColonists(id, msg) {
-    this.camps.get(id)?.sim.applySnapshot(msg, 'fast');
+    const entry = this.camps.get(id);
+    if (!entry) return;
+    entry.sim.applySnapshot(msg, 'fast');
+    if (msg.w) entry.weather.loadBrief(msg.w);
+  }
+
+  // El clima del campamento ajeno más cercano a un punto del planeta: { weather, distance }
+  // (distancia en metros sobre la superficie), o null si no hay ninguno.
+  nearestWeather(dir) {
+    let best = null;
+    for (const entry of this.camps.values()) {
+      const distance = entry.dir.angleTo(dir) * RADIUS;
+      if (!best || distance < best.distance) best = { weather: entry.weather, distance };
+    }
+    return best;
   }
 
   buildBuildings(entry, list) {

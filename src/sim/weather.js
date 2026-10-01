@@ -70,6 +70,20 @@ export class WeatherState {
     return { state: this.state.id, timer: this.timer, rain: this.rain, clouds: this.clouds };
   }
 
+  // Resumen corto para mandar a los demás jugadores (el clima de esta colonia, en vivo):
+  // estado, intensidad de la lluvia y de las nubes.
+  brief() {
+    const r2 = (v) => Math.round(v * 100) / 100;
+    return { s: this.state.id, r: r2(this.rain), c: r2(this.clouds) };
+  }
+
+  loadBrief(b) {
+    if (!b || !WEATHER[b.s]) return;
+    this.state = WEATHER[b.s];
+    this.rain = Number.isFinite(b.r) ? b.r : this.state.rain;
+    this.clouds = Number.isFinite(b.c) ? b.c : this.state.clouds;
+  }
+
   load(data) {
     if (!data || !WEATHER[data.state]) return;
     this.state = WEATHER[data.state];

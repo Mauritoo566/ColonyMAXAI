@@ -127,6 +127,12 @@ try {
   assert.equal(other.colonists.length, 5);
   console.log('✓ el otro jugador ve a Ana:', players.list.map((p) => `${p.name}${p.online ? ' (conectado)' : ''}`).join(', '));
 
+  // El clima de la zona de Ana llega en vivo a quien está cerca (para verlo llover allí).
+  assert.ok(['clear', 'cloudy', 'rain', 'storm'].includes(other.w?.s), 'other trae el clima de la colonia');
+  assert.ok(other.w.r >= 0 && other.w.r <= 1 && other.w.c >= 0 && other.w.c <= 1);
+  assert.ok(players.list.find((p) => p.name === 'Ana').w, 'la lista de jugadores trae el clima de cada zona');
+  console.log('✓ el clima de la zona de Ana llega en vivo:', JSON.stringify(other.w));
+
   // Ana se va, el servidor sigue y al volver con su token recibe el resumen.
   const token = auth.token;
   await ana.close();

@@ -327,7 +327,8 @@ function runWork(colony, c, task, dt, env) {
     if (!go(colony, c, task, edgeOf(b, c), dt, 0.9)) return 'running';
     c.working = true;
     colony.faceTowards(c, b.x, b.z, dt);
-    if (!busy(task, dt, 10)) return 'running';
+    // Sacar agua lleva su tiempo: cada nivel del pozo tiene el suyo (workTime).
+    if (!busy(task, dt, level.workTime ?? 10)) return 'running';
     task.timer = 0;
     let water;
     if (level.rainOnly) {

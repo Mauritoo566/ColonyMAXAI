@@ -86,7 +86,7 @@ La **barra de construcción** (abajo) está ordenada por categorías (Producció
 
 ### Edades y mejoras
 
-La colonia avanza por edades (`src/ages.js`, barra decorada arriba al centro): Primitiva, Tribal, del Bronce, del Hierro y Medieval (de momento se juegan las dos primeras). Cada edificio tiene un nivel por edad, con su propio nombre, modelo 3D y rendimiento: en la Edad Primitiva son una enramada de recolección, una zona de tala, una pedrera y un **recolector de lluvia** (sólo junta agua cuando llueve, y un poco con el rocío). Desde la ficha del edificio se puede **mejorar** un nivel por encima de la edad actual: se paga el coste, los constructores trabajan en la obra con andamios y al terminar cambia el modelo (choza de recolección, cabaña del leñador, cantera, pozo simple). Con 3 edificios mejorados y una ofrenda de materiales la colonia pasa a la **Edad Tribal**, todos lo celebran y aparece el tótem de la tribu junto a la fogata. La choza de recolección trae también **fibras**, que se usan en las mejoras.
+La colonia avanza por edades (`src/ages.js`, barra decorada arriba al centro): Primitiva, Tribal, del Bronce, del Hierro y Medieval (de momento se juegan las dos primeras). Cada edificio tiene un nivel por edad, con su propio nombre, modelo 3D y rendimiento: en la Edad Primitiva son una enramada de recolección, una zona de tala, una pedrera y un **recolector de lluvia** (sólo junta agua cuando llueve, y un poco con el rocío). Desde la ficha del edificio se puede **mejorar** un nivel por encima de la edad actual: se paga el coste, los constructores trabajan en la obra con andamios y al terminar cambia el modelo (choza de recolección, cabaña del leñador, cantera, pozo simple). Con 3 edificios mejorados y una ofrenda de materiales la colonia pasa a la **Edad Tribal**, todos lo celebran y aparece el tótem de la tribu junto a la fogata. La choza de recolección trae también **fibras**, que se usan en las mejoras. **Equilibrio del agua:** en el pozo simple todos beben gratis y sin límite; el aguatero saca unas jarras para el almacén (entre 6 y 10 por día, frente a las ~3 que gasta una colonia de 5). Antes sacaba 28 a 44 por día y el agua se acumulaba sin que nadie la usara.
 
 Si se acaban los árboles o las piedras grandes cerca, el leñador junta ramas caídas y el cantero piedras sueltas (rinden menos, pero siguen trabajando).
 
@@ -147,6 +147,10 @@ Cada campamento tiene su propio clima (`src/sim/weather.js`, simulado en el serv
 - hace algo más de frío y el cielo se pone gris; cerca del suelo se ven caer las gotas.
 
 El clima actual se ve en el panel de la hora (abajo a la izquierda).
+
+**El clima es en vivo y es el de cada zona.** Lo que ves es el de la colonia más cercana a lo que miras: la tuya o la de otro jugador. El servidor manda el clima de las colonias ajenas cercanas (mensaje `other`, campo `w`) y la lista de jugadores muestra el clima de cada una. Si tu amigo tiene lluvia y tú vuelas a su campamento, ves llover allí; al volver al tuyo, el tuyo. Al pasar de una zona a otra la lluvia cambia poco a poco.
+
+**Rendimiento de la lluvia:** las gotas se animan en la tarjeta gráfica (un sombreador en `src/weather.js`): la geometría no cambia nunca, así que no hay trabajo por gota en el procesador ni datos que subir en cada cuadro. Con la calidad automática bajando, se dibujan menos gotas.
 
 ## Agua
 
