@@ -163,6 +163,10 @@ export class BuildUI {
     this.detail.className = 'build-detail';
     this.detail.textContent = 'Pasa el cursor sobre un edificio para ver su detalle.';
     this.list.after(this.detail);
+    this.rotateHint = document.createElement('p');
+    this.rotateHint.className = 'build-detail build-rotate-hint';
+    this.rotateHint.hidden = true;
+    this.detail.after(this.rotateHint);
     const showDetail = (button) => {
       const def = BUILDING_TYPES.find((d) => d.id === button?.dataset.build);
       if (!def) {
@@ -363,6 +367,10 @@ export class BuildUI {
       const up = this.list.querySelector('[data-road-upgrade]');
       up.setAttribute('aria-disabled', String(stale === 0));
       this.list.querySelector('[data-road-upgrade-cost]').innerHTML = stale ? Object.entries(lv.cost).map(([k, n]) => `<span>${icon(k)}${n * stale}</span>`).join('') : '<span>Al día</span>';
+    }
+    if (this.rotateHint) {
+      this.rotateHint.hidden = !this.buildings.placing;
+      this.rotateHint.textContent = `Colocando: R gira el edificio ${this.buildings.turn ? `(giro ${this.buildings.turn * 90}°)` : ''}· Mayús + R al revés · G cuadrícula · Esc cancela`;
     }
     for (const tab of this.tabs.children) {
       const n = counts[tab.dataset.cat] ?? 0;

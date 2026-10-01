@@ -32,6 +32,7 @@ export class BuildingSystem {
     this.labelsRoot = labelsRoot;
     this.entries = new Map(); // id del edificio -> { b, object, model, frame, label, level }
     this.placing = null; // tipo que se está colocando
+    this.turn = 0; // giro manual al colocar (pasos de 90°); 0 = mira al centro de la aldea
     this.pointer = null;
     this.candidate = null;
     this.selected = null;
@@ -101,6 +102,13 @@ export class BuildingSystem {
       }
       this.select(this.pickAt(e.clientX, e.clientY));
     });
+    // R gira el edificio 90° al colocarlo o moverlo (Mayús + R, al revés).
+    window.addEventListener('keydown', (e) => {
+      if ((e.key === 'r' || e.key === 'R') && this.placing && !e.ctrlKey && !e.metaKey && !/INPUT|TEXTAREA|SELECT/.test(e.target?.tagName ?? '')) {
+        this.turn = (this.turn + (e.shiftKey ? 3 : 1)) % 4;
+        e.preventDefault();
+      }
+    });
     window.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       if (this.placing) this.stopPlacing();
@@ -154,6 +162,7 @@ export class BuildingSystem {
     this.select(null);
     this.onPlacingStart?.();
     this.placing = BUILDINGS[id];
+    this.turn = 0;
     this.ghost.clear();
     const model = levelModel(this.placing.levels[buildLevelFor(this.placing, this.sim.age) - 1].model);
     model.material = material.clone();
@@ -212,13 +221,17 @@ export class BuildingSystem {
     // Con la cuadrícula activa el edificio se pega al centro de su casilla.
     const gx = this.grid ? this.grid.snap(local.x) : local.x;
     const gz = this.grid ? this.grid.snap(local.z) : local.z;
-    this.candidate = { x: gx, z: gz, problem: this.moving ? this.sim.moveProblem(this.moving, gx, gz) : this.sim.buildProblem(this.placing, gx, gz) };
+    const yaw = Math.atan2(-gx, -gz) + this.turn * (Math.PI / 2);
+    this.candidate = { x: gx, z: gz, yaw, problem: this.moving ? this.sim.moveProblem(this.moving, gx, gz) : this.sim.buildProblem(this.placing, gx, gz) };
   }
 
   // Mover un edificio: se elige el nuevo sitio como al construir (sin coste).
   startMoving(b) {
     this.startPlacing(b.def.id);
     this.moving = b;
+    // Al mover parte de su orientación actual (R la gira).
+    this.turn = Math.round((b.yaw - Math.atan2(-b.x, -b.z)) / (Math.PI / 2));
+    this.turn = ((this.turn % 4) + 4) % 4;
     this.ghost.remove(...this.ghost.children.filter((o) => o !== this.ghostRing));
     const model = levelModel(levelOf(b).model);
     model.material = material.clone();
@@ -231,12 +244,12 @@ export class BuildingSystem {
   place({ x, z }) {
     if (this.moving) {
       const b = this.moving;
-      const why = this.sim.moveBuilding(b, x, z);
+      const why = this.sim.moveBuilding(b, x, z, this.candidate?.yaw ?? null);
       this.stopPlacing();
       if (why) this.sim.emit('notice', why);
       return;
     }
-    const { building } = this.sim.build(this.placing.id, x, z);
+    const { building } = this.sim.build(this.placing.id, x, z, this.candidate?.yaw ?? null);
     this.stopPlacing();
     if (building) this.select(building);
   }
@@ -406,7 +419,7 @@ export class BuildingSystem {
         const sim = this.sim;
         const dir = sim.toDirection(c.x, c.z, this.tmp);
         this.ghost.position.copy(dir).multiplyScalar(RADIUS + sim.heightAt(c.x, c.z));
-        this.ghost.quaternion.copy(sim.camp.quaternion).multiply(this.tmpQuat.setFromAxisAngle(Y_AXIS, Math.atan2(-c.x, -c.z)));
+        this.ghost.quaternion.copy(sim.camp.quaternion).multiply(this.tmpQuat.setFromAxisAngle(Y_AXIS, c.yaw ?? Math.atan2(-c.x, -c.z)));
         this.ghostRing.material.color.set(c.problem ? '#ff5a4f' : '#5fe08a');
       }
     }

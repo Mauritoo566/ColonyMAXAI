@@ -1635,17 +1635,18 @@ export class ColonySim {
   }
 
   // Encargar un edificio: se paga y queda en obra. Devuelve el edificio o el problema.
-  build(typeId, x, z) {
+  // yaw (opcional): hacia dónde mira el edificio (si no, mira al centro de la aldea).
+  build(typeId, x, z, yaw = null) {
     const def = BUILDINGS[typeId];
     if (!def || !this.camp) return { problem: 'No se puede construir eso' };
     const problem = this.buildProblem(def, x, z);
     if (problem) return { problem };
     if (this.remote) {
-      this.remote('build', [typeId, x, z]);
+      this.remote('build', [typeId, x, z, Number.isFinite(yaw) ? yaw : null]);
       return { pending: true };
     }
     for (const [k, n] of Object.entries(buildCostOf(def, this.age))) this.takeStock(k, n);
-    const b = this.createBuilding(def, x, z, Math.atan2(-x, -z), 0, 0, buildLevelFor(def, this.age));
+    const b = this.createBuilding(def, x, z, Number.isFinite(yaw) ? yaw : Math.atan2(-x, -z), 0, 0, buildLevelFor(def, this.age));
     this.emit('changed');
     return { building: b };
   }
@@ -1712,16 +1713,16 @@ export class ColonySim {
 
   // Mover un edificio: queda igual (nivel, obra, dotación) en otro sitio y sin coste. Recibe un id
   // nuevo para que todas las copias lo redibujen en su sitio.
-  moveBuilding(b, x, z) {
+  moveBuilding(b, x, z, yaw = null) {
     const problem = this.moveProblem(b, x, z);
     if (problem) return problem;
     if (this.remote) {
-      this.remote('moveBuilding', [b.id, x, z]);
+      this.remote('moveBuilding', [b.id, x, z, Number.isFinite(yaw) ? yaw : null]);
       return null;
     }
     const old = { workers: [...b.workers], residents: this.colonists.filter((c) => c.home === b.id), orders: this.colonists.filter((c) => c.order?.kind === 'build' && c.order.building === b.id) };
     this.detachBuilding(b);
-    const nb = this.createBuilding(b.def, x, z, Math.atan2(-x, -z), b.done ? 0 : b.progress, b.produced, b.level);
+    const nb = this.createBuilding(b.def, x, z, Number.isFinite(yaw) ? yaw : b.yaw, b.done ? 0 : b.progress, b.produced, b.level);
     Object.assign(nb, { upgrading: b.upgrading, store: b.store, cycle: b.cycle, cycleActive: b.cycleActive, priority: b.priority, paused: b.paused, buildTime: b.buildTime });
     for (const w of old.workers) {
       w.job = nb;
@@ -2326,9 +2327,9 @@ export class ColonySim {
     };
     switch (name) {
       case 'build': {
-        const [type, x, z] = args;
+        const [type, x, z, yaw] = args;
         if (typeof type !== 'string' || num(x, 500) === null || num(z, 500) === null) return false;
-        return !!this.build(type, x, z).building;
+        return !!this.build(type, x, z, num(yaw, 20)).building;
       }
       case 'upgrade': {
         const b = this.building(args[0]);
@@ -2374,7 +2375,7 @@ export class ColonySim {
       case 'moveBuilding': {
         const b = this.building(args[0]);
         if (!b || num(args[1], 500) === null || num(args[2], 500) === null) return false;
-        return this.moveBuilding(b, args[1], args[2]) === null;
+        return this.moveBuilding(b, args[1], args[2], num(args[3], 20)) === null;
       }
       case 'advanceAge':
         return this.advanceAge();

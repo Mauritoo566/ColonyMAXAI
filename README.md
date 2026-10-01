@@ -119,7 +119,7 @@ Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s 
 > Para pruebas, `GAME_SPEED=10 node server/game/index.js` acelera el mundo (reloj y simulación). No cambia ninguna regla; no usar en producción.
 
 ### Cuadrícula
-La aldea tiene una **cuadrícula simétrica de 4 m centrada en la fogata** (la misma de los caminos). Con el botón «▦ Cuadrícula» (o la tecla **G**, activa por defecto) los edificios se colocan y se mueven pegados al centro de su casilla, y la malla se dibuja sobre el terreno (con los ejes en dorado) mientras se construye o se pintan caminos. Apagada, se coloca libremente.
+La aldea tiene una **cuadrícula simétrica de 4 m centrada en la fogata** (la misma de los caminos). Con **R** se gira el edificio 90° al colocarlo o moverlo (Mayús + R al revés). Con el botón «▦ Cuadrícula» (o la tecla **G**, activa por defecto) los edificios se colocan y se mueven pegados al centro de su casilla, y la malla se dibuja sobre el terreno (con los ejes en dorado) mientras se construye o se pintan caminos. Apagada, se coloca libremente.
 
 ### Caminos automáticos y manuales
 Desde la Edad de Piedra (camino de tierra) la aldea **traza sola caminos** que unen cada edificio terminado con la red o con el centro (gratis, dentro del límite de casillas de la edad; mejoran solos al cambiar de edad). En Infraestructura: **Caminos** (pintar a mano, se paga y se mejora con «Mejorar caminos»), **Quitar caminos** (arrastrar; lo quitado no vuelve a trazarse solo) y **Caminos automáticos** (activar/apagar; apagarlos quita los que trazó la aldea y deja los tuyos). Cada edad da un camino mejor: tierra, empedrado, adoquinado y asfaltado, cada uno más rápido.

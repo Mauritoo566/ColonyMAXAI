@@ -2697,3 +2697,4 @@ canvas.is-harvesting {
 .harvest-info strong { font-weight: 600; opacity: 0.9; }
 .harvest-info em { color: var(--bad, #e5645a); font-style: normal; }
 .harvest-workers, .harvest-legend { margin: 6px 0 0; font-size: 11px; opacity: 0.8; }
+.build-rotate-hint { color: var(--accent); margin-top: 2px; }
