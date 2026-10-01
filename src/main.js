@@ -148,7 +148,7 @@ const buildings = new BuildingSystem({
   sim: colony,
   terrain: planet.terrain,
   labelsRoot: document.getElementById('labels'),
-  pickColonist: (x, y) => colonyView.pickAt(x, y),
+  pickColonist: (x, y) => colonyView.pickAt(x, y) ?? (colonyView.pickMobAt(x, y) != null ? true : null),
 });
 const harvest = new HarvestTool({ scene, camera, canvas, colony, controls, campObject });
 // Recursos del mundo: lo talado desaparece y lo que brota con la lluvia aparece.

@@ -232,3 +232,17 @@ export function updateMobs(sim, dt, isNight) {
     if (blocked && m.state === 1) m.wait = 0; // elige otro rumbo
   }
 }
+
+// Ficha de cada animal (para la interfaz).
+export const MOB_INFO = {
+  conejo: { name: 'Conejo', text: 'Pequeño y muy asustadizo. Vive en grupos pequeños y huye de todo.', gives: 'Presa fácil: comida (cuando se pueda cazar).' },
+  ciervo: { name: 'Ciervo', text: 'Vive en rebaños y se aleja corriendo de los depredadores.', gives: 'Carne y pieles (cuando se pueda cazar).' },
+  jabali: { name: 'Jabalí', text: 'Manso mientras nadie lo moleste. Va en pequeños grupos por el bosque.', gives: 'Carne (cuando se pueda cazar).' },
+  oveja: { name: 'Oveja salvaje', text: 'Rebaño numeroso que pasta tranquilo.', gives: 'Carne y lana (cuando se pueda cazar o domesticar).' },
+  uro: { name: 'Uro', text: 'Bovino salvaje de gran tamaño. Se mueve en rebaños.', gives: 'Carne y cuero (cuando se pueda cazar).' },
+  caballo: { name: 'Caballo salvaje', text: 'Veloz; recorre la pradera en manadas.', gives: 'Transporte (cuando se pueda domesticar).' },
+  lobo: { name: 'Lobo', text: 'Caza en manada, sobre todo de noche. Ataca a quien esté al descubierto y teme al fuego.', gives: 'Peligro: 7 de daño por golpe.' },
+  oso: { name: 'Oso', text: 'Solitario y fuerte. Ataca a los colonos que se acercan, de día o de noche. Teme al fuego.', gives: 'Peligro: 14 de daño por golpe.' },
+};
+
+export const MOB_STATE_TEXT = ['Descansando', 'Caminando', 'Atacando'];

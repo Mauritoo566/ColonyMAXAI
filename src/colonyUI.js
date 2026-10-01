@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { NEEDS, SKILLS, wellbeing, needStatus, completeSkill } from './needs.js';
 import { GENES, gene, genomeCode, lifeExpectancy } from './genes.js';
+import { MOB_INFO, MOB_STATS, MOB_STATE_TEXT } from './sim/mobs.js';
 
 // Interfaz de la colonia: tarjeta con el bienestar general, lista de colonos y la
 // ficha de cada uno (clic sobre el colono, su nombre o su fila en la lista).
@@ -77,6 +78,7 @@ export class ColonyUI {
     if (window.matchMedia('(max-width: 720px)').matches) $('roster-wrap').open = false;
 
     view.onSelect = (c) => this.showColonist(c);
+    view.onSelectMob = (id) => this.showMob(id);
     controls.onFollowEnd = () => this.setFollowing(false);
 
     // Clic sobre el mundo: elegir el colono más cercano al puntero.
@@ -91,10 +93,18 @@ export class ColonyUI {
       if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > CLICK_TOLERANCE) return;
       const c = view.pickAt(e.clientX, e.clientY);
       if (c) view.select(c);
-      else if (view.selected) view.select(null);
+      else {
+        const mob = view.pickMobAt(e.clientX, e.clientY);
+        if (mob != null) view.selectMob(mob);
+        else {
+          if (view.selected) view.select(null);
+          if (view.selectedMob != null) view.selectMob(null);
+        }
+      }
     });
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && view.selected && !this.isBlocked()) view.select(null);
+      if (e.key === 'Escape' && view.selectedMob != null && !this.isBlocked()) view.selectMob(null);
     });
 
     // Ayuda.
@@ -140,6 +150,7 @@ export class ColonyUI {
     }
     this.updateRoster();
     if (this.view.selected) this.updatePanel(this.view.selected);
+    if (this.view.selectedMob != null) this.updateMob();
   }
 
   // ---- Lista de colonos ----------------------------------------------------
@@ -472,6 +483,51 @@ export class ColonyUI {
       group('Recolectar', hasMarks ? [row('harvest:', 'Recolectar lo marcado')] : []) +
       group('Puesto de trabajo', posts.map((b) => row(`work:${b.id}`, b.name, `${b.def.job} · ${b.workers.length}/${this.colony.crewNeeded(b)}`)));
     if (!list.innerHTML) list.innerHTML = '<p class="reason">No hay obras ni puestos disponibles.</p>';
+  }
+
+  // ---- Ficha de un animal -------------------------------------------------
+
+  showMob(id) {
+    if (id == null) {
+      if (!this.view.selected) this.panel.hidden = true;
+      this.mobShown = null;
+      return;
+    }
+    this.onOpen?.();
+    this.panel.hidden = false;
+    this.mobShown = null;
+    this.updateMob();
+  }
+
+  updateMob() {
+    const m = this.colony.mobs.find((o) => o.id === this.view.selectedMob);
+    if (!m) return;
+    const info = MOB_INFO[m.type];
+    const st = MOB_STATS[m.type];
+    const mates = m.g != null ? this.colony.mobs.filter((o) => o.g === m.g).length : 1;
+    const html = `
+      <header class="cp-head">
+        <span class="bp-icon">${st.hostile ? '⚠' : '🐾'}</span>
+        <div>
+          <h2 class="cp-name">${info.name}</h2>
+          <p class="cp-sub">${st.hostile ? 'Hostil' : 'Pacífico'} · ${MOB_STATE_TEXT[m.state] ?? ''}</p>
+        </div>
+        <button type="button" class="icon-button" data-close aria-label="Cerrar ficha">${icon('close')}</button>
+      </header>
+      <div class="cp-body">
+        <p class="reason">${escapeHtml(info.text)}</p>
+        <section class="cp-section"><h3>Datos</h3>
+          <div class="stat-line"><span>Grupo</span><strong>${mates > 1 ? `${mates} animales` : 'Solitario'}</strong></div>
+          <div class="stat-line"><span>Velocidad</span><strong>${st.speed} m/s</strong></div>
+          <div class="stat-line"><span>${st.hostile ? 'Amenaza' : 'Utilidad'}</span><strong>${escapeHtml(info.gives)}</strong></div>
+          <div class="stat-line"><span>Distancia a la fogata</span><strong>${Math.round(Math.hypot(m.x, m.z))} m</strong></div>
+        </section>
+      </div>`;
+    if (this.mobShown !== html) {
+      this.mobShown = html;
+      this.panel.innerHTML = html;
+      this.panel.querySelector('[data-close]').addEventListener('click', () => this.view.selectMob(null));
+    }
   }
 
   // ---- Seguir con la cámara --------------------------------------------------

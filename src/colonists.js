@@ -6,6 +6,7 @@ import { appearanceFromGenes } from './genes.js';
 import { CenterView } from './center.js';
 import { outfitFor } from './outfits.js';
 import { MOBS, setMobLOD } from './mobs.js';
+import { MOB_STATS } from './sim/mobs.js';
 
 // Vista de los colonos: dibuja a los de la simulación (sim/colony.js) con su modelo low
 // poly, los anima al caminar y trabajar, pone su nombre encima y permite elegirlos con
@@ -339,6 +340,7 @@ export class ColonyView {
   // ---- Selección ---------------------------------------------------------
 
   select(c) {
+    if (c && this.selectedMob != null) this.selectMob(null);
     if (this.selected === c) return;
     if (this.selected) this.entries.get(this.selected.id)?.label.classList.remove('is-selected');
     this.selected = c;
@@ -428,6 +430,59 @@ export class ColonyView {
     this.updateLabels();
   }
 
+  // Elegir un animal: borde resaltado alrededor y aro en el suelo (id del animal, o null).
+  selectMob(id) {
+    if (id != null && this.selected) this.select(null);
+    this.selectedMob = id;
+    if (this.mobBox) {
+      this.mobBox.removeFromParent();
+      this.mobBox.geometry.dispose();
+      this.mobBox = null;
+    }
+    this.mobRing?.removeFromParent();
+    const e = id != null ? this.mobViews?.get(id) : null;
+    if (e) {
+      this.mobBox = new THREE.BoxHelper(e.object, '#ffd24a');
+      this.mobBox.material.depthTest = false;
+      this.mobBox.renderOrder = 9;
+      this.group.add(this.mobBox);
+      this.mobRing ??= new THREE.Mesh(new THREE.RingGeometry(0.9, 1.1, 28), new THREE.MeshBasicMaterial({ color: '#ffd24a', transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
+      this.mobRing.rotation.x = -Math.PI / 2;
+      this.mobRing.position.y = 0.08;
+      this.mobRing.scale.setScalar(Math.max(0.5, e.object.userData.size.length * 0.6));
+      e.object.add(this.mobRing);
+    }
+    this.onSelectMob?.(id != null && e ? id : null);
+  }
+
+  // Animal bajo un punto de la pantalla (id) o null.
+  pickMobAt(clientX, clientY) {
+    if (!this.selectable || !this.mobViews) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const p = this.tmp.proj;
+    let best = null;
+    let bestDist = Infinity;
+    for (const [id, e] of this.mobViews) {
+      const size = e.object.userData.size;
+      p.copy(e.object.position);
+      p.add(this.tmp.local.copy(p).normalize().multiplyScalar(size.height * 0.5));
+      const dist3 = this.camera.position.distanceTo(p);
+      if (dist3 > 400) continue;
+      p.project(this.camera);
+      if (p.z > 1) continue;
+      const x = rect.left + ((p.x + 1) / 2) * rect.width;
+      const y = rect.top + ((1 - p.y) / 2) * rect.height;
+      const pxPerMeter = rect.height / (2 * dist3 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
+      const radius = Math.max(22, pxPerMeter * Math.max(size.length, size.height) * 0.6);
+      const d = Math.hypot(clientX - x, clientY - y);
+      if (d < radius && d < bestDist) {
+        best = id;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
+
   // Animales del mundo cerca de esta aldea (los manda el servidor; todos los jugadores cercanos los ven).
   updateMobs(animDelta, delta) {
     const sim = this.sim;
@@ -475,7 +530,9 @@ export class ColonyView {
       if (alive.has(id)) continue;
       this.group.remove(e.object);
       this.mobViews.delete(id);
+      if (this.selectedMob === id) this.selectMob(null);
     }
+    this.mobBox?.update();
   }
 
   place(e, animDelta) {
