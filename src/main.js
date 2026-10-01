@@ -54,6 +54,12 @@ renderer.shadowMap.type = THREE.PCFShadowMap; // más barato que PCFSoft; el rad
 renderer.shadowMap.autoUpdate = false;
 const SHADOW_EVERY_FRAMES = 3;
 let shadowFrame = 0;
+// Si la cámara se mueve rápido, las sombras se recalculan en cada fotograma: con el mapa
+// de sombras viejo, el "hueco" que se hace en las sombras de las nubes cercanas se quedaba
+// atrás y las sombras aparecían y desaparecían a saltos (parpadeo al volar).
+const lastShadowPosition = new THREE.Vector3(Infinity, 0, 0);
+const lastShadowForward = new THREE.Vector3(0, 0, -1);
+const shadowForward = new THREE.Vector3();
 
 const SPACE_COLOR = new THREE.Color('#02030a');
 const SKY_DAY = new THREE.Color('#8cc4f0');
@@ -536,7 +542,15 @@ renderer.setAnimationLoop(() => {
     }
   }
 
-  if (shadowFrame++ % SHADOW_EVERY_FRAMES === 0) renderer.shadowMap.needsUpdate = true;
+  camera.getWorldDirection(shadowForward);
+  const shadowClearance = Math.max(1, controls.altitude - controls.groundHeight);
+  const cameraMoving =
+    camera.position.distanceTo(lastShadowPosition) > Math.max(2, shadowClearance * 0.004) || shadowForward.angleTo(lastShadowForward) > 0.004;
+  if (cameraMoving || shadowFrame++ % SHADOW_EVERY_FRAMES === 0) {
+    renderer.shadowMap.needsUpdate = true;
+    lastShadowPosition.copy(camera.position);
+    lastShadowForward.copy(shadowForward);
+  }
   sky.update(camera, dayNight.sunDirection, dayNight.moonDirection, sun.color);
   renderer.render(scene, camera);
 });

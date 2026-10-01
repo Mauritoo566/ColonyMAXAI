@@ -23,6 +23,9 @@ function tiltFor(clearance) {
 // la rueda (o pellizcar) cambia la altitud de forma exponencial para poder pasar de
 // miles de kilómetros a unos pocos metros, y cerca del suelo la cámara se inclina
 // sola hacia el horizonte.
+// Inclinación mínima de la mirada respecto de la vertical durante un vuelo (rad): ~62°.
+const FLIGHT_MIN_TILT = THREE.MathUtils.degToRad(62);
+
 export class PlanetControls {
   constructor(camera, element) {
     this.camera = camera;
@@ -51,6 +54,7 @@ export class PlanetControls {
     this.look = new THREE.Vector3();
     this.focusDir = new THREE.Vector3();
     this.flightUp = new THREE.Vector3();
+    this.flatLook = new THREE.Vector3();
 
     element.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     element.addEventListener('pointermove', (e) => this.onPointerMove(e));
@@ -381,6 +385,17 @@ export class PlanetControls {
       const blend = THREE.MathUtils.smoothstep(t, 0, turnIn) * (1 - THREE.MathUtils.smoothstep(t, 0.8, 1));
       f.blend = blend;
       look.lerp(toFocus, blend).normalize();
+      // Nunca mira hacia abajo: durante el vuelo la mirada se mantiene al menos a
+      // FLIGHT_MIN_TILT del suelo vertical (se ve el horizonte y el destino a lo lejos).
+      const minTilt = FLIGHT_MIN_TILT * blend;
+      const angleFromDown = Math.acos(THREE.MathUtils.clamp(-look.dot(dir), -1, 1));
+      if (angleFromDown < minTilt) {
+        // Parte horizontal de la mirada (o el rumbo si apunta justo hacia abajo).
+        const flat = this.flatLook.copy(look).addScaledVector(dir, -look.dot(dir));
+        if (flat.lengthSq() < 1e-6) flat.copy(forward);
+        flat.normalize();
+        look.copy(dir).multiplyScalar(-Math.cos(minTilt)).addScaledVector(flat, Math.sin(minTilt));
+      }
     }
     // "Arriba" de la cámara. En la vista normal es el del planeta inclinado según el ángulo
     // de mirada (hacia abajo del todo pasa a ser el rumbo). En vuelo se pasa suavemente a un
