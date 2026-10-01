@@ -19,7 +19,7 @@ import { updateFamily, updateImmigration, immigrationBlocker, assignHomes, maxPo
 import { buildBlocker, upgradeBlocker, evolveHouses, buildCostOf, buildLevelFor, limitsFor, radiusOf, expansionBlocker, expansionCost, EXPANSION_STEP } from './progression.js';
 import { GOOD_NAMES } from './goods.js';
 import { centerProps } from './centerLayout.js';
-import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, roadCap, ROAD_LEVELS } from './economy.js';
+import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, roadCap, ROAD_LEVELS, autoRoadPath } from './economy.js';
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
@@ -132,6 +132,9 @@ export class ColonySim {
     this.flowBuckets = []; // los últimos tramos (para producción y consumo por día)
     this.flowTimer = 0;
     this.roads = new Map(); // caminos: casilla -> nivel
+    this.autoRoads = true; // la aldea traza sola caminos entre sus edificios
+    this.autoRoadKeys = new Set(); // casillas hechas por la aldea (gratis; mejoran solas con la edad)
+    this.roadsOff = new Set(); // casillas que el jugador quitó: no se vuelven a trazar solas
     this.armyUnpaid = false; // las tropas no cobran el mantenimiento: rinden la mitad
     this.nextRaidDay = null;
     this.deposits = []; // yacimientos de mineral (de la semilla del campamento)
@@ -278,6 +281,8 @@ export class ColonySim {
     this.armyUnpaid = false;
     this.nextRaidDay = null;
     this.roads = new Map();
+    this.autoRoadKeys = new Set();
+    this.roadsOff = new Set();
     this.deposits = [];
     this.tradeUsed = 0;
     this.tradeDay = 0;
@@ -1082,6 +1087,7 @@ export class ColonySim {
       this.clothesLeft = 0;
       this.emit('clothes');
     }
+    this.refreshAutoRoads();
     const evolved = evolveHouses(this);
     if (evolved) {
       this.emit('buildings');
@@ -1449,6 +1455,7 @@ export class ColonySim {
       nb.workers.push(w);
     }
     if (b.done) this.finishBuilding(nb, null, true);
+    this.autoConnect(nb);
     for (const c of old.residents) c.home = nb.id;
     for (const c of old.orders) c.order = { kind: 'build', building: nb.id };
     this.emit('buildings');
@@ -1545,6 +1552,7 @@ export class ColonySim {
       addLog(builder, time, `Terminó de construir: ${b.name}`);
     }
     this.assignWorker(b);
+    if (!silent) this.autoConnect(b);
     this.emit('buildings');
     this.emit('changed');
   }
@@ -1738,8 +1746,88 @@ export class ColonySim {
     const fresh = clean.filter(([ix, iz]) => (this.roads.get(roadKey(ix, iz)) ?? 0) < level);
     for (const [k, n] of Object.entries(roadCost(level, fresh.length))) this.takeStock(k, n);
     for (const [ix, iz] of fresh) this.roads.set(roadKey(ix, iz), level);
+    for (const [ix, iz] of clean) {
+      this.autoRoadKeys.delete(roadKey(ix, iz)); // lo pintado a mano es del jugador
+      this.roadsOff.delete(roadKey(ix, iz));
+    }
     this.staticsRevision++;
     this.emit('roads');
+    this.emit('changed');
+    return true;
+  }
+
+  // Trazar sola la red: cada edificio terminado se une a los caminos o al centro (gratis, hasta el
+  // límite de la edad y sin las casillas que el jugador quitó).
+  autoConnect(only = null) {
+    const level = roadLevelFor(this.age);
+    if (!this.autoRoads || level <= 0 || this.remote) return 0;
+    let added = 0;
+    for (const b of only ? [only] : this.buildings) {
+      if (!b.done || b.removed) continue;
+      for (const [ix, iz] of autoRoadPath(this, b, this.roadsOff)) {
+        if (this.roads.size >= roadCap(this.age)) break;
+        const key = roadKey(ix, iz);
+        this.roads.set(key, level);
+        this.autoRoadKeys.add(key);
+        added++;
+      }
+    }
+    if (added) {
+      this.staticsRevision++;
+      this.emit('roads');
+      this.emit('changed');
+    }
+    return added;
+  }
+
+  // Con una edad nueva, los caminos de la aldea suben solos al nivel nuevo (los del jugador se
+  // mejoran pagando) y se trazan los que falten.
+  refreshAutoRoads() {
+    const level = roadLevelFor(this.age);
+    if (!this.autoRoads || level <= 0) return;
+    for (const key of this.autoRoadKeys) if (this.roads.has(key)) this.roads.set(key, level);
+    this.autoConnect();
+    this.staticsRevision++;
+    this.emit('roads');
+  }
+
+  // Quitar caminos (hechos a mano o por la aldea). Los que trazó la aldea no vuelven a salir.
+  eraseRoads(cells) {
+    const keys = (Array.isArray(cells) ? cells : []).filter((c) => Array.isArray(c) && Number.isInteger(c[0]) && Number.isInteger(c[1])).map(([ix, iz]) => roadKey(ix, iz)).filter((k) => this.roads.has(k));
+    if (!keys.length) return false;
+    if (this.remote) {
+      this.remote('eraseRoads', [cells]);
+      return true;
+    }
+    for (const k of keys) {
+      this.roads.delete(k);
+      if (this.autoRoadKeys.delete(k)) this.roadsOff.add(k);
+    }
+    this.staticsRevision++;
+    this.emit('roads');
+    this.emit('changed');
+    return true;
+  }
+
+  // Activar o desactivar los caminos automáticos. Al desactivarlos se quitan los que trazó la aldea.
+  setAutoRoads(on) {
+    on = !!on;
+    if (this.remote) {
+      this.autoRoads = on;
+      this.remote('setAutoRoads', [on]);
+      return true;
+    }
+    if (on === this.autoRoads) return true;
+    this.autoRoads = on;
+    if (on) {
+      this.roadsOff.clear();
+      this.autoConnect();
+    } else {
+      for (const k of this.autoRoadKeys) this.roads.delete(k);
+      this.autoRoadKeys.clear();
+      this.staticsRevision++;
+      this.emit('roads');
+    }
     this.emit('changed');
     return true;
   }
@@ -1813,7 +1901,7 @@ export class ColonySim {
   }
 
   get roadInfo() {
-    return { level: roadLevelFor(this.age), cap: roadCap(this.age), count: this.roads.size, levels: ROAD_LEVELS };
+    return { level: roadLevelFor(this.age), cap: roadCap(this.age), count: this.roads.size, levels: ROAD_LEVELS, auto: this.autoRoads };
   }
 
   refreshObstacles() {
@@ -1850,6 +1938,9 @@ export class ColonySim {
         nextRaidDay: this.nextRaidDay,
         armyUnpaid: this.armyUnpaid,
         roads: [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]),
+        autoRoads: this.autoRoads,
+        autoRoadKeys: [...this.autoRoadKeys],
+        roadsOff: [...this.roadsOff],
         colonists: this.colonists.map((c) => ({
           id: c.id,
           needs: c.needs,
@@ -1935,6 +2026,7 @@ export class ColonySim {
     this.restoreColony(data.colony);
     // Partidas anteriores: las viviendas toman el nivel de la edad (no se quita nada).
     evolveHouses(this);
+    this.autoConnect();
     if (data.weather && this.weather?.load) this.weather.load(data.weather);
     this.emit('buildings');
     return true;
@@ -2009,6 +2101,10 @@ export class ColonySim {
         return typeof args[0] === 'string' && this.research(args[0]);
       case 'paintRoads':
         return this.paintRoads(args[0]);
+      case 'eraseRoads':
+        return Array.isArray(args[0]) && args[0].length <= 240 && this.eraseRoads(args[0]);
+      case 'setAutoRoads':
+        return this.setAutoRoads(args[0]);
       case 'upgradeRoads':
         return this.upgradeRoads();
       case 'recruit':
@@ -2071,6 +2167,7 @@ export class ColonySim {
       tradeDay: this.tradeDay,
       armyUnpaid: this.armyUnpaid,
       grid: this.grid,
+      autoRoads: this.autoRoads,
       roads: statics ? [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]) : undefined,
       growthBlocker: this.growthBlocker,
       immigrationBlocker: this.immigrationBlocker,
@@ -2201,6 +2298,7 @@ export class ColonySim {
     }
     if (s.grid) this.grid = s.grid;
     this.armyUnpaid = !!s.armyUnpaid;
+    if (typeof s.autoRoads === 'boolean') this.autoRoads = s.autoRoads;
     if (s.roads) {
       this.roads = new Map(s.roads.map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
       this.emit('roads');
@@ -2315,6 +2413,10 @@ export class ColonySim {
     this.nextRaidDay = Number.isFinite(data.nextRaidDay) ? data.nextRaidDay : null;
     this.armyUnpaid = !!data.armyUnpaid;
     this.roads = new Map((Array.isArray(data.roads) ? data.roads : []).filter((r) => r.length === 3).map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
+    this.autoRoads = data.autoRoads !== false;
+    const keys = (list) => new Set((Array.isArray(list) ? list : []).filter((k) => typeof k === 'string' && /^-?\d+,-?\d+$/.test(k)));
+    this.autoRoadKeys = new Set([...keys(data.autoRoadKeys)].filter((k) => this.roads.has(k)));
+    this.roadsOff = keys(data.roadsOff);
     // Partidas anteriores a la ropa: queda una prenda por cada colono sin vestir.
     const naked = (data.colonists || []).filter((s) => !s.clothed).length;
     this.clothesLeft = Number.isFinite(data.clothesLeft) ? data.clothesLeft : naked;

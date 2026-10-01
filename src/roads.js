@@ -13,6 +13,7 @@ export class RoadSystem {
     this.canvas = canvas;
     this.colony = colony;
     this.active = false;
+    this.mode = 'paint'; // 'paint' | 'erase'
     this.drag = null;
     this.message = null;
     this.onChange = null;
@@ -52,6 +53,11 @@ export class RoadSystem {
       this.drag = null;
       this.preview.count = 0;
       const cells = [...d.cells.values()];
+      if (this.mode === 'erase') {
+        for (let i = 0; i < cells.length; i += 240) colony.eraseRoads(cells.slice(i, i + 240));
+        this.onChange?.();
+        return;
+      }
       for (let i = 0; i < cells.length; i += 80) {
         const chunk = cells.slice(i, i + 80);
         const problem = colony.roadProblem(chunk);
@@ -69,8 +75,10 @@ export class RoadSystem {
     this.controls = controls;
   }
 
-  setActive(on) {
+  setActive(on, mode = 'paint') {
     this.active = on;
+    this.mode = mode;
+    this.preview.material.color.set(mode === 'erase' ? '#e5645a' : '#5fe08a');
     this.drag = null;
     this.preview.count = 0;
     this.message = null;
@@ -94,7 +102,8 @@ export class RoadSystem {
     for (let k = 1; k <= steps; k++) {
       const cx = last ? Math.round(last[0] + ((ix - last[0]) * k) / steps) : ix;
       const cz = last ? Math.round(last[1] + ((iz - last[1]) * k) / steps) : iz;
-      if (!roadCellProblem(this.colony, cx, cz) && this.drag.cells.size < 240) this.drag.cells.set(`${cx},${cz}`, [cx, cz]);
+      const ok = this.mode === 'erase' ? this.colony.roads.has(`${cx},${cz}`) : !roadCellProblem(this.colony, cx, cz);
+      if (ok && this.drag.cells.size < 240) this.drag.cells.set(`${cx},${cz}`, [cx, cz]);
     }
     this.drag.last = [ix, iz];
     this.updatePreview();

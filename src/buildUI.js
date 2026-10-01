@@ -97,11 +97,28 @@ export class BuildUI {
         <span class="build-cost" data-road-upgrade-cost></span>
         <span class="build-lock" hidden></span>
       </button>`);
+    this.list.insertAdjacentHTML('beforeend', `
+      <button type="button" class="build-item" data-road-erase data-cat="infrastructure" aria-pressed="false" title="Arrastra sobre los caminos para quitarlos (los que trazó la aldea no vuelven a salir solos).">
+        <span class="build-icon">${icon('close')}</span>
+        <span class="build-name">Quitar caminos</span>
+        <span class="build-cost"><span>Gratis</span></span>
+      </button>
+      <button type="button" class="build-item" data-road-auto data-cat="infrastructure" aria-pressed="false" title="La aldea traza sola caminos que unen sus edificios (gratis, mejoran solos con la edad). Apagarlos quita los que trazó ella.">
+        <span class="build-icon">${icon('train')}</span>
+        <span class="build-name">Caminos automáticos</span>
+        <span class="build-cost" data-road-auto-state></span>
+      </button>`);
     this.list.querySelector('[data-road]').addEventListener('click', () => {
       if (buildings.placing) buildings.stopPlacing();
       harvest.setActive(false);
-      roads.setActive(!roads.active);
+      roads.setActive(!(roads.active && roads.mode === 'paint'), 'paint');
     });
+    this.list.querySelector('[data-road-erase]').addEventListener('click', () => {
+      if (buildings.placing) buildings.stopPlacing();
+      harvest.setActive(false);
+      roads.setActive(!(roads.active && roads.mode === 'erase'), 'erase');
+    });
+    this.list.querySelector('[data-road-auto]').addEventListener('click', () => colony.setAutoRoads(!colony.roadInfo.auto));
     this.list.querySelector('[data-road-upgrade]').addEventListener('click', () => colony.upgradeRoads());
     roads.onChange = () => (this.timer = 0);
     this.list.querySelector('[data-zone]').addEventListener('click', () => {
@@ -318,14 +335,18 @@ export class BuildUI {
     counts.storage = (counts.storage ?? 0) + 1; // la zona de acopio
     const road = this.colony.roadInfo;
     const roadOff = road.level <= 0 ? '1' : '0';
-    for (const el of this.list.querySelectorAll('[data-road], [data-road-upgrade]')) el.dataset.off = roadOff;
-    if (road.level > 0) counts.infrastructure = (counts.infrastructure ?? 0) + 2;
+    for (const el of this.list.querySelectorAll('[data-road], [data-road-upgrade], [data-road-erase], [data-road-auto]')) el.dataset.off = roadOff;
+    if (road.level > 0) counts.infrastructure = (counts.infrastructure ?? 0) + 4;
     if (road.level > 0) {
       const lv = road.levels[road.level - 1];
       const costText = Object.entries(lv.cost).map(([k, n]) => `<span>${icon(k)}${n}/casilla</span>`).join('');
       this.list.querySelector('[data-road-cost]').innerHTML = costText;
       const roadBtn = this.list.querySelector('[data-road]');
-      roadBtn.setAttribute('aria-pressed', String(this.roads.active));
+      roadBtn.setAttribute('aria-pressed', String(this.roads.active && this.roads.mode === 'paint'));
+      this.list.querySelector('[data-road-erase]').setAttribute('aria-pressed', String(this.roads.active && this.roads.mode === 'erase'));
+      const auto = this.list.querySelector('[data-road-auto]');
+      auto.setAttribute('aria-pressed', String(road.auto));
+      this.list.querySelector('[data-road-auto-state]').innerHTML = `<span>${road.auto ? 'Activados' : 'Apagados'}</span>`;
       roadBtn.title = `${lv.name}: se camina ×${lv.speed}. Llevas ${road.count} de ${road.cap} casillas.${this.roads.message ? ` ${this.roads.message}.` : ''}`;
       const stale = [...this.colony.roads.values()].filter((l) => l < road.level).length;
       const up = this.list.querySelector('[data-road-upgrade]');

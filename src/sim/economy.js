@@ -387,3 +387,45 @@ export function roadCost(level, cells) {
   for (const [k, n] of Object.entries(ROAD_LEVELS[level - 1].cost)) out[k] = n * cells;
   return out;
 }
+
+// Camino automático: de la puerta de un edificio hasta la red (caminos existentes o el centro del
+// campamento) por la ruta más corta de casillas libres. Devuelve las casillas nuevas [ix, iz].
+export function autoRoadPath(colony, b, off = new Set()) {
+  const R = Math.ceil(radiusOf(colony) / ROAD_CELL);
+  const free = (ix, iz) => Math.abs(ix) <= R && Math.abs(iz) <= R && !off.has(roadKey(ix, iz)) && !roadCellProblem(colony, ix, iz);
+  const isTarget = (ix, iz) => colony.roads.has(roadKey(ix, iz)) || Math.hypot(ix * ROAD_CELL, iz * ROAD_CELL) <= 12;
+  const [bx, bz] = roadCellOf(b.x, b.z);
+  const reach = Math.ceil((b.def.footprint + 4) / ROAD_CELL);
+  const prev = new Map();
+  const queue = [];
+  for (let dx = -reach; dx <= reach; dx++) {
+    for (let dz = -reach; dz <= reach; dz++) {
+      const ix = bx + dx;
+      const iz = bz + dz;
+      if (!free(ix, iz) || Math.hypot(ix * ROAD_CELL - b.x, iz * ROAD_CELL - b.z) > b.def.footprint + 5.5) continue;
+      prev.set(roadKey(ix, iz), null);
+      queue.push([ix, iz]);
+    }
+  }
+  const steps = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  let goal = null;
+  for (let head = 0; head < queue.length && !goal; head++) {
+    const [ix, iz] = queue[head];
+    if (isTarget(ix, iz)) {
+      goal = [ix, iz];
+      break;
+    }
+    for (const [dx, dz] of steps) {
+      const nx = ix + dx;
+      const nz = iz + dz;
+      const key = roadKey(nx, nz);
+      if (prev.has(key) || !(free(nx, nz) || isTarget(nx, nz) && !roadCellProblem(colony, nx, nz))) continue;
+      prev.set(key, [ix, iz]);
+      queue.push([nx, nz]);
+    }
+  }
+  if (!goal) return [];
+  const path = [];
+  for (let at = goal; at; at = prev.get(roadKey(...at))) path.push(at);
+  return path.filter(([ix, iz]) => !colony.roads.has(roadKey(ix, iz)));
+}
