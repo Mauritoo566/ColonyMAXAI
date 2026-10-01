@@ -141,6 +141,9 @@
       <button type="button" id="world-button" class="btn" hidden aria-expanded="false" aria-controls="world-panel" title="Jugadores de este mundo">
         <svg class="icon"><use href="#i-people" /></svg>Mundo <span class="world-count" id="world-count">1</span>
       </button>
+      <button type="button" id="work-button" class="btn" hidden title="Especialidades y prioridades de los colonos">
+        <svg class="icon"><use href="#i-hammer" /></svg>Trabajo
+      </button>
       <button type="button" id="village-button" class="btn" hidden aria-expanded="false" aria-controls="village-panel" title="Resumen de la aldea">
         <svg class="icon"><use href="#i-people" /></svg>Aldea
       </button>
@@ -220,6 +223,9 @@
         <button type="button" id="settings-toggle" class="panel icon-button" aria-haspopup="dialog" title="Configuración" aria-label="Configuración">⚙</button>
         <button type="button" id="help-toggle" class="panel icon-button" aria-expanded="false" aria-controls="help-card" title="Controles">?</button>
       </div>
+    </div>
+    <div class="age-modal" id="work-modal" hidden>
+      <section class="panel age-panel work-panel" id="work-panel" role="dialog" aria-modal="true" aria-label="Trabajo de la aldea"></section>
     </div>
     <div class="age-modal" id="settings-modal" hidden>
       <section class="panel age-panel settings-panel" id="settings-panel" role="dialog" aria-modal="true" aria-label="Configuración"></section>

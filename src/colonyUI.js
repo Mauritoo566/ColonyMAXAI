@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { NEEDS, SKILLS, wellbeing, needStatus, completeSkill } from './needs.js';
 import { GENES, gene, genomeCode, lifeExpectancy } from './genes.js';
+import { SPEC_NAMES } from './sim/specialties.js';
 import { MOB_INFO, MOB_STATS, MOB_STATE_TEXT } from './sim/mobs.js';
 
 // Interfaz de la colonia: tarjeta con el bienestar general, lista de colonos y la
@@ -159,7 +160,7 @@ export class ColonyUI {
   tradeOf(c) {
     if ((c.growth ?? 1) < 1) return 'Niños';
     if (c.soldier) return 'Ejército';
-    return c.job?.def?.job ?? 'Sin oficio fijo';
+    return SPEC_NAMES[c.spec?.[0]] ? `${SPEC_NAMES[c.spec[0]]}` : 'Sin especialidades';
   }
 
   buildRoster(groups = '') {
@@ -175,7 +176,7 @@ export class ColonyUI {
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(c);
     }
-    const order = [...grouped.keys()].sort((a, b) => (a === 'Sin oficio fijo') - (b === 'Sin oficio fijo') || (a === 'Niños') - (b === 'Niños') || a.localeCompare(b));
+    const order = [...grouped.keys()].sort((a, b) => (a === 'Sin especialidades') - (b === 'Sin especialidades') || (a === 'Niños') - (b === 'Niños') || a.localeCompare(b));
     const list = order.flatMap((k) => (grouped.size > 1 ? [{ header: k, n: grouped.get(k).length }] : []).concat(grouped.get(k)));
     for (const c of list) {
       if (c.header) {
@@ -417,7 +418,8 @@ export class ColonyUI {
     const familyText = parts.filter(Boolean).join(' ');
     if (family.textContent !== familyText) family.textContent = familyText;
     const job = this.panel.querySelector('[data-job]');
-    const jobText = c.job ? `Oficio fijo: ${c.job.def.job} en ${c.job.name}` : 'Oficio fijo: ninguno (hace lo que más falta)';
+    const specs = (c.spec ?? []).map((id, i) => `${i + 1}. ${SPEC_NAMES[id]} (nivel ${completeSkill(c, id)})`).join(' · ');
+    const jobText = `Especialidades: ${specs || 'sin asignar'}${c.pendingSpec ? ` · cambio pendiente: ${c.pendingSpec.map((id) => SPEC_NAMES[id]).join(', ')}` : ''}${c.job ? ` · puesto: ${c.job.def.job} en ${c.job.name}` : ''}${c.idle && !c.task?.type?.match(/build|work|harvest/) ? ` · espera: ${c.idle}` : ''}`;
     if (job.textContent !== jobText) job.textContent = jobText;
     const orderEl = this.panel.querySelector('[data-order]');
     const target = c.order?.kind === 'build' ? this.colony.building(c.order.building) : null;

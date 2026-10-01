@@ -28,6 +28,7 @@ import { VillageUI } from './villageUI.js';
 import { makeFoldable } from './panelFold.js';
 import { GridSystem } from './grid.js';
 import { GuideUI } from './guideUI.js';
+import { WorkUI } from './workUI.js';
 import { levelOf } from './sim/buildingTypes.js';
 import { MilitaryUI } from './militaryUI.js';
 import { RoadSystem } from './roads.js';
@@ -270,6 +271,8 @@ ageUI.onOpen = () => {
   colonyView.select(null);
   buildings.select(null);
 };
+
+const workUI = new WorkUI({ colony, onFocus: (c) => { workUI.toggle(false); colonyUI.focusColonist(c); } });
 
 // Guía de la edad: cada paso abre la acción que corresponde (sin bloquear nada más).
 const guideUI = new GuideUI({
@@ -610,6 +613,7 @@ renderer.setAnimationLoop(() => {
   buildUI.update(delta);
   ageUI.update(delta);
   guideUI.update(delta);
+  workUI.update(delta);
   villageUI.update(delta);
   militaryUI.update(delta);
   harvest.update(waterUniforms.uTime.value, delta);

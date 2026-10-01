@@ -2700,3 +2700,13 @@ canvas.is-harvesting {
 .build-rotate-hint { color: var(--accent); margin-top: 2px; }
 .estimate { margin-top: 8px; padding: 8px 10px; border: 1px dashed var(--ui-line); border-radius: 8px; display: grid; gap: 3px; }
 .estimate-note { font-size: 11px; opacity: 0.7; }
+
+/* Tabla de trabajo */
+.work-panel { width: min(980px, 100%); }
+.work-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.work-table th { text-align: left; padding: 6px; position: sticky; top: 0; background: var(--ui-bg, #14181f); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
+.work-table td { padding: 5px 6px; border-top: 1px solid var(--ui-line); vertical-align: middle; }
+.work-table select { width: 100%; padding: 4px; border-radius: 6px; background: rgba(255, 255, 255, 0.08); color: inherit; border: 1px solid rgba(255, 255, 255, 0.18); font: inherit; }
+.work-table select option { color: #111; }
+.link-btn { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; font-weight: 700; padding: 0; text-align: left; }
+.work-gaps { margin: 4px 0; padding-left: 18px; color: var(--warn, #e6b450); font-size: 12px; }
