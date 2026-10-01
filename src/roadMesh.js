@@ -20,7 +20,7 @@ function rng(seed) {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
-function paint(level) {
+function paint(level, plain = false) {
   const W = 128;
   const H = 128;
   const c = document.createElement('canvas');
@@ -43,7 +43,13 @@ function paint(level) {
     g.fillRect(0, 0, W, H);
     speck(500, ['#a07c4c', '#c9a672', '#8f6d40'], 3);
     g.fillStyle = 'rgba(90, 62, 34, 0.38)';
-    for (const x of [W * 0.34, W * 0.66]) g.fillRect(x - 5, 0, 10, H);
+    // Sin huellas marcadas: en los cruces se cortarían. Un desgaste suave en el centro basta.
+    const wear = g.createLinearGradient(W * 0.3, 0, W * 0.7, 0);
+    wear.addColorStop(0, 'rgba(110, 80, 46, 0)');
+    wear.addColorStop(0.5, 'rgba(110, 80, 46, 0.22)');
+    wear.addColorStop(1, 'rgba(110, 80, 46, 0)');
+    g.fillStyle = wear;
+    g.fillRect(W * 0.3, 0, W * 0.4, H);
     speck(40, ['#8c8a84', '#6e6a62'], 4);
   } else if (level === 2) {
     // Empedrado irregular: piedras redondeadas con juntas oscuras.
@@ -80,13 +86,19 @@ function paint(level) {
     g.fillStyle = '#3a3a40';
     g.fillRect(0, 0, W, H);
     speck(900, ['#2e2e34', '#46464c', '#505058'], 2);
-    g.fillStyle = '#d8d4c4';
-    g.fillRect(W / 2 - 2, 8, 4, H * 0.42);
-    g.fillStyle = 'rgba(216, 212, 196, 0.85)';
-    g.fillRect(W * 0.1, 0, 2, H);
-    g.fillRect(W * 0.9 - 2, 0, 2, H);
+    if (!plain) {
+      g.fillStyle = '#d8d4c4';
+      g.fillRect(W / 2 - 2, 8, 4, H * 0.42);
+    }
   }
   // Bordes que se funden con el suelo (transparencia a los lados, con algo de irregularidad).
+  if (plain) {
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    return tex;
+  }
   const out = g.getImageData(0, 0, W, H);
   const fade = level === 4 ? 0.1 : 0.22;
   for (let y = 0; y < H; y++) {
@@ -107,9 +119,11 @@ function paint(level) {
   return tex;
 }
 
-export function roadMaterials(levelCount) {
+// plain: la variante lisa (sin huellas ni rayas) para los cruces, con el borde difuminado por vértice.
+export function roadMaterials(levelCount, plain = false) {
   return Array.from({ length: levelCount }, (_, i) => new THREE.MeshStandardMaterial({
-    map: paint(i + 1),
+    map: paint(i + 1, plain),
+    vertexColors: plain,
     roughness: 1,
     transparent: true,
     depthWrite: false,
@@ -282,3 +296,4 @@ export function buildRoadGeometry(roads, level, heightAt) {
   g.setIndex(idx);
   return g;
 }
+

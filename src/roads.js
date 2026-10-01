@@ -37,13 +37,19 @@ export class RoadSystem {
     this.preview.count = 0;
     this.preview.frustumCulled = false;
     this.group.add(this.preview);
+    // Casillas del trazo que no se pueden usar (en rojo).
+    this.badPreview = new THREE.InstancedMesh(this.geometry, new THREE.MeshBasicMaterial({ color: '#e5645a', transparent: true, opacity: 0.5, depthWrite: false }), 120);
+    this.badPreview.count = 0;
+    this.badPreview.frustumCulled = false;
+    this.group.add(this.badPreview);
+    this.onMessage = null; // aviso al jugador (por qué no se puso el camino)
     this.dirty = true;
     colony.on('roads', () => (this.dirty = true));
     colony.on('camp', () => (this.dirty = true));
 
     canvas.addEventListener('pointerdown', (e) => {
       if (!this.active || e.button !== 0 || e.shiftKey) return;
-      this.drag = { cells: new Map(), sx: e.clientX, sy: e.clientY };
+      this.drag = { cells: new Map(), bad: new Map(), sx: e.clientX, sy: e.clientY };
       this.addCell(e.clientX, e.clientY);
     });
     canvas.addEventListener('pointermove', (e) => {
@@ -54,19 +60,36 @@ export class RoadSystem {
       if (!d) return;
       this.drag = null;
       this.preview.count = 0;
+      this.badPreview.count = 0;
       const cells = [...d.cells.values()];
       if (this.mode === 'erase') {
         for (let i = 0; i < cells.length; i += 240) colony.eraseRoads(cells.slice(i, i + 240));
+        this.message = cells.length ? null : 'No hay caminos ahí para quitar';
+        if (this.message) this.onMessage?.(this.message);
         this.onChange?.();
         return;
       }
-      for (let i = 0; i < cells.length; i += 80) {
-        const chunk = cells.slice(i, i + 80);
-        const problem = colony.roadProblem(chunk);
-        this.message = problem;
-        if (!problem) colony.paintRoads(chunk);
-        else break;
+      // Siempre se dice qué pasó: nada se pone en silencio.
+      if (!cells.length) {
+        const why = [...d.bad.values()][0]?.why ?? 'Ahí no se puede poner un camino';
+        this.message = `No se puso el camino: ${why.toLowerCase()}`;
+      } else {
+        this.message = null;
+        for (let i = 0; i < cells.length; i += 80) {
+          const chunk = cells.slice(i, i + 80);
+          const problem = colony.roadProblem(chunk);
+          if (problem) {
+            this.message = `No se puso el camino: ${problem.charAt(0).toLowerCase()}${problem.slice(1)}`;
+            break;
+          }
+          if (!colony.paintRoads(chunk)) {
+            this.message = 'No se pudo poner el camino ahora';
+            break;
+          }
+        }
+        if (!this.message && d.bad.size) this.message = `${d.bad.size} casilla${d.bad.size > 1 ? 's' : ''} no válida${d.bad.size > 1 ? 's' : ''} (en rojo) se omitieron: ${[...d.bad.values()][0].why.toLowerCase()}`;
       }
+      if (this.message) this.onMessage?.(this.message);
       this.onChange?.();
     };
     canvas.addEventListener('pointerup', finish);
@@ -83,6 +106,7 @@ export class RoadSystem {
     this.preview.material.color.set(mode === 'erase' ? '#e5645a' : '#5fe08a');
     this.drag = null;
     this.preview.count = 0;
+    this.badPreview.count = 0;
     this.message = null;
     this.canvas.classList.toggle('is-placing', on);
     this.onChange?.();
@@ -104,8 +128,9 @@ export class RoadSystem {
     for (let k = 1; k <= steps; k++) {
       const cx = last ? Math.round(last[0] + ((ix - last[0]) * k) / steps) : ix;
       const cz = last ? Math.round(last[1] + ((iz - last[1]) * k) / steps) : iz;
-      const ok = this.mode === 'erase' ? this.colony.roads.has(`${cx},${cz}`) : !roadCellProblem(this.colony, cx, cz);
-      if (ok && this.drag.cells.size < 240) this.drag.cells.set(`${cx},${cz}`, [cx, cz]);
+      const why = this.mode === 'erase' ? (this.colony.roads.has(`${cx},${cz}`) ? null : 'no hay camino') : roadCellProblem(this.colony, cx, cz);
+      if (!why && this.drag.cells.size < 240) this.drag.cells.set(`${cx},${cz}`, [cx, cz]);
+      else if (why && this.mode !== 'erase') this.drag.bad.set(`${cx},${cz}`, { cell: [cx, cz], why });
     }
     this.drag.last = [ix, iz];
     this.updatePreview();
@@ -127,6 +152,13 @@ export class RoadSystem {
     }
     this.preview.count = i;
     this.preview.instanceMatrix.needsUpdate = true;
+    let j = 0;
+    for (const { cell } of this.drag.bad.values()) {
+      if (j >= 120) break;
+      this.place(this.badPreview, j++, cell[0], cell[1]);
+    }
+    this.badPreview.count = j;
+    this.badPreview.instanceMatrix.needsUpdate = true;
   }
 
   // Cada fotograma: si cambiaron los caminos, se redibujan (y siguen al campamento).

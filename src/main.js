@@ -230,6 +230,7 @@ const roads = new RoadSystem({ scene, camera, canvas, colony, controls });
 roadsRef = roads;
 const grid = new GridSystem({ scene, colony, isDrawing: () => !!buildings.placing || roads.active });
 buildings.grid = grid;
+roads.onMessage = (text) => showNotice(text, true);
 {
   const gridButton = document.getElementById('grid-toggle');
   const syncGrid = () => gridButton.setAttribute('aria-pressed', String(grid.enabled));
