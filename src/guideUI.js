@@ -60,13 +60,22 @@ export class GuideUI {
     this.card.hidden = !state;
     if (!state) return;
     const alerts = colony.alerts ?? [];
-    const key = JSON.stringify([this.folded, this.showAll, state.steps.map((s) => [s.id, s.done, s.note]), alerts.map((a) => [a.id, a.level, a.text])]);
-    if (key === this.key) return;
+    // La estructura sólo se rehace si cambia algo importante; los números y notas se actualizan en el sitio
+    // (así un clic en un botón nunca se pierde porque la tarjeta se redibujó a mitad).
+    const discoveryOn = !!colony.discovery;
+    const key = JSON.stringify([this.folded, this.showAll, state.steps.map((s) => [s.id, s.done, !!s.note]), alerts.map((a) => [a.id, a.level]), discoveryOn, state.current?.id]);
+    if (key === this.key) {
+      for (const s of state.steps) for (const el of this.card.querySelectorAll(`[data-note="${s.id}"]`)) if (el.textContent !== (s.note ?? '')) el.textContent = s.note ?? '';
+      const bar = this.card.querySelector('[data-disc-bar]');
+      if (bar && colony.discovery) bar.style.width = `${Math.round(colony.discovery.progress * 100)}%`;
+      for (const a of alerts) for (const el of this.card.querySelectorAll(`[data-alert="${a.id}"]`)) if (el.textContent !== a.text) el.textContent = a.text;
+      return;
+    }
     this.key = key;
     const { guide, steps, current, done } = state;
     const cur = current;
     const alertHtml = alerts.length
-      ? `<ul class="guide-alerts">${alerts.slice(0, 4).map((a) => `<li class="guide-alert guide-alert--${a.level}"><strong>${esc(a.text)}</strong><span>${esc(a.hint)}</span></li>`).join('')}</ul>`
+      ? `<ul class="guide-alerts">${alerts.slice(0, 4).map((a) => `<li class="guide-alert guide-alert--${a.level}"><strong data-alert="${a.id}">${esc(a.text)}</strong><span>${esc(a.hint)}</span></li>`).join('')}</ul>`
       : '';
     const discovery = colony.discovery;
     const problem = cur?.id === 'discovery' && !colony.milestones.has('stone_tool') && !discovery ? colony.discoveryProblem() : null;
@@ -81,8 +90,8 @@ export class GuideUI {
                  <p class="guide-kind">${cur.kind === 'learned' ? 'Objetivo (una vez hecho, queda)' : 'Objetivo (se vuelve a comprobar)'}</p>
                  <h3>${esc(cur.title)}</h3>
                  <p>${esc(cur.text)}</p>
-                 ${cur.note ? `<p class="guide-note">${esc(cur.note)}</p>` : ''}
-                 ${discovery && cur.id === 'discovery' ? `<div class="bar"><i style="width:${Math.round(discovery.progress * 100)}%"></i></div>` : ''}
+                 ${cur.note ? `<p class="guide-note" data-note="${cur.id}">${esc(cur.note)}</p>` : ''}
+                 ${discovery && cur.id === 'discovery' ? `<div class="bar"><i data-disc-bar style="width:${Math.round(discovery.progress * 100)}%"></i></div>` : ''}
                  ${cur.action && !(discovery && cur.id === 'discovery') ? `<button type="button" class="btn btn--primary" data-guide-act="${cur.id}" ${problem ? 'disabled' : ''} title="${esc(problem ?? '')}">${esc(cur.action)}</button>` : ''}
                  ${problem ? `<p class="reason">${esc(problem)}</p>` : ''}
                </div>`
@@ -92,7 +101,7 @@ export class GuideUI {
         <button type="button" class="guide-link" data-guide-all>${this.showAll ? 'Ocultar los pasos' : 'Ver todos los pasos'}</button>
         ${
           this.showAll
-            ? `<ol class="guide-steps">${steps.map((s) => `<li class="${s.done ? 'is-done' : s === cur ? 'is-now' : ''}"><span class="guide-tick">${s.done ? '✓' : ''}</span><span>${esc(s.title)}${s.note && !s.done ? `<small>${esc(s.note)}</small>` : ''}</span>${!s.done && s.action ? `<button type="button" class="seg" data-guide-act="${s.id}">${esc(s.action)}</button>` : ''}</li>`).join('')}</ol>`
+            ? `<ol class="guide-steps">${steps.map((s) => `<li class="${s.done ? 'is-done' : s === cur ? 'is-now' : ''}"><span class="guide-tick">${s.done ? '✓' : ''}</span><span>${esc(s.title)}${s.note && !s.done ? `<small data-note="${s.id}">${esc(s.note)}</small>` : ''}</span>${!s.done && s.action ? `<button type="button" class="seg" data-guide-act="${s.id}">${esc(s.action)}</button>` : ''}</li>`).join('')}</ol>`
             : ''
         }
       </div>`;

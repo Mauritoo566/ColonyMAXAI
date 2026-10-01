@@ -116,6 +116,8 @@ Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s 
 - **Pasar a Piedra:** refugio para todos, reservas de comida y agua (se conservan), almacén primitivo, la primera herramienta (6 piedras, 4 madera, 4 fibra; tarda un rato) y 30 madera, 15 piedra y 10 fibra. Sin población mínima. Todo se consigue en Primitiva (tabla de auditoría en `docs/PRIMITIVA.md`, verificada por `primitive.test.js`).
 - **Derrota:** si mueren todos se explica la causa y se puede «Volver a fundar» con las condiciones iniciales (no hereda nada ni afecta a otros jugadores).
 
+> Para pruebas, `GAME_SPEED=10 node server/game/index.js` acelera el mundo (reloj y simulación). No cambia ninguna regla; no usar en producción.
+
 ### Cuadrícula
 La aldea tiene una **cuadrícula simétrica de 4 m centrada en la fogata** (la misma de los caminos). Con el botón «▦ Cuadrícula» (o la tecla **G**, activa por defecto) los edificios se colocan y se mueven pegados al centro de su casilla, y la malla se dibuja sobre el terreno (con los ejes en dorado) mientras se construye o se pintan caminos. Apagada, se coloca libremente.
 
