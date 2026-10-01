@@ -1515,7 +1515,7 @@ summary:focus-visible {
 
 .orders {
   position: fixed;
-  right: calc(var(--gap) + 52px);
+  right: calc(var(--gap) + 104px); /* deja sitio a los botones ⚙ y ? */
   bottom: calc(var(--gap) + var(--safe-bottom));
   display: grid;
   justify-items: end;
