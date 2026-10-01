@@ -18,6 +18,7 @@ import { FLAG_IDS, DEFAULT_FLAG } from '../flags.js';
 import { updateFamily, assignHomes, maxPopulation, growthBlocker } from './family.js';
 import { buildBlocker, upgradeBlocker, evolveHouses, buildCostOf, buildLevelFor, limitsFor, radiusOf, expansionBlocker, expansionCost, EXPANSION_STEP } from './progression.js';
 import { GOOD_NAMES } from './goods.js';
+import { centerProps } from './centerLayout.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
 // de acopio, recursos del entorno, edades y guardado. No dibuja nada ni toca la página:
@@ -930,6 +931,12 @@ export class ColonySim {
     this.setAge(status.next.n);
     this.ageChangedAt = this.gameTime;
     // Las viviendas evolucionan solas (mismo sitio, sin pagar); el resto se mejora a mano.
+    // La ropa evoluciona sola: nadie se queda sin vestir al cambiar de edad.
+    if (this.clothesLeft > 0 || this.colonists.some((c) => !c.clothed)) {
+      for (const c of this.colonists) c.clothed = true;
+      this.clothesLeft = 0;
+      this.emit('clothes');
+    }
     const evolved = evolveHouses(this);
     if (evolved) {
       this.emit('buildings');
@@ -1380,6 +1387,8 @@ export class ColonySim {
       ...campObstacles(),
       ...(this.age >= 2 ? [{ x: TOTEM_SPOT.x, z: TOTEM_SPOT.z, r: 0.9, kind: 'prop' }] : []),
       ...this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint, kind: 'building' })),
+      // Objetos del centro que aparecen con la edad (no se pisan ni se construye encima).
+      ...centerProps(this.age, this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint }))).map((p) => ({ x: p.x, z: p.z, r: p.r, kind: 'prop' })),
     ];
   }
 

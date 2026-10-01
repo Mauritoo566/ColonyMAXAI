@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Parts, mat, stick, v } from './modelKit.js';
 import { BUILDINGS } from './sim/buildingTypes.js';
+import { generate } from './buildingModelsGen.js';
 
 // Modelos 3D de los edificios (metros, suelo en y = 0). Cada nivel de sim/buildingTypes.js
 // nombra su modelo con un texto; aquí está el dibujo de cada uno.
@@ -270,6 +271,7 @@ const MODELS = { gathererModel2, woodcutterModel2, quarryModel2, wellModel2, gat
 
 // Malla del modelo de un nivel (por su nombre en sim/buildingTypes.js).
 export function levelModel(name) {
+  if (name.startsWith('gen:')) return buildMesh((p) => generate(p, name));
   return buildMesh(MODELS[name]);
 }
 

@@ -853,6 +853,8 @@ for (const def of BUILDING_TYPES) {
   def.name ??= def.levels[0].name;
   def.desc ??= def.levels[0].desc;
   def.minAge = def.levels[0].age;
+  // Los modelos generados llevan el tipo al final (gen:estilo:edad:tipo) para añadir lo propio de cada edificio.
+  for (const lv of def.levels) if (lv.model.startsWith('gen:') && lv.model.split(':').length === 3) lv.model += `:${def.id}`;
   def.workers ??= def.skill ? 1 : 0;
 }
 

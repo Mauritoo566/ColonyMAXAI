@@ -3,6 +3,7 @@ import { RADIUS } from './elevation.js';
 import { pickSurface } from './camp.js';
 import { levelModel, frameMesh, material } from './buildingModels.js';
 import { BUILDINGS, levelOf } from './sim/buildingTypes.js';
+import { buildLevelFor } from './sim/progression.js';
 
 // Vista y controles de los edificios. Los edificios en sí (obras, trabajadores, mejoras)
 // son de la simulación (sim/colony.js); aquí se dibujan con su modelo y su etiqueta, se
@@ -147,7 +148,7 @@ export class BuildingSystem {
     this.onPlacingStart?.();
     this.placing = BUILDINGS[id];
     this.ghost.clear();
-    const model = levelModel(this.placing.levels[0].model);
+    const model = levelModel(this.placing.levels[buildLevelFor(this.placing, this.sim.age) - 1].model);
     model.material = material.clone();
     model.material.transparent = true;
     model.material.opacity = 0.55;

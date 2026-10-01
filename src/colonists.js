@@ -3,6 +3,8 @@ import { RADIUS } from './elevation.js';
 import { Parts, mat, stick, v } from './modelKit.js';
 import { CLOTHES_SPOT, TOTEM_SPOT } from './sim/colony.js';
 import { appearanceFromGenes } from './genes.js';
+import { CenterView } from './center.js';
+import { outfitFor } from './outfits.js';
 
 // Vista de los colonos: dibuja a los de la simulación (sim/colony.js) con su modelo low
 // poly, los anima al caminar y trabajar, pone su nombre encima y permite elegirlos con
@@ -111,18 +113,76 @@ function createPersonModel(look) {
   body.add(armL, armR);
   root.add(legL, legR);
 
-  root.userData = { body, armL, armR, legL, legR, torso, hip, head, hair };
+  const accessories = new THREE.Group(); // sombrero, delantal, capa...: cambian con la edad y el oficio
+  body.add(accessories);
+  root.userData = { body, armL, armR, legL, legR, torso, hip, head, hair, accessories };
   return root;
 }
 
 // Viste o desviste el modelo: sin ropa, torso, brazos y piernas del color de la piel y
 // un taparrabos en la cadera.
-function dressModel(object, look, clothed) {
-  const { torso, hip, armL, armR, legL, legR } = object.userData;
-  torso.material = material(clothed ? look.shirt : look.skin);
-  hip.material = material(clothed ? look.pants : LOINCLOTH);
-  for (const arm of [armL, armR]) arm.children[0].material = material(clothed ? look.shirt : look.skin);
-  for (const leg of [legL, legR]) leg.children[0].material = material(clothed ? look.pants : look.skin);
+// "outfit": la ropa que toca por edad y oficio (outfits.js); cada colono la tiñe un poco con su
+// color propio para que no se vistan todos igual.
+function mixHex(a, b, t) {
+  const ca = new THREE.Color(a);
+  return `#${ca.lerp(new THREE.Color(b), t).getHexString()}`;
+}
+
+function dressModel(object, look, clothed, outfit) {
+  const { torso, hip, armL, armR, legL, legR, accessories } = object.userData;
+  const shirt = outfit ? mixHex(outfit.shirt, look.shirt, 0.22) : look.shirt;
+  const pants = outfit ? mixHex(outfit.pants, look.pants, 0.22) : look.pants;
+  torso.material = material(clothed ? shirt : look.skin);
+  hip.material = material(clothed ? pants : LOINCLOTH);
+  for (const arm of [armL, armR]) arm.children[0].material = material(clothed ? shirt : look.skin);
+  for (const leg of [legL, legR]) leg.children[0].material = material(clothed ? pants : look.skin);
+  // Prendas distintivas (sólo con ropa puesta).
+  for (const child of [...accessories.children]) {
+    accessories.remove(child);
+    child.geometry.dispose();
+  }
+  if (!clothed || !outfit) return;
+  if (outfit.hat) accessories.add(...hatMeshes(outfit.hat));
+  if (outfit.apron) accessories.add(box(0.42, 0.5, 0.04, outfit.apron, 0, 1.1, 0.16));
+  if (outfit.coat) {
+    accessories.add(box(0.54, 0.7, 0.32, outfit.coat, 0, 1.05, 0));
+    accessories.add(box(0.5, 0.45, 0.3, outfit.coat, 0, 0.7, 0));
+  }
+  if (outfit.cape) accessories.add(box(0.5, 0.75, 0.04, outfit.cape, 0, 1.05, -0.17));
+  if (outfit.collar) accessories.add(box(0.36, 0.08, 0.3, outfit.collar, 0, 1.52, 0));
+}
+
+// Sombreros y cascos sobre la cabeza (centro en y = 1,7).
+function hatMeshes(hat) {
+  const c = hat.color;
+  const mk = (geometry, x, y, z) => {
+    const m = new THREE.Mesh(geometry, material(c));
+    m.position.set(x, y, z);
+    return m;
+  };
+  switch (hat.kind) {
+    case 'band':
+      return [mk(new THREE.CylinderGeometry(0.19, 0.19, 0.05, 8), 0, 1.78, 0)];
+    case 'cap':
+      return [mk(new THREE.SphereGeometry(0.19, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2), 0, 1.74, 0)];
+    case 'helmet':
+      return [mk(new THREE.SphereGeometry(0.2, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), 0, 1.74, 0), mk(new THREE.CylinderGeometry(0.24, 0.24, 0.03, 8), 0, 1.74, 0)];
+    case 'straw':
+      return [mk(new THREE.ConeGeometry(0.36, 0.22, 8), 0, 1.9, 0)];
+    case 'hood':
+      return [mk(new THREE.SphereGeometry(0.21, 7, 5, 0, Math.PI * 2, 0, Math.PI * 0.62), 0, 1.72, -0.01)];
+    case 'feather': {
+      const cap = mk(new THREE.CylinderGeometry(0.2, 0.22, 0.12, 8), 0, 1.82, 0);
+      const feather = mk(new THREE.BoxGeometry(0.04, 0.3, 0.04), 0.16, 1.95, 0);
+      feather.rotation.z = -0.5;
+      feather.material = material('#c8423a');
+      return [cap, feather];
+    }
+    case 'flat':
+      return [mk(new THREE.CylinderGeometry(0.2, 0.2, 0.07, 8), 0, 1.84, 0)];
+    default:
+      return [];
+  }
 }
 
 // Pila de ropa de pieles doblada: una prenda por colono que aún no la recogió.
@@ -164,6 +224,7 @@ export class ColonyView {
     this.onSelect = null; // lo asigna la interfaz
     this.clothesPile = null;
     this.totem = null;
+    this.center = new CenterView(sim);
     this.selectionRing = new THREE.Mesh(
       new THREE.RingGeometry(0.55, 0.75, 24),
       new THREE.MeshBasicMaterial({ color: '#f2b24c', transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }),
@@ -179,7 +240,11 @@ export class ColonyView {
     };
     sim.on('camp', () => this.rebuild());
     sim.on('clothes', () => this.refreshClothes());
-    sim.on('age', () => this.refreshTotem());
+    sim.on('age', () => {
+      this.refreshTotem();
+      this.center.refresh();
+    });
+    sim.on('buildings', () => this.center.refresh());
   }
 
   // Los colonos de la simulación cambiaron (campamento nuevo): se rehacen los modelos.
@@ -198,7 +263,8 @@ export class ColonyView {
       const object = createPersonModel(c.look);
       const build = appearanceFromGenes(c.genome, c.age).build;
       applyBody(object, c.look, build, c.growth ?? 1);
-      dressModel(object, c.look, c.clothed);
+      const outfit = outfitFor(this.sim.age, c);
+      dressModel(object, c.look, c.clothed, outfit);
       this.group.add(object);
       // Etiqueta sobre la cabeza: nombre y barra de salud. Se puede hacer clic en ella.
       const label = document.createElement('button');
@@ -212,10 +278,11 @@ export class ColonyView {
       this.labelsRoot.appendChild(label);
       // x, z, facing: dónde se dibuja; sigue con suavidad a la simulación (que por la red
       // llega a saltos, varias veces por segundo).
-      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, clothed: c.clothed, build, growth: c.growth ?? 1, hearts: [], heartTimer: 0, x: c.x, z: c.z, facing: c.facing });
+      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, clothed: c.clothed, outfitKey: outfit.key, build, growth: c.growth ?? 1, hearts: [], heartTimer: 0, x: c.x, z: c.z, facing: c.facing });
     }
     this.refreshClothes();
     this.refreshTotem();
+    this.center.refresh();
   }
 
   // Ropa: la de cada colono y la pila que queda en el suelo.
@@ -223,7 +290,9 @@ export class ColonyView {
     for (const e of this.entries.values()) {
       if (e.clothed !== e.c.clothed) {
         e.clothed = e.c.clothed;
-        dressModel(e.object, e.c.look, e.clothed);
+        const outfit = outfitFor(this.sim.age, e.c);
+        e.outfitKey = outfit.key;
+        dressModel(e.object, e.c.look, e.clothed, outfit);
       }
     }
     if (this.clothesPile) {
@@ -319,7 +388,7 @@ export class ColonyView {
     if (this.entries.size !== sim.colonists.length) this.rebuild();
     // La pila de ropa y el tótem van dentro del modelo del campamento.
     const campObject = this.campObject();
-    for (const prop of [this.clothesPile, this.totem]) {
+    for (const prop of [this.clothesPile, this.totem, this.center.group]) {
       if (prop && campObject && prop.parent !== campObject) campObject.add(prop);
     }
     const follow = 1 - Math.exp(-delta * 10);
@@ -344,6 +413,12 @@ export class ColonyView {
     const { c, object } = e;
     // Durmiendo o en casa: está dentro y no se ve.
     object.visible = !c.sleeping && !c.inside;
+    // La ropa cambia sola con la edad de la aldea y con el oficio del colono.
+    const outfit = outfitFor(this.sim.age, c);
+    if (outfit.key !== e.outfitKey) {
+      e.outfitKey = outfit.key;
+      dressModel(object, c.look, c.clothed, outfit);
+    }
     const growth = c.growth ?? 1;
     if (Math.abs(growth - e.growth) > 0.004 || (growth >= 1 && e.growth < 1)) {
       e.growth = growth;
@@ -422,6 +497,8 @@ export class ColonyView {
     this.group.removeFromParent();
     this.clothesPile?.removeFromParent();
     this.totem?.removeFromParent();
+    this.center.clear();
+    this.center.group.removeFromParent();
   }
 
   // Nombres sobre la cabeza cuando la cámara está cerca.
