@@ -9,6 +9,7 @@ import {
 } from './elevation.js';
 import { biomeAt, BIOMES } from './biomes.js';
 import { Parts, mat, stick, v, triangle, seededRandom, vary } from './modelKit.js';
+import { FLAGS_BY_ID, DEFAULT_FLAG, drawFlag } from './flags.js';
 import {
   FLAT_RADIUS,
   BLEND_RADIUS,
@@ -272,6 +273,38 @@ function createFire() {
   fire.add(light);
   fire.userData.light = light;
   return fire;
+}
+
+// ---- Bandera del mástil: la de la tribu (rayas de colores) o la de un país (textura) ----
+
+const flagTextures = new Map();
+
+export function flagTexture(id) {
+  let texture = flagTextures.get(id);
+  if (!texture) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 270;
+    canvas.height = 170;
+    drawFlag(canvas.getContext('2d'), FLAGS_BY_ID.get(id), canvas.width, canvas.height);
+    texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    flagTextures.set(id, texture);
+  }
+  return texture;
+}
+
+// Pone la bandera elegida en el mástil de un campamento (su modelo de camp.js).
+export function applyFlag(campObject, id) {
+  const flag = campObject?.userData?.flag;
+  if (!flag) return;
+  const material = flag.material;
+  const country = id && id !== DEFAULT_FLAG && FLAGS_BY_ID.has(id);
+  material.map = country ? flagTexture(id) : null;
+  material.vertexColors = !country;
+  material.color.set(country ? '#ffffff' : '#ffffff');
+  material.needsUpdate = true;
+  flag.userData.flagId = country ? id : DEFAULT_FLAG;
 }
 
 function createFlag() {
@@ -611,9 +644,16 @@ export class CampSystem {
     this.camp = null;
   }
 
+  // Bandera del jugador: se pone al dibujar el campamento y cada vez que la cambia.
+  setFlag(id) {
+    this.flagId = id;
+    if (this.camp) applyFlag(this.camp.object, id);
+  }
+
   setCamp(dir, height, yaw) {
     this.removeCamp();
     const { object, zone, seed } = buildCamp(dir, height, yaw, this.terrain);
+    applyFlag(object, this.flagId);
     this.scene.add(object);
     this.camp = { object, zone, dir: dir.clone(), height, yaw, seed };
   }

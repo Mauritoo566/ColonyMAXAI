@@ -108,6 +108,13 @@ try {
   assert.equal((await ana.wait('error')).message, 'No se pudo hacer eso ahora.');
   console.log('✓ construir (y rechazar una orden inválida)');
 
+  // Bandera: se valida y se muestra a los demás jugadores.
+  ana.send({ t: 'cmd', name: 'setFlag', args: ['no-existe'] });
+  assert.equal((await ana.wait('error')).message, 'No se pudo hacer eso ahora.');
+  ana.send({ t: 'cmd', name: 'setFlag', args: ['ar'] });
+  assert.equal((await ana.wait((m) => m.t === 'colony' && m.flag === 'ar')).flag, 'ar');
+  console.log('✓ bandera de la aldea (y rechazar una inválida)');
+
   // Posiciones varias veces por segundo.
   const f1 = await ana.wait('fast');
   const f2 = await ana.wait('fast');

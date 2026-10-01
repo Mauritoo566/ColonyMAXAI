@@ -230,6 +230,7 @@ export class World {
         camp: colony ? { ...colony.camp } : null,
         age: sim?.age ?? 1,
         population: sim?.count ?? 0,
+        flag: sim?.flag ?? null,
         w: sim?.weather?.state.id ?? null, // clima de su zona (sólo el estado: la intensidad va en "other")
         buildings: sim
           ? sim.buildings.map((b) => ({ t: b.def.id, l: b.level, x: Math.round(b.x * 10) / 10, z: Math.round(b.z * 10) / 10, yaw: Math.round(b.yaw * 100) / 100, d: b.done || b.upgrading }))

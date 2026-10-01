@@ -12,6 +12,8 @@ import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, task
 import { campLayout, campObstacles, campZone } from './campLayout.js';
 import { BUILDINGS, levelOf, STOCK_NAMES } from './buildingTypes.js';
 import { WeatherState } from './weather.js';
+import { pickName } from './names.js';
+import { FLAG_IDS, DEFAULT_FLAG } from '../flags.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
 // de acopio, recursos del entorno, edades y guardado. No dibuja nada ni toca la página:
@@ -65,11 +67,6 @@ const SPOT_KINDS = {
   stone: ['stone', 'flint'],
 };
 
-const NAMES = [
-  'Ana', 'Bruno', 'Carla', 'Diego', 'Elena', 'Facundo', 'Gala', 'Hugo', 'Inés', 'Joaquín',
-  'Lara', 'Mateo', 'Nora', 'Óscar', 'Paula', 'Quique', 'Rosa', 'Santiago', 'Tania', 'Ulises',
-  'Valeria', 'Walter', 'Ximena', 'Yago', 'Zoe', 'Lucía', 'Tomás', 'Mara', 'Iván', 'Olga',
-];
 // Ropa de pieles (Edad Primitiva): tonos de cuero y piel curtida.
 const SHIRTS = ['#8a5a34', '#a0764a', '#b8905a', '#7a5230', '#9a6a3e', '#c2a06a'];
 const PANTS = ['#5a3a22', '#6b4a2e', '#4a3220', '#7a5a3a'];
@@ -113,6 +110,7 @@ export class ColonySim {
     this.sproutTimer = 0;
     this.assignTimer = 0;
     this.clothesLeft = 0;
+    this.flag = DEFAULT_FLAG; // bandera del mástil (flags.js)
     this.layout = campLayout();
     this.campTemperature = 0.5;
     this.obstacles = campObstacles();
@@ -224,6 +222,7 @@ export class ColonySim {
     this.spots = [];
     this.clothesLeft = 0;
     this.age = 1;
+    this.flag = DEFAULT_FLAG;
     this.refreshObstacles();
     if (!camp) {
       this.camp = null;
@@ -258,9 +257,20 @@ export class ColonySim {
   // Colonos siempre iguales para un mismo campamento (misma semilla).
   createColonists() {
     const rand = seededRandom((this.camp.seed ?? 1) ^ 0x5bd1e995);
-    const names = [...NAMES];
+    // El sexo y el nombre salen de otro generador, para no mover los números al azar de
+    // los genes y rasgos (los colonos de colonias ya fundadas siguen siendo los mismos).
+    const idRand = seededRandom((this.camp.seed ?? 1) ^ 0x7f4a7c15);
+    const sexes = ['f', 'm', 'f', 'm', idRand() < 0.5 ? 'f' : 'm'].slice(0, START_COLONISTS);
+    for (let k = sexes.length - 1; k > 0; k--) {
+      const j = Math.floor(idRand() * (k + 1));
+      [sexes[k], sexes[j]] = [sexes[j], sexes[k]];
+    }
+    const taken = new Set();
     for (let i = 0; i < START_COLONISTS; i++) {
-      const name = names.splice(Math.floor(rand() * names.length), 1)[0];
+      rand(); // antes elegía el nombre de una lista: se sigue gastando ese número
+      const sex = sexes[i];
+      const name = pickName(1, sex, taken, idRand); // los que llegan al fundar son de la Edad Primitiva
+      taken.add(name);
       const profile = createProfile(rand);
       // Piel, pelo y estatura vienen de los genes; la ropa es elección personal.
       const body = appearanceFromGenes(profile.genome, profile.age);
@@ -278,6 +288,7 @@ export class ColonySim {
       const colonist = {
         id: i,
         name,
+        sex,
         ...profile,
         look,
         x: spot.x,
@@ -796,6 +807,16 @@ export class ColonySim {
     return this.layout.storage;
   }
 
+  // Cambiar la bandera del mástil (en el navegador se manda al servidor).
+  setFlag(id) {
+    if (typeof id !== 'string' || !FLAG_IDS.has(id) || !this.camp) return false;
+    if (this.remote) {
+      this.remote('setFlag', [id]);
+      return true;
+    }
+    return this.applyCommand('setFlag', [id]);
+  }
+
   // ---- Edades ---------------------------------------------------------------------------
 
   // Pasar a la edad siguiente si se cumplen los requisitos (edificios mejorados y la
@@ -1223,6 +1244,7 @@ export class ColonySim {
         gameTime: this.gameTime,
         age: this.age,
         clothesLeft: this.clothesLeft,
+        flag: this.flag,
         colonists: this.colonists.map((c) => ({
           id: c.id,
           needs: c.needs,
@@ -1321,6 +1343,13 @@ export class ColonySim {
       }
       case 'advanceAge':
         return this.advanceAge();
+      case 'setFlag': {
+        if (typeof args[0] !== 'string' || !FLAG_IDS.has(args[0])) return false;
+        this.flag = args[0];
+        this.emit('flag', this.flag);
+        this.emit('changed');
+        return true;
+      }
       case 'setZone': {
         const r = rect(args[0]);
         return !!r && this.setZone(r) === null;
@@ -1356,6 +1385,7 @@ export class ColonySim {
       gameTime: this.gameTime,
       age: this.age,
       clothesLeft: this.clothesLeft,
+      flag: this.flag,
       stock: this.stock,
       outdoor: this.outdoor,
       zones: this.zones,
@@ -1435,6 +1465,10 @@ export class ColonySim {
       this.emit('zones');
     }
     if (s.age !== this.age) this.setAge(s.age);
+    if (s.flag && s.flag !== this.flag) {
+      this.flag = s.flag;
+      this.emit('flag', this.flag);
+    }
     if (s.clothesLeft !== this.clothesLeft) {
       this.clothesLeft = s.clothesLeft;
       this.emit('clothes');
@@ -1517,6 +1551,7 @@ export class ColonySim {
     this.foodBatches = Array.isArray(data.foodBatches) ? data.foodBatches.filter((b) => b.amount > 0) : [];
     this.spoiled = data.spoiled || 0;
     this.setAge(Math.min(AGES.length, Math.max(1, data.age || 1)));
+    this.flag = FLAG_IDS.has(data.flag) ? data.flag : DEFAULT_FLAG;
     // Partidas anteriores a la ropa: queda una prenda por cada colono sin vestir.
     const naked = (data.colonists || []).filter((s) => !s.clothed).length;
     this.clothesLeft = Number.isFinite(data.clothesLeft) ? data.clothesLeft : naked;

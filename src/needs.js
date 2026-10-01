@@ -35,11 +35,11 @@ export const TRAITS = [
 ];
 
 const ORIGINS = [
-  'Creció en un pueblo de pescadores',
-  'Viene de una familia de pastores',
+  'Creció en un clan de pescadores',
+  'Viene de un grupo de cazadores nómadas',
   'Pasó su infancia en las montañas',
-  'Nació en una caravana de comerciantes',
-  'Se crió en una granja junto al río',
+  'Nació en un grupo que iba de valle en valle',
+  'Se crió junto al río',
   'Creció entre los bosques del norte',
   'Nació en una isla pequeña',
 ];
@@ -47,12 +47,12 @@ const ORIGINS = [
 const PASTS = [
   { text: 'se dedicaba a la caza', skills: { gathering: 1, hauling: 1 } },
   { text: 'trabajaba la madera', skills: { woodcutting: 3, building: 2 } },
-  { text: 'cuidaba cabras', skills: { gathering: 2, hauling: 1 } },
+  { text: 'seguía a las manadas de cabras salvajes', skills: { gathering: 2, hauling: 1 } },
   { text: 'recolectaba plantas medicinales', skills: { gathering: 3 } },
-  { text: 'hacía vasijas de barro', skills: { building: 1, hauling: 1 } },
+  { text: 'modelaba barro junto al fuego', skills: { building: 1, hauling: 1 } },
   { text: 'pescaba en el río', skills: { hauling: 3 } },
-  { text: 'era aprendiz en una herrería', skills: { mining: 3, building: 1 } },
-  { text: 'levantaba muros de piedra', skills: { building: 3, mining: 1 } },
+  { text: 'tallaba piedras y puntas de lanza', skills: { mining: 3, building: 1 } },
+  { text: 'apilaba piedras para levantar refugios', skills: { building: 3, mining: 1 } },
   { text: 'contaba historias junto al fuego', skills: {} },
 ];
 
@@ -83,10 +83,10 @@ function createSkills(genome, past, rand) {
 }
 const DREAMS = [
   'Sueña con ver crecer la colonia.',
-  'Quiere construir una casa de piedra.',
-  'Espera encontrar oro algún día.',
+  'Quiere levantar una casa que dure muchos inviernos.',
+  'Espera encontrar una piedra brillante algún día.',
   'Desea que nadie en la colonia pase hambre.',
-  'Le gustaría aprender a navegar.',
+  'Le gustaría cruzar el agua algún día.',
   'Busca un lugar tranquilo donde envejecer.',
 ];
 

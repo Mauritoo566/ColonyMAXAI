@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RADIUS, surfaceHeight, naturalSurfaceHeight, removeTerrainZone } from './elevation.js';
-import { buildCamp } from './camp.js';
+import { buildCamp, applyFlag } from './camp.js';
 import { buildingModel } from './buildings.js';
 import { ageInfo } from './ages.js';
 import { ColonySim } from './sim/colony.js';
@@ -43,7 +43,7 @@ export class OtherCamps {
       if (typeof p?.name !== 'string') continue;
       const camp = parseCamp(p.camp);
       const isMe = p.id === this.myId;
-      this.players.push({ id: p.id, name: p.name.slice(0, 20), online: !!p.online, camp, age: p.age | 0 || 1, population: p.population | 0, weather: typeof p.w === 'string' ? p.w : null, isMe });
+      this.players.push({ id: p.id, name: p.name.slice(0, 20), online: !!p.online, camp, age: p.age | 0 || 1, population: p.population | 0, weather: typeof p.w === 'string' ? p.w : null, flag: typeof p.flag === 'string' ? p.flag : null, isMe });
       if (isMe || !camp) continue;
       seen.add(p.id);
       this.upsert(p, camp);
@@ -74,6 +74,10 @@ export class OtherCamps {
       entry = { key, object, zone, dir: camp.dir, height: camp.height, label, buildingsKey: '', buildings: new THREE.Group(), sim, view, weather: new WeatherState(1) };
       object.add(entry.buildings);
       this.camps.set(p.id, entry);
+    }
+    if (entry.flag !== p.flag) {
+      entry.flag = p.flag;
+      applyFlag(entry.object, p.flag);
     }
     entry.label.querySelector('strong').textContent = p.name.slice(0, 20);
     entry.label.querySelector('small').textContent = ` · ${ageInfo(p.age | 0 || 1).name} · ${p.population | 0} colonos${p.online ? '' : ' · desconectado'}`;

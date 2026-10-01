@@ -22,6 +22,7 @@ import { requireLogin, logout } from './auth.js';
 import { setStorageUser } from './storage.js';
 import { GROVE_KEY, SPROUT_KEY } from './resourceGen.js';
 import { OtherCamps } from './world.js';
+import { FlagUI } from './flagUI.js';
 
 // Antes de nada: conectar con el servidor e iniciar sesión (o registrarse). El mundo vive
 // en el servidor: simula todas las colonias; este navegador las dibuja y le manda las
@@ -139,6 +140,15 @@ colony.on('resources', () => {
   resources.setExtraTile(GROVE_KEY, colony.groveTile);
   resources.setExtraTile(SPROUT_KEY, colony.sproutTile);
 });
+colony.on('flag', () => camps.setFlag(colony.flag));
+new FlagUI({
+  button: document.getElementById('flag-button'),
+  chip: document.getElementById('flag-chip'),
+  panel: document.getElementById('flag-panel'),
+  grid: document.getElementById('flag-grid'),
+  search: document.getElementById('flag-search'),
+  colony,
+});
 buildings.blockSelection = () => !!camps.placing || harvest.active;
 
 // Clima: el de la colonia (lo manda el servidor); sin campamento, uno inventado para el
@@ -154,6 +164,7 @@ net.on('hello', (m) => setTime(m.elapsed));
 net.on('time', (m) => setTime(m.elapsed));
 net.on('colony', (s) => {
   if (s.camp) {
+    camps.setFlag(s.flag ?? 'tribe');
     camps.showCamp(s.camp); // primero el modelo: nivela el terreno donde caminan los colonos
     if (!colony.camp || colony.camp.seed !== s.camp.seed) colony.setCamp(s.camp);
   }

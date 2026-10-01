@@ -132,10 +132,18 @@
       <button type="button" id="world-button" class="btn" hidden aria-expanded="false" aria-controls="world-panel" title="Jugadores de este mundo">
         <svg class="icon"><use href="#i-people" /></svg>Mundo <span class="world-count" id="world-count">1</span>
       </button>
+      <button type="button" id="flag-button" class="btn" hidden aria-expanded="false" aria-controls="flag-panel" title="Cambiar la bandera de la aldea">
+        <span class="flag-chip" id="flag-chip"></span>Bandera
+      </button>
       <button type="button" id="found-camp" class="btn btn--primary">Fundar campamento</button>
       <button type="button" id="go-camp" class="btn" hidden>Ir al campamento</button>
       <button type="button" id="cancel-camp" class="btn" hidden>Cancelar</button>
     </div>
+    <section id="flag-panel" class="panel flag-panel" hidden aria-label="Bandera de la aldea">
+      <p class="eyebrow">Bandera de la aldea</p>
+      <input type="search" id="flag-search" class="flag-search" placeholder="Buscar país…" autocomplete="off" />
+      <div class="flag-grid" id="flag-grid" role="listbox"></div>
+    </section>
     <div id="place-banner" class="panel place-banner" hidden>
       Elige un lugar en tierra firme y haz clic para fundar el campamento · Esc para cancelar
     </div>
