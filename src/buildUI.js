@@ -440,7 +440,7 @@ export class BuildUI {
     const colony = this.colony;
     const def = b.def;
     const skill = SKILLS.find((s) => s.id === def.skill);
-    const isStorage = !!def.levels[0].capacity;
+    const isStorage = typeof def.levels[0].capacity === 'object';
     const isHouse = def.levels[0].housing != null;
     const needed = colony.crewNeeded(b);
     const level = levelOf(b);

@@ -75,6 +75,13 @@ assert.equal(b.level, 2, 'las viviendas nuevas nacen con el aspecto de la edad')
 assert.equal(sim.upgradeProblem(b), 'Evoluciona sola al avanzar de edad');
 console.log('✓ edad II: mejoras pagadas, vivienda nueva más cara y con el aspecto de la edad');
 
+// Un pozo (cuya "capacity" es un número) no rompe la capacidad del almacén.
+const well = place(sim, 'well', 7);
+assert.ok(Number.isFinite(sim.capacity('food')));
+well.level = 2;
+assert.ok(Number.isFinite(sim.capacity('wood')));
+console.log('✓ capacidad del almacén con pozos');
+
 // Territorio: se amplía pagando, hasta lo que permite la edad (y sin administración, una vez).
 assert.equal(sim.territoryRadius, 85);
 assert.equal(sim.expansionBlocker, null);

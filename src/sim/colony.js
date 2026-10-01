@@ -801,8 +801,11 @@ export class ColonySim {
   capacity(kind) {
     let cap = CAMP_CAPACITY[kind] ?? CAMP_OTHER_CAPACITY;
     for (const b of this.buildings) {
-      if (!b.def.levels[0].capacity || (!b.done && !b.upgrading)) continue;
+      if (!b.done && !b.upgrading) continue;
       const lv = b.def.levels[b.level - 1];
+      // Los pozos también tienen "capacity" (un número: las jarras del recolector de lluvia); sólo
+      // cuentan los almacenes, cuya capacidad es una tabla por recurso.
+      if (!lv || typeof lv.capacity !== 'object') continue;
       cap += lv.capacity[kind] ?? lv.other ?? 0;
     }
     return cap;

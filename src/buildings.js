@@ -392,7 +392,7 @@ export class BuildingSystem {
   labelOf(b) {
     const lv = levelOf(b);
     const needed = this.sim.crewNeeded(b);
-    if (lv.capacity) return 'Almacén';
+    if (typeof lv.capacity === 'object') return 'Almacén';
     if (lv.housing != null) return `Vivienda · ${this.sim.colonists.filter((c) => c.home === b.id).length}/${lv.housing}`;
     if (needed) return b.workers.length === 0 ? 'Sin trabajador' : needed === 1 ? b.workers[0].name : `${b.workers.length}/${needed} trabajadores`;
     if (lv.defense) return `Defensa ${lv.defense}`;
