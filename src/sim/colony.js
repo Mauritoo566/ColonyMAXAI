@@ -861,6 +861,12 @@ export class ColonySim {
   // Camina hacia (tx, tz) esquivando obstáculos y a los demás colonos.
   // Devuelve 'arrived', 'moving' o 'stuck'.
   walk(c, tx0, tz0, dt, stopDistance = 0.6) {
+    // Con muros en medio se va por los portones (ruta por waypoints).
+    const wp = this.pathTarget(c, tx0, tz0);
+    if (wp && !(wp.x === tx0 && wp.z === tz0)) {
+      const r = this.walk(c, wp.x, wp.z, dt, 1.2);
+      return r === 'arrived' ? 'moving' : r;
+    }
     const tx = tx0 - c.x;
     const tz = tz0 - c.z;
     const dist = Math.hypot(tx, tz);
@@ -1703,6 +1709,156 @@ export class ColonySim {
     return { made };
   }
 
+  // ---- Portones y caminos alrededor de los muros ------------------------------------------------
+
+  // Coste de convertir un tramo de muro en portón: el doble de lo que cuesta el tramo.
+  gateCost(b) {
+    return Object.fromEntries(Object.entries(buildCostOf(b.def, this.age)).map(([k, n]) => [k, n * 2]));
+  }
+
+  gateProblem(b, on) {
+    if (!b?.def.line) return 'Sólo los tramos de muro pueden ser portón';
+    if (!b.done) return 'Espera a que termine la obra del tramo';
+    if (!on) return null;
+    if (b.gate) return 'Ya es un portón';
+    const cost = this.gateCost(b);
+    if (!this.canAfford(cost)) return `Faltan ${this.missing(cost).join(' y ')}`;
+    return null;
+  }
+
+  // Convertir un tramo en portón (se paga) o volver a muro (gratis). Los colonos atraviesan los portones.
+  setGate(b, on) {
+    on = !!on;
+    if (this.gateProblem(b, on)) return false;
+    if (b.gate === on) return true;
+    if (this.remote) {
+      this.remote('setGate', [b.id, on]);
+      return true;
+    }
+    if (on) for (const [k, n] of Object.entries(this.gateCost(b))) this.takeStock(k, n);
+    b.gate = on;
+    this.refreshObstacles();
+    this.emit('buildings');
+    this.emit('changed');
+    return true;
+  }
+
+  // Celdas de 2 m bloqueadas por muros (los portones no bloquean). Se reconstruye cuando cambian los edificios.
+  wallCells() {
+    if (this.wallCellsRev === this.wallRev) return this.wallCellSet;
+    const set = new Set();
+    for (const b of this.buildings) {
+      if (!b.def.line || b.gate) continue;
+      const r = b.def.footprint + 1.1;
+      for (let ix = Math.floor((b.x - r) / 2); ix <= Math.floor((b.x + r) / 2); ix++) {
+        for (let iz = Math.floor((b.z - r) / 2); iz <= Math.floor((b.z + r) / 2); iz++) {
+          if (Math.hypot(ix * 2 + 1 - b.x, iz * 2 + 1 - b.z) < r + 1) set.add(`${ix},${iz}`);
+        }
+      }
+    }
+    this.wallCellSet = set;
+    this.wallCellsRev = this.wallRev;
+    return set;
+  }
+
+  // ¿Hay un muro entre dos puntos en línea recta?
+  wallBetween(ax, az, bx, bz, cells = this.wallCells()) {
+    const len = Math.hypot(bx - ax, bz - az);
+    const n = Math.ceil(len / 1.2);
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      if (cells.has(`${Math.floor((ax + (bx - ax) * t) / 2)},${Math.floor((az + (bz - az) * t) / 2)}`)) return true;
+    }
+    return false;
+  }
+
+  // Ruta rodeando los muros (por los portones): A* en celdas de 2 m. Devuelve puntos [{x,z}] o null.
+  findWallPath(ax, az, bx, bz) {
+    const cells = this.wallCells();
+    const key = (ix, iz) => `${ix},${iz}`;
+    const free = (ix, iz) => !cells.has(key(ix, iz));
+    const nearestFree = (x, z) => {
+      const ix = Math.floor(x / 2);
+      const iz = Math.floor(z / 2);
+      if (free(ix, iz)) return [ix, iz];
+      for (let r = 1; r < 8; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) if (Math.max(Math.abs(dx), Math.abs(dz)) === r && free(ix + dx, iz + dz)) return [ix + dx, iz + dz];
+      return null;
+    };
+    const start = nearestFree(ax, az);
+    const goal = nearestFree(bx, bz);
+    if (!start || !goal) return null;
+    const limit = radiusOf(this) / 2 + 24;
+    const open = [[0, start[0], start[1]]];
+    const g = new Map([[key(...start), 0]]);
+    const from = new Map();
+    const h = (ix, iz) => Math.hypot(goal[0] - ix, goal[1] - iz);
+    let guard = 0;
+    while (open.length && guard++ < 8000) {
+      let best = 0;
+      for (let i = 1; i < open.length; i++) if (open[i][0] < open[best][0]) best = i;
+      const [, ix, iz] = open.splice(best, 1)[0];
+      if (ix === goal[0] && iz === goal[1]) {
+        const pts = [];
+        for (let k = key(ix, iz); k; k = from.get(k)) {
+          const [cx, cz] = k.split(',').map(Number);
+          pts.push({ x: cx * 2 + 1, z: cz * 2 + 1 });
+        }
+        pts.reverse();
+        // Quitar puntos intermedios con visión directa (rutas más naturales).
+        const out = [];
+        let at = { x: ax, z: az };
+        for (let i = 0; i < pts.length; i++) {
+          const next = pts[i + 1];
+          if (!next || this.wallBetween(at.x, at.z, next.x, next.z, cells)) {
+            out.push(pts[i]);
+            at = pts[i];
+          }
+        }
+        out.push({ x: bx, z: bz });
+        return out;
+      }
+      const gc = g.get(key(ix, iz));
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const nx = ix + dx;
+        const nz = iz + dz;
+        if (Math.abs(nx) > limit || Math.abs(nz) > limit || !free(nx, nz)) continue;
+        if (dx && dz && (!free(ix + dx, iz) || !free(ix, iz + dz))) continue; // sin cortar esquinas de muro
+        const cost = gc + (dx && dz ? 1.414 : 1);
+        const k = key(nx, nz);
+        if (cost < (g.get(k) ?? Infinity)) {
+          g.set(k, cost);
+          from.set(k, key(ix, iz));
+          open.push([cost + h(nx, nz), nx, nz]);
+        }
+      }
+    }
+    return null;
+  }
+
+  // Siguiente punto al que ir para llegar a (tx, tz) sin atravesar muros; null = ir en línea recta.
+  pathTarget(c, tx, tz) {
+    const cells = this.wallCells();
+    if (!cells.size) {
+      c.path = null;
+      return null;
+    }
+    let p = c.path;
+    if (p && (p.rev !== this.wallRev || Math.hypot(p.tx - tx, p.tz - tz) > 2.5)) p = c.path = null;
+    if (!p) {
+      if (!this.wallBetween(c.x, c.z, tx, tz, cells)) return null;
+      const pts = this.findWallPath(c.x, c.z, tx, tz);
+      if (!pts) return null;
+      p = c.path = { rev: this.wallRev, tx, tz, pts, i: 0 };
+    }
+    while (p.i < p.pts.length - 1 && Math.hypot(p.pts[p.i].x - c.x, p.pts[p.i].z - c.z) < 1.4) p.i++;
+    const pt = p.pts[p.i];
+    if (p.i >= p.pts.length - 1 && !this.wallBetween(c.x, c.z, tx, tz, cells)) {
+      c.path = null;
+      return null;
+    }
+    return pt;
+  }
+
   // Encargar un edificio: se paga y queda en obra. Devuelve el edificio o el problema.
   // yaw (opcional): hacia dónde mira el edificio (si no, mira al centro de la aldea).
   build(typeId, x, z, yaw = null) {
@@ -1715,7 +1871,9 @@ export class ColonySim {
       return { pending: true };
     }
     for (const [k, n] of Object.entries(buildCostOf(def, this.age))) this.takeStock(k, n);
-    const b = this.createBuilding(def, x, z, Number.isFinite(yaw) ? yaw : Math.atan2(-x, -z), 0, 0, buildLevelFor(def, this.age));
+    // Los muros no se giran a mano: un tramo suelto queda a lo largo del eje X (los trazados por línea traen su ángulo).
+    const facing = def.line ? 0 : Number.isFinite(yaw) ? yaw : Math.atan2(-x, -z);
+    const b = this.createBuilding(def, x, z, facing, 0, 0, buildLevelFor(def, this.age));
     this.emit('changed');
     return { building: b };
   }
@@ -1791,7 +1949,8 @@ export class ColonySim {
     }
     const old = { workers: [...b.workers], residents: this.colonists.filter((c) => c.home === b.id), orders: this.colonists.filter((c) => c.order?.kind === 'build' && c.order.building === b.id) };
     this.detachBuilding(b);
-    const nb = this.createBuilding(b.def, x, z, Number.isFinite(yaw) ? yaw : b.yaw, b.done ? 0 : b.progress, b.produced, b.level);
+    const nb = this.createBuilding(b.def, x, z, b.def.line ? b.yaw : Number.isFinite(yaw) ? yaw : b.yaw, b.done ? 0 : b.progress, b.produced, b.level);
+    nb.gate = b.gate;
     Object.assign(nb, { upgrading: b.upgrading, store: b.store, cycle: b.cycle, cycleActive: b.cycleActive, priority: b.priority, paused: b.paused, buildTime: b.buildTime });
     for (const w of old.workers) {
       w.job = nb;
@@ -1841,8 +2000,10 @@ export class ColonySim {
       upgrading: false,
       store: 0, // agua juntada por el recolector de lluvia
       get name() {
-        return this.def.levels[this.level - 1].name;
+        const n = this.def.levels[this.level - 1].name;
+        return this.gate ? `Portón (${n.toLowerCase()})` : n;
       },
+      gate: false, // un tramo de muro convertido en portón: se puede atravesar
       priority: 'normal', // prioridad de la obra (baja, normal, alta)
       paused: false, // obra pausada por el jugador
       workers: [], // la dotación (varios colonos en los edificios que lo piden)
@@ -2248,10 +2409,11 @@ export class ColonySim {
   }
 
   refreshObstacles() {
+    this.wallRev = (this.wallRev ?? 0) + 1;
     this.obstacles = [
       ...campObstacles(),
       ...(this.age >= 2 ? [{ x: TOTEM_SPOT.x, z: TOTEM_SPOT.z, r: 0.9, kind: 'prop' }] : []),
-      ...this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint, kind: 'building', line: !!b.def.line })),
+      ...this.buildings.filter((b) => !b.gate).map((b) => ({ x: b.x, z: b.z, r: b.def.footprint, kind: 'building', line: !!b.def.line })),
       // Objetos del centro que aparecen con la edad (no se pisan ni se construye encima).
       ...centerProps(this.age, this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint }))).map((p) => ({ x: p.x, z: p.z, r: p.r, kind: 'prop' })),
     ];
@@ -2333,6 +2495,7 @@ export class ColonySim {
         upgrading: b.upgrading,
         priority: b.priority,
         paused: b.paused,
+        gate: !!b.gate,
         store: b.store,
         worker: b.worker ? b.worker.id : null,
         workers: b.workers.map((w) => w.id),
@@ -2354,6 +2517,7 @@ export class ColonySim {
       b.store = s.store || 0;
       if (PRIORITY[s.priority]) b.priority = s.priority;
       b.paused = !!s.paused && !b.done;
+      b.gate = !!s.gate && !!def.line;
       b.cycle = Number.isFinite(s.cycle) ? s.cycle : 0;
       b.cycleActive = !!s.cycleActive;
       if (s.upgrading && levelOf(b, 1)) {
@@ -2439,6 +2603,10 @@ export class ColonySim {
         return typeof args[0] === 'string' && this.learn(args[0]);
       case 'discover':
         return this.discover();
+      case 'setGate': {
+        const b = this.building(args[0]);
+        return !!b && this.setGate(b, !!args[1]);
+      }
       case 'buildLine': {
         const [type, ax, az, bx, bz] = args;
         if (typeof type !== 'string' || [ax, az, bx, bz].some((v) => num(v, 500) === null)) return false;
@@ -2585,6 +2753,7 @@ export class ColonySim {
         pf: r2(b.pf),
         op: b.operating,
         prio: b.priority,
+        gate: !!b.gate,
         paused: b.paused,
         site: b.done ? undefined : siteStatus(this, b, this.nightNow),
         reason: b.reason,
@@ -2716,7 +2885,7 @@ export class ColonySim {
         b = this.createBuilding(def, row.x, row.z, row.yaw, row.done ? 1 : 0, row.produced, row.level, row.id);
         changed = true;
       }
-      if (b.done !== row.done || b.level !== row.level || b.upgrading !== row.upgrading) changed = true;
+      if (b.done !== row.done || b.level !== row.level || b.upgrading !== row.upgrading || !!b.gate !== !!row.gate) changed = true;
       Object.assign(b, {
         progress: row.progress,
         done: row.done,
@@ -2728,6 +2897,7 @@ export class ColonySim {
         status: row.status,
         cycle: row.cycle ?? 0,
         priority: row.prio ?? 'normal',
+        gate: !!row.gate,
         paused: !!row.paused,
         site: row.site ?? null,
         pf: row.pf ?? 1,

@@ -573,7 +573,7 @@ export class BuildUI {
     // Clave para no redibujar si nada cambió.
     const site = b.done ? null : colony.siteInfo(b);
     const siteKey = site ? [site.state, site.why, (site.ids ?? []).join(), (site.ordered ?? []).join(), b.priority, b.paused, colony.colonists.map((c) => (c.growth ?? 1) < 1 || c.soldier ? '' : c.id).join('.')].join('~') : '';
-    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, est?.lines[0], (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, b.gate, est?.lines[0], (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -738,9 +738,11 @@ export class BuildUI {
         <section class="cp-section">
           <h3>Estructura</h3>
           <div class="order-buttons">
+            ${def.line ? `<button type="button" class="btn" data-gate ${b.gate || colony.gateProblem(b, true) ? '' : ''}>${b.gate ? 'Volver a muro' : 'Convertir en portón'}</button>` : ''}
             <button type="button" class="btn" data-move>Mover</button>
             <button type="button" class="btn btn--danger" data-demolish>${this.confirmDemolish === b.id ? '¿Seguro? Pulsa otra vez' : 'Demoler'}</button>
           </div>
+          ${def.line ? `<p class="reason">${b.gate ? 'Es un portón: los colonos lo atraviesan; es la única salida de un recinto cerrado.' : `Un portón deja pasar a los colonos (cuesta ${Object.entries(colony.gateCost(b)).map(([k, n]) => `${n} ${STOCK_NAMES[k] ?? k}`).join(', ')}). ${colony.gateProblem(b, true) ?? ''}`}</p>` : ''}
           <p class="reason">Demoler devuelve ${escapeHtml(refundText)} (la mitad de lo gastado). Mover es gratis: pasa a otro lugar con su nivel, obra y dotación.</p>
         </section>
       </div>`;
@@ -749,6 +751,10 @@ export class BuildUI {
       if (who) paintAvatar(el, who.look);
     }
     this.panel.querySelector('[data-close]').addEventListener('click', () => this.buildings.select(null));
+    this.panel.querySelector('[data-gate]')?.addEventListener('click', () => {
+      if (!colony.setGate(b, !b.gate)) this.onNotice?.(colony.gateProblem(b, !b.gate) ?? 'No se pudo');
+      this.renderedFor = null;
+    });
     this.panel.querySelector('[data-move]')?.addEventListener('click', () => this.buildings.startMoving(b));
     this.panel.querySelector('[data-demolish]')?.addEventListener('click', () => {
       if (this.confirmDemolish !== b.id) {

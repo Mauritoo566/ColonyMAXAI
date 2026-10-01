@@ -586,6 +586,13 @@ function wall(p, tier) {
 }
 
 function gate(p, tier) {
+  if (tier <= 5) {
+    // Portón de empalizada: dos postes altos con travesaño y paso libre en medio.
+    for (const x of [-1.5, 1.5]) stick(p, v(x, 0, 0), v(x, 2.6, 0), 0.18, '#6b4a2e', 6);
+    box(p, 3.4, 0.2, 0.25, '#5a3a22', 0, 2.5, 0);
+    for (const x of [-1.15, 1.15]) stick(p, v(x, 0, 0), v(x, 1.8, 0), 0.09, '#7a5230', 5);
+    return;
+  }
   const stone = tier >= 9 ? '#9a9a96' : tier >= 8 ? '#b85a3e' : '#b4aea0';
   const h = 3.4;
   for (const x of [-1.5, 1.5]) {

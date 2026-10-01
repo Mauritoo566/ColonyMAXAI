@@ -123,7 +123,7 @@ export class BuildingSystem {
     window.addEventListener('keyup', (e) => (e.key === 'Shift' ? (this.shiftDown = false) : null));
     // R gira el edificio 90° al colocarlo o moverlo (Mayús + R, al revés).
     window.addEventListener('keydown', (e) => {
-      if ((e.key === 'r' || e.key === 'R') && this.placing && !e.ctrlKey && !e.metaKey && !/INPUT|TEXTAREA|SELECT/.test(e.target?.tagName ?? '')) {
+      if ((e.key === 'r' || e.key === 'R') && this.placing && !this.placing.line && !e.ctrlKey && !e.metaKey && !/INPUT|TEXTAREA|SELECT/.test(e.target?.tagName ?? '')) {
         this.turn = (this.turn + (e.shiftKey ? 3 : 1)) % 4;
         e.preventDefault();
       }
@@ -243,7 +243,8 @@ export class BuildingSystem {
     const gx = this.grid ? this.grid.snap(local.x) : local.x;
     const gz = this.grid ? this.grid.snap(local.z) : local.z;
     this.groundPoint = { x: gx, z: gz };
-    const yaw = Math.atan2(-gx, -gz) + this.turn * (Math.PI / 2);
+    // Los muros no se giran: conservan su orientación (o van a lo largo del eje X).
+    const yaw = (this.moving ?? this.placing).line ? (this.moving ? this.moving.yaw : 0) : Math.atan2(-gx, -gz) + this.turn * (Math.PI / 2);
     this.candidate = { x: gx, z: gz, yaw, problem: this.moving ? this.sim.moveProblem(this.moving, gx, gz) : this.sim.buildProblem(this.placing, gx, gz) };
   }
 
@@ -340,12 +341,13 @@ export class BuildingSystem {
         e = null;
       }
       if (!e) e = this.addEntry(b);
-      if (e.level !== b.level) {
+      if (e.level !== b.level || !!e.gate !== !!b.gate) {
+        e.gate = !!b.gate;
         // La mejora cambia el nivel, el nombre y el modelo.
         e.level = b.level;
         e.object.remove(e.model);
         e.model.geometry.dispose();
-        e.model = levelModel(levelOf(b).model);
+        e.model = levelModel(b.gate ? `gen:gate:${levelOf(b).age}` : levelOf(b).model);
         e.object.add(e.model);
         e.label.querySelector('.building-label-name').textContent = b.name;
       }
