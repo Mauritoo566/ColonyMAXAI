@@ -23,13 +23,14 @@ export class RoadSystem {
     this.raycaster = new THREE.Raycaster();
     this.ndc = new THREE.Vector2();
     this.tmp = new THREE.Vector3();
+    // Cada nivel es una malla de cintas que siguen el terreno (no cuadrados sueltos).
     this.geometry = new THREE.PlaneGeometry(ROAD_CELL * 0.98, ROAD_CELL * 0.98).rotateX(-Math.PI / 2);
-    this.meshes = ROAD_LEVELS.map((l) => {
-      const m = new THREE.InstancedMesh(this.geometry, new THREE.MeshStandardMaterial({ color: l.color, roughness: 1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }), MAX_CELLS);
-      m.count = 0;
-      m.frustumCulled = false;
-      this.group.add(m);
-      return m;
+    this.materials = ROAD_LEVELS.map((l) => new THREE.MeshStandardMaterial({ color: l.color, roughness: 1, vertexColors: true, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+    this.meshes = this.materials.map((m) => {
+      const mesh = new THREE.Mesh(new THREE.BufferGeometry(), m);
+      mesh.frustumCulled = false;
+      this.group.add(mesh);
+      return mesh;
     });
     this.preview = new THREE.InstancedMesh(this.geometry, new THREE.MeshBasicMaterial({ color: '#5fe08a', transparent: true, opacity: 0.55, depthWrite: false }), 120);
     this.preview.count = 0;
@@ -136,18 +137,61 @@ export class RoadSystem {
     this.group.quaternion.copy(camp.quaternion);
     if (!this.dirty) return;
     this.dirty = false;
-    const counts = this.meshes.map(() => 0);
-    for (const [key, lv] of this.colony.roads) {
-      const mesh = this.meshes[lv - 1];
-      const i = counts[lv - 1];
-      if (!mesh || i >= MAX_CELLS) continue;
+    const roads = this.colony.roads;
+    const lists = this.meshes.map(() => ({ pos: [], col: [], idx: [] }));
+    const base = camp.height;
+    const lift = 0.14;
+    const y = (x, z) => this.colony.heightAt(x, z) - base + lift;
+    const shade = (x, z) => 0.9 + 0.1 * Math.sin(x * 1.7 + z * 2.3); // leve variación de tono
+    const push = (L, x, z, tone) => {
+      L.pos.push(x, y(x, z), z);
+      L.col.push(tone, tone, tone);
+      return L.pos.length / 3 - 1;
+    };
+    const HALF = ROAD_CELL * 0.34; // el camino mide ~2,7 m de ancho
+    for (const [key, lv] of roads) {
+      const L = lists[lv - 1];
+      if (!L) continue;
       const [ix, iz] = key.split(',').map(Number);
-      this.place(mesh, i, ix, iz);
-      counts[lv - 1]++;
+      const cx = ix * ROAD_CELL;
+      const cz = iz * ROAD_CELL;
+      // Disco en la casilla (une los tramos y redondea los extremos).
+      const c = push(L, cx, cz, shade(cx, cz));
+      const ring = [];
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        ring.push(push(L, cx + Math.cos(a) * HALF, cz + Math.sin(a) * HALF, shade(cx + k, cz)));
+      }
+      for (let k = 0; k < 12; k++) L.idx.push(c, ring[(k + 1) % 12], ring[k]);
+      // Cintas hacia las casillas vecinas (cada pareja una sola vez).
+      for (const [dx, dz] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
+        if (!roads.has(`${ix + dx},${iz + dz}`)) continue;
+        const ex = (ix + dx) * ROAD_CELL;
+        const ez = (iz + dz) * ROAD_CELL;
+        const len = Math.hypot(ex - cx, ez - cz);
+        const nx = (-(ez - cz) / len) * HALF;
+        const nz = ((ex - cx) / len) * HALF;
+        const parts = Math.max(2, Math.ceil(len / 1.5));
+        let prev = null;
+        for (let t = 0; t <= parts; t++) {
+          const px = cx + ((ex - cx) * t) / parts;
+          const pz = cz + ((ez - cz) * t) / parts;
+          const left = push(L, px + nx, pz + nz, shade(px, pz));
+          const right = push(L, px - nx, pz - nz, shade(px, pz));
+          if (prev) L.idx.push(prev[0], left, prev[1], prev[1], left, right);
+          prev = [left, right];
+        }
+      }
     }
-    this.meshes.forEach((m, k) => {
-      m.count = counts[k];
-      m.instanceMatrix.needsUpdate = true;
+    this.meshes.forEach((mesh, k) => {
+      const L = lists[k];
+      const g = mesh.geometry;
+      g.setAttribute('position', new THREE.Float32BufferAttribute(L.pos, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(L.col, 3));
+      g.setIndex(L.idx);
+      // Normales hacia arriba: el camino se ilumina como el suelo, sea cual sea el sentido de los triángulos.
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(L.pos.map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+      mesh.material.side = THREE.DoubleSide;
     });
   }
 }
