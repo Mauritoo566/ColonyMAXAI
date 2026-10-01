@@ -536,8 +536,8 @@ add({
   footprint: 3.2,
   requires: [{ id: 'well', level: 3 }],
   levels: [
-    L(5, 'Acueducto', 'Arcos de sillares y un canal llevan agua desde lejos hasta una fuente de la aldea.', 'gen:well:5', { recipe: { in: {}, out: { water: 12 }, time: 60 } }),
-    L(9, 'Red de agua potable', 'Tuberías y depósito elevado: agua limpia para toda la ciudad.', 'gen:well:9', { recipe: { in: {}, out: { water: 40 }, time: 60 }, upgradeCost: { steel: 8, concrete: 14, machinery: 1 }, energy: 1 }),
+    L(5, 'Acueducto', 'Arcos de sillares y un canal llevan agua desde lejos hasta una fuente de la aldea.', 'gen:well:5', { recipe: { in: {}, out: { water: 12 }, time: 60 }, population: 40 }),
+    L(9, 'Red de agua potable', 'Tuberías y depósito elevado: agua limpia para toda la ciudad.', 'gen:well:9', { recipe: { in: {}, out: { water: 40 }, time: 60 }, population: 140, upgradeCost: { steel: 8, concrete: 14, machinery: 1 }, energy: 1 }),
   ],
 });
 

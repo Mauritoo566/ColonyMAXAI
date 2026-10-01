@@ -15,7 +15,7 @@ const STOCK_NAMES = GOOD_NAMES;
 import { WeatherState } from './weather.js';
 import { pickName } from './names.js';
 import { FLAG_IDS, DEFAULT_FLAG } from '../flags.js';
-import { updateFamily, assignHomes, maxPopulation, growthBlocker } from './family.js';
+import { updateFamily, updateImmigration, immigrationBlocker, assignHomes, maxPopulation, growthBlocker } from './family.js';
 import { buildBlocker, upgradeBlocker, evolveHouses, buildCostOf, buildLevelFor, limitsFor, radiusOf, expansionBlocker, expansionCost, EXPANSION_STEP } from './progression.js';
 import { GOOD_NAMES } from './goods.js';
 import { centerProps } from './centerLayout.js';
@@ -116,6 +116,9 @@ export class ColonySim {
     this.sproutTimer = 0;
     this.assignTimer = 0;
     this.clothesLeft = 0;
+    this.flow = { in: {}, out: {} }; // lo que entra y sale del almacén en el tramo actual
+    this.flowBuckets = []; // los últimos tramos (para producción y consumo por día)
+    this.flowTimer = 0;
     this.produced = {}; // bienes producidos en toda la partida (requisitos de las edades)
     this.techs = new Set(); // tecnologías investigadas
     this.expansions = 0; // ampliaciones de territorio compradas
@@ -173,6 +176,7 @@ export class ColonySim {
   update(delta, { timeScale = 1, isNight = false, timeLabel = () => '', absent = false, maxSteps = MAX_STEPS_PER_UPDATE } = {}) {
     if (!this.camp) return;
     this.timeLabel = timeLabel;
+    this.absent = absent;
     // Todo sigue la velocidad del tiempo (pausa = quietos), en pasos cortos.
     const gameDt = delta * timeScale;
     if (gameDt <= 0) return;
@@ -184,6 +188,11 @@ export class ColonySim {
     this.updateSpoilage();
     this.updateBuildings(gameDt, rain);
     updateFamily(this, gameDt, time);
+    updateImmigration(this, gameDt, time);
+    this.rollFlows(gameDt);
+    // Desde la Edad del Bronce vivir sin casa pesa en el ánimo; la molestia entra poco a poco
+    // en los dos días siguientes a cada cambio de edad para que no sea una crisis de golpe.
+    const homeless = this.age >= 3 ? Math.min(1, Math.max(0, (this.gameTime - this.ageChangedAt) / (2 * DAY_LENGTH_SECONDS))) : 0;
     let simTime = gameDt;
     let steps = 0;
     while (simTime > 1e-4 && steps++ < maxSteps) {
@@ -204,6 +213,7 @@ export class ColonySim {
           walking: c.walking,
           time,
           absent,
+          homeless: c.home == null && (c.growth ?? 1) >= 1 ? homeless : 0,
         });
         this.step(c, dt, env);
       }
@@ -236,6 +246,9 @@ export class ColonySim {
     this.spots = [];
     this.clothesLeft = 0;
     this.age = 1;
+    this.flow = { in: {}, out: {} };
+    this.flowBuckets = [];
+    this.flowTimer = 0;
     this.produced = {};
     this.techs = new Set();
     this.expansions = 0;
@@ -332,6 +345,7 @@ export class ColonySim {
         pregnant: null,
         home: null,
         born: null,
+        arrived: null,
         inside: false,
         loving: false,
         invite: null,
@@ -359,6 +373,7 @@ export class ColonySim {
       bio: st.bio,
       look: st.look,
       born: st.born ?? null,
+      arrived: st.arrived ?? null,
       age: dyn.age ?? (growth < 1 ? Math.round(growth * 17) : 18),
       job: null,
       needs: { ...dyn.needs },
@@ -395,7 +410,7 @@ export class ColonySim {
 
   // Lo que no cambia de un colono que nació en la colonia (los fundadores salen de la semilla).
   staticOf(c) {
-    return { id: c.id, name: c.name, sex: c.sex, genome: c.genome, traits: c.traits.map((t) => t.id), skills: c.skills, bio: c.bio, look: c.look, born: c.born };
+    return { id: c.id, name: c.name, sex: c.sex, genome: c.genome, traits: c.traits.map((t) => t.id), skills: c.skills, bio: c.bio, look: c.look, born: c.born, arrived: c.arrived ?? null };
   }
 
   // Máximo de colonos que admite la colonia ahora (10 del campamento + viviendas).
@@ -805,11 +820,36 @@ export class ColonySim {
     return inside + outside;
   }
 
+  // Cada doceava parte del día se guarda lo que entró y salió del almacén; así se calcula la
+  // producción y el consumo por día de forma estable.
+  rollFlows(dt) {
+    this.flowTimer += dt;
+    const bucket = DAY_LENGTH_SECONDS / 12;
+    while (this.flowTimer >= bucket) {
+      this.flowTimer -= bucket;
+      this.flowBuckets.push(this.flow);
+      this.flow = { in: {}, out: {} };
+      if (this.flowBuckets.length > 12) this.flowBuckets.shift();
+    }
+  }
+
+  // Producción y consumo por día: { in: { bien: n }, out: { bien: n } }.
+  flowRates() {
+    const buckets = this.flowBuckets;
+    const out = { in: {}, out: {} };
+    if (!buckets.length) return out;
+    const scale = 12 / buckets.length;
+    for (const b of buckets) for (const side of ['in', 'out']) for (const [k, v] of Object.entries(b[side])) out[side][k] = (out[side][k] ?? 0) + v * scale;
+    for (const side of ['in', 'out']) for (const k of Object.keys(out[side])) out[side][k] = Math.round(out[side][k] * 10) / 10;
+    return out;
+  }
+
   // Guarda lo producido por un edificio o una tarea y lo anota en los totales de la partida
   // (las edades piden haber producido ciertos bienes; lo comprado no cuenta).
   produce(kind, amount) {
     const added = this.addStock(kind, amount);
     this.produced[kind] = (this.produced[kind] ?? 0) + added;
+    this.flow.in[kind] = (this.flow.in[kind] ?? 0) + added;
     return added;
   }
 
@@ -817,6 +857,7 @@ export class ColonySim {
   takeStock(kind, amount) {
     const n = Math.min(amount, this.stock[kind] ?? 0);
     this.stock[kind] -= n;
+    this.flow.out[kind] = (this.flow.out[kind] ?? 0) + n;
     this.removeOutdoor(kind, Math.min(n, this.outdoor[kind] ?? 0));
     return n;
   }
@@ -1000,9 +1041,14 @@ export class ColonySim {
     return buildBlocker(this, def);
   }
 
-  // Por qué no crece la población (sin plazas o sin reservas), o null.
+  // Por qué no crece la población (sin plazas, reservas o servicios), o null.
   get growthBlocker() {
     return growthBlocker(this);
+  }
+
+  // Por qué no llega gente nueva a la aldea, o null.
+  get immigrationBlocker() {
+    return immigrationBlocker(this);
   }
 
   get ageInfo() {
@@ -1474,7 +1520,7 @@ export class ColonySim {
           pregnant: c.pregnant,
           home: c.home,
           age: c.age,
-          static: c.born ? this.staticOf(c) : undefined, // los nacidos aquí no salen de la semilla
+          static: c.id >= START_COLONISTS ? this.staticOf(c) : undefined, // los nacidos o llegados no salen de la semilla
         })),
         regrowing: this.spots.filter((s) => s.readyAt > this.gameTime).map((s) => [s.key, s.index, s.readyAt]),
         removed: this.serializeRemoved(),
@@ -1625,8 +1671,11 @@ export class ColonySim {
       techs: [...this.techs],
       expansions: this.expansions,
       ageChangedAt: this.ageChangedAt,
+      flows: this.flowRates(),
+      growthBlocker: this.growthBlocker,
+      immigrationBlocker: this.immigrationBlocker,
       maxPopulation: this.maxPopulation,
-      born: statics ? this.colonists.filter((c) => c.born).map((c) => ({ ...this.staticOf(c), x: r2(c.x), z: r2(c.z) })) : undefined,
+      born: statics ? this.colonists.filter((c) => c.id >= START_COLONISTS).map((c) => ({ ...this.staticOf(c), x: r2(c.x), z: r2(c.z) })) : undefined,
       stock: this.stock,
       outdoor: this.outdoor,
       zones: this.zones,
@@ -1732,6 +1781,9 @@ export class ColonySim {
     }
     if (s.age !== this.age) this.setAge(s.age);
     if (s.produced) this.produced = { ...s.produced };
+    if (s.flows) this.flowsView = s.flows;
+    this.growthBlockerView = s.growthBlocker ?? null;
+    this.immigrationBlockerView = s.immigrationBlocker ?? null;
     if (s.techs) this.techs = new Set(s.techs);
     if (Number.isInteger(s.expansions) && s.expansions !== this.expansions) {
       this.expansions = s.expansions;

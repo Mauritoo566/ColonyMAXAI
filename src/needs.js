@@ -236,6 +236,8 @@ export function updateNeeds(c, env) {
   const others = (n.food + n.water + n.rest + n.warmth) / 4;
   let moodTarget = 25 + others * 0.6 + (hasTrait(c, 'optimist') ? 12 : 0) - (hasTrait(c, 'pessimist') ? 12 : 0);
   if (env.companion) moodTarget += hasTrait(c, 'loner') ? -5 : hasTrait(c, 'sociable') ? 25 : 12;
+  // Sin casa propia (desde la Edad del Bronce) el ánimo baja; la molestia entra de a poco.
+  moodTarget -= 14 * (env.homeless ?? 0);
   moodTarget = clamp(moodTarget);
   const moodRate = 100 / (0.8 * DAY);
   n.mood += Math.sign(moodTarget - n.mood) * Math.min(Math.abs(moodTarget - n.mood), moodRate * dt);

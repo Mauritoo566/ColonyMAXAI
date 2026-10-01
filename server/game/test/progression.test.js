@@ -75,6 +75,17 @@ assert.equal(b.level, 2, 'las viviendas nuevas nacen con el aspecto de la edad')
 assert.equal(sim.upgradeProblem(b), 'Evoluciona sola al avanzar de edad');
 console.log('✓ edad II: mejoras pagadas, vivienda nueva más cara y con el aspecto de la edad');
 
+// Territorio: se amplía pagando, hasta lo que permite la edad (y sin administración, una vez).
+assert.equal(sim.territoryRadius, 85);
+assert.equal(sim.expansionBlocker, null);
+const woodBefore2 = sim.stock.wood;
+assert.equal(sim.expandTerritory(), true);
+assert.equal(sim.territoryRadius, 97);
+assert.ok(woodBefore2 - sim.stock.wood > 0, 'la ampliación se paga');
+assert.match(sim.expansionBlocker, /Límite de la Edad de Piedra|administración/);
+assert.equal(sim.expandTerritory(), false);
+console.log('✓ ampliar territorio: se paga y respeta el tope de la edad');
+
 // Crecimiento: sin reservas no hay población nueva aunque haya plazas.
 sim.stock.food = 1;
 assert.match(growthBlocker(sim), /reservas de comida/);

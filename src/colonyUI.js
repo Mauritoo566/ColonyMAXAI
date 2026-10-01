@@ -116,7 +116,8 @@ export class ColonyUI {
       this.panel.hidden = true;
       return;
     }
-    if (this.rosterFor !== this.colony.colonists || this.rosterCount !== this.colony.colonists.length) this.buildRoster();
+    const groups = this.colony.colonists.map((c) => `${c.id}:${this.tradeOf(c)}`).join();
+    if (this.rosterFor !== this.colony.colonists || this.rosterCount !== this.colony.colonists.length || this.rosterGroups !== groups) this.buildRoster(groups);
 
     const popText = `${this.colony.count}/${this.colony.maxPopulation}`;
     if (this.count.textContent !== popText) this.count.textContent = popText;
@@ -137,12 +138,36 @@ export class ColonyUI {
 
   // ---- Lista de colonos ----------------------------------------------------
 
-  buildRoster() {
+  // Oficio con el que se agrupa a un colono en la lista.
+  tradeOf(c) {
+    if ((c.growth ?? 1) < 1) return 'Niños';
+    if (c.soldier) return 'Ejército';
+    return c.job?.def?.job ?? 'Sin trabajo';
+  }
+
+  buildRoster(groups = '') {
     this.rosterFor = this.colony.colonists;
     this.rosterCount = this.colony.colonists.length;
+    this.rosterGroups = groups;
     this.roster.innerHTML = '';
     this.rows = new Map();
+    // Agrupados por oficio (con muchos colonos se sigue entendiendo quién hace qué).
+    const grouped = new Map();
     for (const c of this.colony.colonists) {
+      const key = this.tradeOf(c);
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(c);
+    }
+    const order = [...grouped.keys()].sort((a, b) => (a === 'Sin trabajo') - (b === 'Sin trabajo') || (a === 'Niños') - (b === 'Niños') || a.localeCompare(b));
+    const list = order.flatMap((k) => (grouped.size > 1 ? [{ header: k, n: grouped.get(k).length }] : []).concat(grouped.get(k)));
+    for (const c of list) {
+      if (c.header) {
+        const h = document.createElement('li');
+        h.className = 'roster-group';
+        h.textContent = `${c.header} (${c.n})`;
+        this.roster.appendChild(h);
+        continue;
+      }
       const li = document.createElement('li');
       li.innerHTML = `
         <button type="button" class="roster-item">

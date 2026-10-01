@@ -23,6 +23,7 @@ import { setStorageUser } from './storage.js';
 import { GROVE_KEY, SPROUT_KEY } from './resourceGen.js';
 import { OtherCamps } from './world.js';
 import { FlagUI } from './flagUI.js';
+import { VillageUI } from './villageUI.js';
 import { ensureIcons } from './icons.js';
 
 ensureIcons();
@@ -149,6 +150,7 @@ colony.on('resources', () => {
   resources.setExtraTile(GROVE_KEY, colony.groveTile);
   resources.setExtraTile(SPROUT_KEY, colony.sproutTile);
 });
+const villageUI = new VillageUI({ colony, button: document.getElementById('village-button'), panel: document.getElementById('village-panel') });
 colony.on('flag', () => camps.setFlag(colony.flag));
 new FlagUI({
   button: document.getElementById('flag-button'),
@@ -512,6 +514,7 @@ renderer.setAnimationLoop(() => {
   colonyUI.update(delta);
   buildUI.update(delta);
   ageUI.update(delta);
+  villageUI.update(delta);
   harvest.update(waterUniforms.uTime.value, delta);
   others.update(delta);
   viewTimer -= delta;

@@ -2490,3 +2490,33 @@ canvas.is-harvesting {
 .benefits li::marker {
   color: var(--accent, #f2b24c);
 }
+
+/* ---- Resumen general de la aldea ---------------------------------------------- */
+
+.village-panel {
+  position: fixed;
+  top: calc(60px + var(--safe-top));
+  right: var(--gap);
+  width: min(380px, calc(100vw - 2 * var(--gap)));
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 12px 14px;
+}
+
+.village-panel[hidden] {
+  display: none;
+}
+
+.village-body {
+  display: grid;
+  gap: 4px;
+}
+
+.roster-group {
+  margin: 8px 4px 2px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ui-faint, #9aa3a8);
+}

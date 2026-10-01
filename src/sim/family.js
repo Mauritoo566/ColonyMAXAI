@@ -8,7 +8,7 @@
 import { DAY_LENGTH_SECONDS } from '../daynight.js';
 import { levelOf } from './buildingTypes.js';
 import { BASE_POPULATION, limitsFor } from './progression.js';
-import { createChildProfile, wellbeing, hasTrait, addLog } from '../needs.js';
+import { createChildProfile, createProfile, wellbeing, hasTrait, addLog } from '../needs.js';
 import { appearanceFromGenes } from '../genes.js';
 import { pickName } from './names.js';
 
@@ -46,15 +46,48 @@ export function pregnantCount(colony) {
 // Reservas que hacen falta por colono para que la aldea crezca (comida y agua).
 const SUPPLY_PER_COLONIST = 1.2;
 
-// Qué impide que la población crezca (texto) o null: plazas libres y abastecimiento.
+// Servicios que hacen falta para que una población grande siga creciendo: a partir de cierto
+// número de habitantes (y sólo cuando la edad ya tiene ese servicio) cada servicio debe cubrir a
+// todos. No hay castigo si faltan: simplemente la aldea no crece más hasta construirlos.
+export const SERVICE_RULES = [
+  { id: 'water_works', from: 20, age: 5, text: 'agua canalizada (un acueducto)' },
+  { id: 'admin', from: 25, age: 5, text: 'administración (una casa del consejo)' },
+  { id: 'hospital', from: 45, age: 9, text: 'un hospital' },
+  { id: 'school', from: 60, age: 9, text: 'una escuela' },
+];
+
+// Habitantes que cubren los edificios de un servicio (la suma de su capacidad).
+export function serviceCoverage(colony, id) {
+  let n = 0;
+  for (const b of colony.buildings) if (b.def.id === id && b.done) n += levelOf(b).population ?? 0;
+  return n;
+}
+
+// Qué servicio falta para una población "n" (texto) o null.
+export function serviceBlocker(colony, n) {
+  for (const r of SERVICE_RULES) {
+    if (colony.age < r.age || n < r.from) continue;
+    if (!defExists(r.id)) continue;
+    if (serviceCoverage(colony, r.id) < n) return `Faltan servicios para ${n} habitantes: ${r.text}`;
+  }
+  return null;
+}
+
+import { BUILDINGS } from './buildingTypes.js';
+const defExists = (id) => !!BUILDINGS[id];
+
+// Qué impide que la población crezca (texto) o null: plazas libres, abastecimiento y servicios.
 export function growthBlocker(colony) {
   const n = colony.colonists.length + pregnantCount(colony);
-  if (maxPopulation(colony) - n <= 0) return 'Sin plazas: construye más viviendas';
+  if (maxPopulation(colony) - n <= 0) return n >= limitsFor(colony.age).popCap ? `Límite de población de la ${ageName(colony.age)}: ${limitsFor(colony.age).popCap}` : 'Sin plazas: construye más viviendas';
   const need = Math.ceil(n * SUPPLY_PER_COLONIST);
   if ((colony.stock.food ?? 0) < need) return `Faltan reservas de comida (${Math.floor(colony.stock.food ?? 0)}/${need})`;
   if ((colony.stock.water ?? 0) < need) return `Faltan reservas de agua (${Math.floor(colony.stock.water ?? 0)}/${need})`;
-  return null;
+  return serviceBlocker(colony, n + 1);
 }
+
+import { ageInfo } from '../ages.js';
+const ageName = (age) => ageInfo(age).name;
 
 // Cuántos más caben (contando los que vienen en camino); 0 si no hay con qué mantenerlos.
 export function populationRoom(colony) {
@@ -360,4 +393,67 @@ export function giveBirth(colony, mother, time) {
   colony.emit('notice', `Nació ${name}, ${sex === 'f' ? 'hija' : 'hijo'} de ${mother.name}`);
   colony.emit('changed');
   return child;
+}
+
+
+// ---- Llegada de colonos --------------------------------------------------------------------------
+// Con plazas libres, reservas y colonos contentos, de vez en cuando llega alguien nuevo atraído
+// por la aldea. No es instantáneo ni infinito: como mucho uno por día (con probabilidad) y sólo
+// mientras el dueño está conectado.
+
+export const IMMIGRATION_EVERY = DAY;
+
+// Por qué no llega nadie (texto) o null.
+export function immigrationBlocker(colony) {
+  const block = growthBlocker(colony);
+  if (block) return block;
+  const n = colony.colonists.length + 1;
+  const need = Math.ceil(n * 2);
+  if ((colony.stock.food ?? 0) < need || (colony.stock.water ?? 0) < need) return `Para atraer gente hacen falta reservas holgadas (${need} de comida y de agua)`;
+  const summary = colony.summary();
+  if (!summary || summary.wellbeing < 62) return 'Los colonos están descontentos: nadie quiere venir';
+  return null;
+}
+
+const SHIRTS_IN = ['#8a5a34', '#a0764a', '#b8905a', '#7a5230', '#9a6a3e', '#c2a06a'];
+const PANTS_IN = ['#5a3a22', '#6b4a2e', '#4a3220', '#7a5a3a'];
+
+export function updateImmigration(colony, dt, time) {
+  colony.immigrationTimer = (colony.immigrationTimer ?? IMMIGRATION_EVERY) - dt;
+  if (colony.immigrationTimer > 0) return;
+  colony.immigrationTimer = IMMIGRATION_EVERY;
+  if (colony.absent || immigrationBlocker(colony)) return;
+  const happy = colony.summary().wellbeing >= 75;
+  if (colony.birthRand() > (happy ? 0.6 : 0.3)) return;
+  arrive(colony, time);
+}
+
+export function arrive(colony, time) {
+  const rand = colony.birthRand;
+  const sex = rand() < 0.5 ? 'f' : 'm';
+  const taken = new Set(colony.colonists.map((o) => o.name));
+  const name = pickName(colony.age, sex, taken, rand);
+  const profile = createProfile(rand);
+  const body = appearanceFromGenes(profile.genome, profile.age);
+  const look = {
+    skin: body.skin,
+    hair: body.hair,
+    shirt: SHIRTS_IN[Math.floor(rand() * SHIRTS_IN.length)],
+    pants: PANTS_IN[Math.floor(rand() * PANTS_IN.length)],
+    longHair: rand() < (sex === 'f' ? 0.7 : 0.3),
+    height: body.height,
+  };
+  const a = rand() * Math.PI * 2;
+  const spot = colony.freeSpot(Math.cos(a) * 26, Math.sin(a) * 26);
+  const colonist = colony.makeColonist(
+    { id: colony.nextColonistId++, name, sex, genome: profile.genome, traits: profile.traits, skills: profile.skills, bio: profile.bio, look, arrived: { time: colony.gameTime, day: time } },
+    { needs: profile.needs, health: 100, log: [], flags: {}, growth: 1, age: profile.age, x: spot.x, z: spot.z, clothed: colony.age >= 2, desire: 15, mate: null, home: null },
+  );
+  addLog(colonist, time, 'Llegó a la aldea buscando un lugar donde vivir');
+  colony.colonists.push(colonist);
+  colony.staticsRevision++;
+  colony.emit('colonists');
+  colony.emit('notice', `${name} llegó a la aldea`);
+  colony.emit('changed');
+  return colonist;
 }

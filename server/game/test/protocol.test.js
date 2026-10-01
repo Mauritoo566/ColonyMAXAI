@@ -126,6 +126,8 @@ try {
   // Y no se puede avanzar de edad sin cumplir los requisitos.
   ana.send({ t: 'cmd', name: 'advanceAge', args: [] });
   assert.equal((await ana.wait('error')).message, 'No se pudo hacer eso ahora.');
+  ana.send({ t: 'cmd', name: 'expandTerritory', args: [] });
+  assert.equal((await ana.wait('error')).message, 'No se pudo hacer eso ahora.');
   console.log('✓ población 5/10; el servidor rechaza vivienda sin leñador, mejora y edad sin requisitos');
 
   // Posiciones varias veces por segundo.
