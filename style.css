@@ -2698,3 +2698,5 @@ canvas.is-harvesting {
 .harvest-info em { color: var(--bad, #e5645a); font-style: normal; }
 .harvest-workers, .harvest-legend { margin: 6px 0 0; font-size: 11px; opacity: 0.8; }
 .build-rotate-hint { color: var(--accent); margin-top: 2px; }
+.estimate { margin-top: 8px; padding: 8px 10px; border: 1px dashed var(--ui-line); border-radius: 8px; display: grid; gap: 3px; }
+.estimate-note { font-size: 11px; opacity: 0.7; }

@@ -5,6 +5,7 @@ import { tradeQuota, tradeValue } from './sim/economy.js';
 import { defImplemented, minAgeOf, levelBenefits } from './sim/progression.js';
 import { ageInfo } from './ages.js';
 import { PRIORITY_NAMES } from './ai.js';
+import { productionEstimate, estimateLine } from './sim/estimates.js';
 import { FOOD_SPOIL_SECONDS, zoneCapacity } from './sim/colony.js';
 import { storageKey } from './storage.js';
 import { DAY_LENGTH_SECONDS } from './daynight.js';
@@ -176,7 +177,7 @@ export class BuildUI {
       const level = def.levels[Math.min(def.levels.length, def.autoLevel ? this.colony.age : 1) - 1];
       const cost = Object.entries(this.colony.costOf(def)).map(([k, n]) => `${n} ${STOCK_NAMES[k]}`).join(', ') || 'gratis';
       this.detail.hidden = false;
-      this.detail.innerHTML = `<strong>${escapeHtml(def.autoLevel ? level.name : def.name)}</strong> · ${escapeHtml(def.autoLevel ? level.desc : def.desc)} <em>Cuesta ${cost}.</em>${button.dataset.problem ? ` <span class="build-detail-problem">${escapeHtml(button.dataset.problem)}</span>` : ''}`;
+      this.detail.innerHTML = `<strong>${escapeHtml(def.autoLevel ? level.name : def.name)}</strong> · ${escapeHtml(def.autoLevel ? level.desc : def.desc)} <em>Cuesta ${cost}.</em>${estimateLine(this.colony, def, 1) ? ` <em>Producción ${estimateLine(this.colony, def, 1)}.</em>` : ''}${button.dataset.problem ? ` <span class="build-detail-problem">${escapeHtml(button.dataset.problem)}</span>` : ''}`;
     };
     this.list.addEventListener('pointerover', (e) => showDetail(e.target.closest('[data-build]')));
     this.list.addEventListener('focusin', (e) => showDetail(e.target.closest('[data-build]')));
@@ -564,10 +565,11 @@ export class BuildUI {
     const ranking = needed ? this.buildings.ranking(b).filter((c) => colony.available(c)) : [];
     const upgradeProblem = this.buildings.upgradeProblem(b);
     const stored = level.rainOnly ? Math.floor(b.store) : null;
+    const est = b.done && !b.upgrading ? productionEstimate(colony, b) : null;
     // Clave para no redibujar si nada cambió.
     const site = b.done ? null : colony.siteInfo(b);
     const siteKey = site ? [site.state, site.why, (site.ids ?? []).join(), (site.ordered ?? []).join(), b.priority, b.paused, colony.colonists.map((c) => (c.growth ?? 1) < 1 || c.soldier ? '' : c.id).join('.')].join('~') : '';
-    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, est?.lines[0], (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -581,6 +583,9 @@ export class BuildUI {
           : outGood
             ? `${Math.floor(b.produced)} de ${STOCK_NAMES[outGood]}`
             : `${Math.floor(b.produced)}`;
+    const estimateHtml = est
+      ? `<div class="estimate"><strong>Producción estimada</strong>${est.lines.map((l) => `<p class="reason">${escapeHtml(l)}</p>`).join('')}<p class="reason estimate-note">Es una orientación: los colonos también comen, duermen y se desplazan.</p></div>`
+      : '';
     const recipeHtml = level.recipe
       ? `<div class="stat-line"><span>Receta</span><strong>${Object.entries(level.recipe.in ?? {}).map(([k, n]) => `${n} ${STOCK_NAMES[k]}`).join(' + ') || 'sin materiales'} → ${Object.entries(level.recipe.out ?? {}).map(([k, n]) => `${n} ${STOCK_NAMES[k]}`).join(' + ') || 'energía'} · ${level.recipe.time} s</strong></div>`
       : '';
@@ -606,6 +611,7 @@ export class BuildUI {
         <section class="cp-section">
           <h3>Producción</h3>
           ${recipeHtml}
+          ${estimateHtml}
           ${b.cycle != null && level.recipe ? `<div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.cycle * 100)}%"></i></div>` : ''}
           <div class="stat-line"><span>Ha producido</span><strong>${produced}</strong></div>
           ${stored !== null ? (() => {
