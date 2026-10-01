@@ -23,6 +23,7 @@ import { generateDeposits, depositAt, updateProduction, updatePower, applyHospit
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
+import { MOB_TYPES, spawnMobs, updateMobs, mobThreat } from './mobs.js';
 import { remainingOf, waterHint, DEW_RATE, RAIN_RATE, PRIMITIVE_STOCK, PRIMITIVE_COLLECTOR_WATER, DISCOVERY, LEARNABLE, shelterInfo, populationInfo, waterReport, foodReport, alertsOf, discoveryProblem, resourceHelp, harvestBlocker } from './primitive.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
@@ -176,6 +177,7 @@ export class ColonySim {
     this.flow = { in: {}, out: {} }; // lo que entra y sale del almacén en el tramo actual
     this.flowBuckets = []; // los últimos tramos (para producción y consumo por día)
     this.flowTimer = 0;
+    this.mobs = []; // animales del mundo cerca de la aldea (el servidor los simula)
     this.primitiveMigrated = false; // ya tiene lo básico del nuevo inicio de Primitiva
     this.milestones = new Set(); // hitos conseguidos (p. ej. la primera herramienta de piedra)
     this.learned = new Set(); // acciones que el jugador ya aprendió (la guía las reconoce)
@@ -266,6 +268,7 @@ export class ColonySim {
     updateFamily(this, gameDt, time);
     updateImmigration(this, gameDt, time);
     this.updateAlerts(gameDt, absent);
+    updateMobs(this, gameDt, isNight);
     this.rollFlows(gameDt);
     // Desde la Edad del Bronce vivir sin casa pesa en el ánimo; la molestia entra poco a poco
     // en los dos días siguientes a cada cambio de edad para que no sea una crisis de golpe.
@@ -296,7 +299,7 @@ export class ColonySim {
         this.step(c, dt, env);
         if (!absent && c.health <= 0.01) dying.push(c);
       }
-      for (const c of dying) this.die(c, c.needs.water <= 0 ? 'de sed' : c.needs.food <= 0 ? 'de hambre' : c.needs.warmth < 8 ? 'de frío' : 'por agotamiento');
+      for (const c of dying) this.die(c, c.lastHurtBy && c.health <= 0.01 && Math.min(c.needs.food, c.needs.water) > 5 ? `atacado por un ${c.lastHurtBy === 'oso' ? 'oso' : 'lobo'}` : c.needs.water <= 0 ? 'de sed' : c.needs.food <= 0 ? 'de hambre' : c.needs.warmth < 8 ? 'de frío' : 'por agotamiento');
       // La primera herramienta de piedra: se talla mientras el dueño está (no cambia las ausencias).
       if (this.discovery && !absent) {
         this.discovery.progress = Math.min(1, this.discovery.progress + dt / DISCOVERY.seconds);
@@ -412,6 +415,38 @@ export class ColonySim {
     return added;
   }
 
+  // Aparecen los animales de esta zona (sólo el servidor, al cargar o fundar la colonia).
+  spawnMobs() {
+    const biome = biomeAt(this.camp.dir.x, this.camp.dir.y, this.camp.dir.z).id;
+    spawnMobs(this, biome, seededRandom((this.camp.seed ?? 1) ^ 0x6d0b5));
+  }
+
+  mobThreat(c) {
+    return mobThreat(this, c);
+  }
+
+  // Copia en el navegador de los animales que manda el servidor (se crean, mueven o quitan por id).
+  applyMobs(rows) {
+    const byId = new Map(this.mobs.map((m) => [m.id, m]));
+    const seen = new Set();
+    for (const [id, ti, x, z, facing, state] of rows) {
+      const type = MOB_TYPES[ti];
+      if (!type) continue;
+      seen.add(id);
+      let m = byId.get(id);
+      if (!m || m.type !== type) {
+        m = { id, type };
+        this.mobs = this.mobs.filter((o) => o.id !== id);
+        this.mobs.push(m);
+      }
+      m.x = x;
+      m.z = z;
+      m.facing = facing;
+      m.state = state;
+    }
+    if (this.mobs.some((m) => !seen.has(m.id))) this.mobs = this.mobs.filter((m) => seen.has(m.id));
+  }
+
   // Acción aprendida: queda reconocida para siempre (la guía no la vuelve a pedir).
   learn(id) {
     if (!LEARNABLE.includes(id)) return false;
@@ -520,6 +555,7 @@ export class ColonySim {
     this.age = 1;
     this.armyUnpaid = false;
     this.nextRaidDay = null;
+    this.mobs = [];
     this.primitiveMigrated = false;
     this.milestones = new Set(); // hitos conseguidos (p. ej. la primera herramienta de piedra)
     this.learned = new Set(); // acciones que el jugador ya aprendió (la guía las reconoce)
@@ -2678,7 +2714,8 @@ export class ColonySim {
   snapshot(part = 'full', { statics = true } = {}) {
     const r2 = (v) => Math.round(v * 100) / 100;
     const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0);
-    if (part === 'fast') return { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]) };
+    const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state]);
+    if (part === 'fast') return { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]), mobs: mobsRows() };
     const camp = this.camp;
     return {
       camp: camp && { dir: { x: camp.dir.x, y: camp.dir.y, z: camp.dir.z }, height: camp.height, yaw: camp.yaw, seed: camp.seed },
@@ -2695,6 +2732,7 @@ export class ColonySim {
       tradeDay: this.tradeDay,
       armyUnpaid: this.armyUnpaid,
       grid: this.grid,
+      mobs: mobsRows(),
       milestones: [...this.milestones],
       learned: [...this.learned],
       discovery: this.discovery,
@@ -2821,6 +2859,7 @@ export class ColonySim {
       c.soldier = row.sd && UNITS_BY_ID[row.sd] ? { unit: row.sd, tier: UNITS_BY_ID[row.sd].age } : null;
       if (row.age != null) c.age = row.age;
     }
+    if (s.mobs) this.applyMobs(s.mobs);
     if (part === 'fast') return;
 
     this.gameTime = s.gameTime;

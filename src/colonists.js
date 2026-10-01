@@ -5,6 +5,7 @@ import { CLOTHES_SPOT, TOTEM_SPOT } from './sim/colony.js';
 import { appearanceFromGenes } from './genes.js';
 import { CenterView } from './center.js';
 import { outfitFor } from './outfits.js';
+import { MOBS, setMobLOD } from './mobs.js';
 
 // Vista de los colonos: dibuja a los de la simulación (sim/colony.js) con su modelo low
 // poly, los anima al caminar y trabajar, pone su nombre encima y permite elegirlos con
@@ -423,7 +424,58 @@ export class ColonyView {
       }
       this.place(e, animDelta);
     }
+    this.updateMobs(animDelta, delta);
     this.updateLabels();
+  }
+
+  // Animales del mundo cerca de esta aldea (los manda el servidor; todos los jugadores cercanos los ven).
+  updateMobs(animDelta, delta) {
+    const sim = this.sim;
+    this.mobViews ??= new Map();
+    if (this.mobCamp !== sim.camp) {
+      for (const e of this.mobViews.values()) this.group.remove(e.object);
+      this.mobViews.clear();
+      this.mobCamp = sim.camp;
+    }
+    const alive = new Set();
+    const follow = 1 - Math.exp(-delta * 8);
+    this.mobTime = (this.mobTime ?? 0) + animDelta;
+    const { world, yaw } = this.tmp;
+    for (const m of sim.mobs ?? []) {
+      alive.add(m.id);
+      let e = this.mobViews.get(m.id);
+      if (!e || e.type !== m.type) {
+        if (e) this.group.remove(e.object);
+        const def = MOBS[m.type];
+        if (!def) continue;
+        e = { type: m.type, def, object: def.create(m.id + 1), x: m.x, z: m.z, facing: m.facing, speed: 0 };
+        this.group.add(e.object);
+        this.mobViews.set(m.id, e);
+      }
+      const px = e.x;
+      const pz = e.z;
+      if (Math.hypot(m.x - e.x, m.z - e.z) > 8) {
+        e.x = m.x;
+        e.z = m.z;
+      } else {
+        e.x += (m.x - e.x) * follow;
+        e.z += (m.z - e.z) * follow;
+      }
+      e.facing += Math.atan2(Math.sin(m.facing - e.facing), Math.cos(m.facing - e.facing)) * follow;
+      e.speed += (Math.hypot(e.x - px, e.z - pz) / Math.max(1e-3, delta) - e.speed) * 0.2;
+      const h = sim.heightAt(e.x, e.z);
+      sim.toDirection(e.x, e.z, world);
+      e.object.position.copy(world).multiplyScalar(RADIUS + h);
+      e.object.quaternion.copy(sim.camp.quaternion).multiply(yaw.setFromAxisAngle(Y_AXIS, e.facing));
+      e.object.userData.state = m.state === 2 ? 'attack' : 'idle';
+      setMobLOD(e.object, this.camera.position.distanceToSquared(e.object.position) > 120 * 120);
+      e.def.animate(e.object, this.mobTime, e.speed);
+    }
+    for (const [id, e] of this.mobViews) {
+      if (alive.has(id)) continue;
+      this.group.remove(e.object);
+      this.mobViews.delete(id);
+    }
   }
 
   place(e, animDelta) {

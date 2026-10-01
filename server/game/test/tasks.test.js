@@ -287,4 +287,30 @@ const site = (sim, id, x, z) => {
   assert.equal(sim.obstacles.length, blocked);
   assert.equal(sim.applyCommand('buildLine', ['wall', 'x', 0, 1, 1]), false);
 }
+// Mobs: aparecen por bioma, viajan en el estado rápido y el navegador los copia; los hostiles hieren sólo con el dueño presente.
+{
+  const sim = colony();
+  sim.spawnMobs();
+  assert.ok(sim.mobs.length > 0, 'hay animales en esta zona');
+  const snap = JSON.parse(JSON.stringify(sim.snapshot('fast')));
+  assert.equal(snap.mobs.length, sim.mobs.length);
+  const mirror = colony();
+  mirror.applySnapshot(snap, 'fast');
+  assert.equal(mirror.mobs.length, sim.mobs.length, 'el otro jugador ve los mismos animales');
+  assert.deepEqual(mirror.mobs.map((m) => m.type), sim.mobs.map((m) => m.type));
+  // Un lobo junto a un colono al descubierto, de noche: lo hiere; ausente, no.
+  const wolf = { id: 99, type: 'lobo', x: 60, z: 0, facing: 0, state: 0, wait: 99, tx: 60, tz: 0, cd: 0, target: null };
+  sim.mobs = [wolf];
+  const c = sim.colonists[0];
+  c.x = 60.5; c.z = 0; c.inside = false; c.sleeping = false;
+  const hp = c.health;
+  sim.absent = true;
+  for (let i = 0; i < 6; i++) sim.update(0.5, { timeScale: 1, isNight: true, absent: true, timeLabel: () => 'd' });
+  assert.ok(c.health >= Math.min(hp, 10), 'ausente: sin ataques');
+  sim.absent = false;
+  c.health = 100;
+  wolf.x = 60; wolf.z = 0; c.x = 60.5; c.z = 0;
+  for (let i = 0; i < 6; i++) { sim.mobs[0].x = 60; c.x = 60.5; c.z = 0; sim.update(0.5, { timeScale: 1, isNight: true, timeLabel: () => 'd' }); }
+  assert.ok(c.health < 100, 'presente y de noche: el lobo hiere');
+}
 console.log('tasks.test ✓');

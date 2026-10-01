@@ -72,6 +72,7 @@ export class World {
     sim.weather = new WeatherState(camp.seed);
     sim.weather.setPlace(dir);
     sim.setCamp({ dir, height: camp.height, yaw: camp.yaw, seed: camp.seed }, { ownZone: true });
+    sim.spawnMobs();
     const colony = { playerId, sim, camp, dir, away: null, dirty: true };
     sim.on('changed', () => (colony.dirty = true));
     this.colonies.set(playerId, colony);

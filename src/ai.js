@@ -173,6 +173,9 @@ export function chooseTask(colony, c, env) {
     add(score, { type: 'sleep', tent: homeOf(colony, c) });
   }
 
+  // Un animal hostil cerca: huye hacia la fogata (allí no se acercan).
+  if (!c.soldier && colony.mobThreat?.(c)) add(1.6, { type: 'warm' });
+
   // Calentarse junto al fuego si tiene frío.
   if (n.warmth < 55) {
     add(urgency(n.warmth) * 1.25 + 0.05, { type: 'warm' });

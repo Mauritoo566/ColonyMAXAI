@@ -67,3 +67,10 @@ Criterio: aparecen por bioma y por edad; los pacíficos dan recursos o ambiente,
 | Desierto | Camello, lagarto, gacela | Escorpión gigante, serpiente de cascabel, chacal |
 | Sabana | Cebra, gacela, jirafa, caballo salvaje, elefante (manso) | León, hienas, leopardo |
 | Selva | Mono, loro, tapir, mariposas | Tigre/jaguar, serpiente constrictora, cocodrilo, escorpión, plagas de insectos |
+
+## Implementados (tandas 1 y 2 de modelos, en `src/mobs.js`)
+
+Pacíficos: conejo, ciervo, jabalí, oveja, uro, caballo. Hostiles: lobo, oso. Se simulan en el servidor (`src/sim/mobs.js`),
+aparecen por bioma al fundar o cargar la aldea, y viajan en el estado rápido: todos los jugadores cercanos los ven en vivo.
+Los hostiles atacan de noche (el oso, siempre) a colonos al descubierto, no entran en el círculo de la fogata ni cerca de
+atalayas, los muros los frenan, y nunca atacan mientras el dueño está desconectado.
