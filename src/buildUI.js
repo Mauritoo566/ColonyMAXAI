@@ -357,9 +357,10 @@ export class BuildUI {
 
   // Vivienda: cuántos caben, quién vive y cuánto sube el máximo de población.
   houseHtml(b, level, next) {
-    const residents = this.colony.colonists.filter((c) => c.home === b.id);
+    const { adults, children } = this.colony.residents(b);
+    const residents = [...adults, ...children];
     return `<section class="cp-section">
-        <h3>Vecinos (${residents.length}/${level.housing})</h3>
+        <h3>Vecinos (${adults.length}/${level.housing} plazas${children.length ? ` · +${children.length} ${children.length > 1 ? 'niños' : 'niño'} con su familia` : ''})</h3>
         <p class="reason">${residents.length ? residents.map((c) => escapeHtml(c.name)).join(', ') : 'Aún no vive nadie aquí: se mudarán quienes duerman en las tiendas.'}</p>
         <div class="stat-line"><span>Población máxima de la colonia</span><strong>${this.colony.colonists.length} / ${this.colony.maxPopulation}</strong></div>
         ${next ? `<p class="reason">Al llegar a la ${ageInfo(b.level + 1).name} evoluciona sola a ${next.name} (caben ${next.housing}), en el mismo sitio y sin coste.</p>` : ''}
@@ -474,7 +475,7 @@ export class BuildUI {
     const crew = b.workers;
     const stateText = () => {
       if (!b.done) return `${b.upgrading ? 'Mejora' : 'Obra'} · ${colony.siteInfo(b)?.label ?? ''} · ${Math.round(b.progress * 100)}%`;
-      if (isHouse) return `${colony.colonists.filter((c) => c.home === b.id).length}/${level.housing} vecinos`;
+      if (isHouse) return `${colony.residents(b).adults.length}/${level.housing} plazas`;
       if (needed) return crew.length === 0 ? 'Sin trabajador' : crew.length < needed ? `Falta personal · ${crew.length}/${needed}` : b.status ? 'Detenido' : 'Funcionando';
       return 'En uso';
     };

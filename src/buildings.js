@@ -393,7 +393,10 @@ export class BuildingSystem {
     const lv = levelOf(b);
     const needed = this.sim.crewNeeded(b);
     if (typeof lv.capacity === 'object') return 'Almacén';
-    if (lv.housing != null) return `Vivienda · ${this.sim.colonists.filter((c) => c.home === b.id).length}/${lv.housing}`;
+    if (lv.housing != null) {
+      const r = this.sim.residents(b);
+      return `Vivienda · ${r.adults.length}/${lv.housing}${r.children.length ? ` (+${r.children.length} ${r.children.length > 1 ? 'niños' : 'niño'})` : ''}`;
+    }
     if (needed) return b.workers.length === 0 ? 'Sin trabajador' : needed === 1 ? b.workers[0].name : `${b.workers.length}/${needed} trabajadores`;
     if (lv.defense) return `Defensa ${lv.defense}`;
     return 'En servicio';

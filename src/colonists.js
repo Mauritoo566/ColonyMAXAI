@@ -402,6 +402,8 @@ export class ColonyView {
     for (const prop of [this.clothesPile, this.totem, this.center.group]) {
       if (prop && campObject && prop.parent !== campObject) campObject.add(prop);
     }
+    // Los tipis iniciales sólo se ven mientras alguien duerme en ellos o en las primeras edades.
+    if (campObject?.userData.tipis) campObject.userData.tipis.visible = sim.age <= 2 || sim.colonists.some((o) => (o.growth ?? 1) >= 1 && o.home == null);
     const follow = 1 - Math.exp(-delta * 10);
     for (const e of this.entries.values()) {
       const { c } = e;

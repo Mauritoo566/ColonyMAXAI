@@ -1486,6 +1486,13 @@ export class ColonySim {
     return [...this.colonists].sort((a, c) => this.aptitude(c, b.def) - this.aptitude(a, b.def));
   }
 
+  // Quién vive en una casa: los adultos ocupan plazas; los niños viven con su madre y no cuentan
+  // (por eso antes se veía "4/3": 3 adultos + 1 niño).
+  residents(b) {
+    const all = this.colonists.filter((c) => c.home === b.id);
+    return { adults: all.filter((c) => (c.growth ?? 1) >= 1), children: all.filter((c) => (c.growth ?? 1) < 1) };
+  }
+
   // Cuántos trabajadores pide un edificio en su nivel actual.
   crewNeeded(b) {
     if (!b.def.skill) return 0;

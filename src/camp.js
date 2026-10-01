@@ -336,11 +336,13 @@ export function createCampModel(seed = 1, biome = null) {
   const parts = new Parts();
 
   addFirePit(parts, rand);
+  // Los tipis van aparte: desaparecen cuando la aldea ya vive en casas (ver ColonyView).
+  const tipiParts = new Parts();
   for (const t of TIPIS) {
     const x = Math.cos(t.angle) * t.dist;
     const z = Math.sin(t.angle) * t.dist;
     // La puerta (eje +Z del tipi) mira hacia la fogata.
-    addTipi(parts, x, z, Math.atan2(-x, -z), t);
+    addTipi(tipiParts, x, z, Math.atan2(-x, -z), t);
   }
   addDryingRack(parts, ...polar(RACK), RACK.angle + Math.PI / 2, rand);
   addWoodPile(parts, ...polar(WOODPILE), WOODPILE.angle, rand);
@@ -365,6 +367,10 @@ export function createCampModel(seed = 1, biome = null) {
   camp.add(banner);
 
   camp.add(parts.mesh(propsMaterial));
+  const tipis = tipiParts.mesh(propsMaterial);
+  tipis.name = 'tipis';
+  camp.add(tipis);
+  camp.userData.tipis = tipis;
   const fire = createFire();
   camp.add(fire);
 

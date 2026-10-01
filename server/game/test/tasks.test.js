@@ -98,4 +98,37 @@ const site = (sim, id, x, z) => {
   assert.equal(adult.order, null, 'la orden termina con la obra');
   assert.match(sim.orderColonist(adult, 'build', b), /terminada|existe/);
 }
+// Aldea guardada antes de la actualización: edad 4 con una choza de nivel 1. Al cargarla la casa
+// toma el aspecto de la edad, sin cobrar nada, y cargar otra vez no cambia nada más.
+{
+  const sim = colony();
+  sim.age = 4;
+  const house = sim.createBuilding(BUILDINGS.house, 20, 14, 0, 1, 0);
+  house.level = 1;
+  const saved = JSON.parse(JSON.stringify(sim.serialize()));
+  saved.buildings.find((b) => b.id === house.id).level = 1;
+  const again = colony();
+  again.restore(saved);
+  const h = again.buildings.find((b) => b.id === house.id);
+  assert.ok(h.level >= 3, `la casa evoluciona con la edad (nivel ${h.level})`);
+  const stock = JSON.stringify(again.stock);
+  const lv = h.level;
+  again.restore(saved);
+  assert.equal(JSON.stringify(again.stock), stock, 'sin costes ni recursos duplicados');
+  assert.equal(h.level, lv);
+}
+
+// "4/3": los niños viven con su madre y no ocupan plazas; la cuenta separa adultos y niños.
+{
+  const sim = colony();
+  const house = sim.createBuilding(BUILDINGS.house, 20, 14, 0, 1, 0);
+  const [a, b2, c3] = sim.colonists;
+  a.home = b2.home = c3.home = house.id;
+  const kid = sim.colonists[3];
+  kid.growth = 0.3;
+  kid.home = house.id;
+  const r = sim.residents(house);
+  assert.equal(r.adults.length, 3);
+  assert.equal(r.children.length, 1);
+}
 console.log('tasks.test ✓');
