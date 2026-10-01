@@ -208,6 +208,42 @@ function stockpileModel2(p) {
   for (const [x, z] of [[2.0, 0.6], [2.2, -0.4]]) p.add(new THREE.CylinderGeometry(0.34, 0.28, 0.5, 8), '#b89a5e', mat(x, 0.25, z));
 }
 
+// Choza de ramas: armazón cónico de palos cubierto de pieles y hojas, con la entrada al frente.
+function houseModel1(p) {
+  const n = 9;
+  for (let k = 0; k < n; k++) {
+    const a = (k / n) * Math.PI * 2;
+    stick(p, v(Math.cos(a) * 2.0, 0, Math.sin(a) * 2.0), v(Math.cos(a) * 0.12, 3.7, Math.sin(a) * 0.12), 0.07, '#6b4a2e', 4);
+  }
+  p.add(new THREE.ConeGeometry(2.1, 3.0, 9, 1, true), '#8a6a3c', mat(0, 1.6, 0));
+  p.add(new THREE.ConeGeometry(2.15, 1.2, 9, 1, true), '#5f7a3a', mat(0, 3.0, 0));
+  for (let k = 0; k < 5; k++) {
+    const a = k * 1.3;
+    p.add(new THREE.BoxGeometry(0.9, 0.05, 0.5), k % 2 ? '#a0764a' : '#7a5230', mat(Math.cos(a) * 1.4, 1.2 + (k % 3) * 0.55, Math.sin(a) * 1.4, 0.3, -a, 0.5));
+  }
+  p.add(new THREE.BoxGeometry(0.9, 1.5, 0.12), '#2a1c10', mat(0, 0.75, 1.85));
+  for (const x of [-0.7, 0.7]) stick(p, v(x, 0, 1.95), v(x * 0.9, 1.6, 1.8), 0.06, '#5a3a22', 4);
+  p.add(new THREE.DodecahedronGeometry(0.28, 0), '#8f8a82', mat(1.6, 0.2, 1.8));
+  p.add(new THREE.DodecahedronGeometry(0.22, 0), '#7d786f', mat(-1.7, 0.15, 1.6));
+}
+
+// Casa de barro: paredes redondas de barro, techo de paja, puerta de tablas y una ventana.
+function houseModel2(p) {
+  p.add(new THREE.CylinderGeometry(2.05, 2.15, 0.25, 12), '#8f8a82', mat(0, 0.12, 0));
+  p.add(new THREE.CylinderGeometry(1.8, 1.9, 2.2, 12), '#b78a5e', mat(0, 1.35, 0));
+  for (let k = 0; k < 6; k++) {
+    const y = 0.5 + k * 0.38;
+    p.add(new THREE.TorusGeometry(1.85 - (k % 2) * 0.02, 0.05, 4, 16), '#9a7048', mat(0, y, 0, Math.PI / 2, 0, 0));
+  }
+  p.add(new THREE.ConeGeometry(2.6, 2.3, 12), '#c9a45a', mat(0, 3.75, 0));
+  p.add(new THREE.ConeGeometry(2.3, 0.7, 12), '#b08c46', mat(0, 3.05, 0));
+  p.add(new THREE.CylinderGeometry(0.16, 0.2, 0.4, 6), '#a8843e', mat(0, 5.0, 0));
+  p.add(new THREE.BoxGeometry(0.85, 1.5, 0.14), '#3a2618', mat(0, 1.0, 1.88));
+  p.add(new THREE.BoxGeometry(0.4, 0.4, 0.12), '#1f1812', mat(1.15, 1.8, 1.35, 0, 0.7, 0));
+  p.add(new THREE.CylinderGeometry(0.22, 0.2, 0.5, 8), '#a8583a', mat(-1.3, 0.37, 1.7));
+  p.add(new THREE.CylinderGeometry(0.2, 0.22, 0.4, 8), '#b8683a', mat(1.5, 0.32, 1.6));
+}
+
 // Andamio de obra: base de tablones y cuatro postes.
 // Andamios de una obra o una mejora.
 function frameModel(p, footprint) {
@@ -230,7 +266,7 @@ export function buildMesh(fn, ...args) {
   return mesh;
 }
 
-const MODELS = { gathererModel2, woodcutterModel2, quarryModel2, wellModel2, gathererModel1, woodcutterModel1, quarryModel1, wellModel1, stockpileModel1, stockpileModel2 };
+const MODELS = { gathererModel2, woodcutterModel2, quarryModel2, wellModel2, gathererModel1, woodcutterModel1, quarryModel1, wellModel1, stockpileModel1, stockpileModel2, houseModel1, houseModel2 };
 
 // Malla del modelo de un nivel (por su nombre en sim/buildingTypes.js).
 export function levelModel(name) {

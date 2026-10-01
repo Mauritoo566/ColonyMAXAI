@@ -7,6 +7,7 @@
 //   eat, drink, sleep, warm, chat, build, work, wander
 
 import { hasTrait } from './needs.js';
+import { isChild, loveOptions, runLove, endLove, homeOf } from './sim/family.js';
 import { levelOf, STOCK_NAMES } from './sim/buildingTypes.js';
 import { DAY_LENGTH_SECONDS } from './daynight.js';
 
@@ -69,8 +70,7 @@ export function chooseTask(colony, c, env) {
     if (env.isNight) score += n.rest < 80 ? 0.45 : 0.2;
     else if (n.rest > 30) score *= 0.3;
     if (hasTrait(c, 'lazy')) score *= 1.15;
-    const tent = pickTent(colony, c);
-    add(score, { type: 'sleep', tent });
+    add(score, { type: 'sleep', tent: homeOf(colony, c) });
   }
 
   // Calentarse junto al fuego si tiene frío.
@@ -92,8 +92,12 @@ export function chooseTask(colony, c, env) {
     }
   }
 
-  // Trabajo: construir obras y trabajar en su edificio, de día y con lo básico cubierto.
-  if (!env.isNight) {
+  // Estar con alguien (ganas, invitaciones): sólo los adultos, y a su manera.
+  loveOptions(colony, c, env, add);
+
+  // Trabajo: construir obras y trabajar en su edificio, de día y con lo básico cubierto
+  // (los niños no trabajan: juegan, comen y duermen).
+  if (!env.isNight && !isChild(c)) {
     const diligence = hasTrait(c, 'hardworking') ? 1.3 : hasTrait(c, 'lazy') ? 0.6 : 1;
     const fine = Math.min(n.food, n.water, n.rest, n.warmth) > 30 ? 1 : 0.4;
     for (const b of colony.buildings) {
@@ -133,12 +137,6 @@ function nearestAwake(colony, c) {
   return best;
 }
 
-function pickTent(colony, c) {
-  // Cada colono tiene su tienda preferida (reparte a todos entre las tiendas).
-  const tents = colony.layout.tents;
-  return tents[c.id % tents.length];
-}
-
 export function taskKey(task) {
   const target = task.spot ? `${task.spot.x.toFixed(0)},${task.spot.z.toFixed(0)}` : task.building ? task.building.id : task.partner ? task.partner.id : '';
   return `${task.type}:${task.source ?? ''}:${target}`;
@@ -148,6 +146,7 @@ export function taskKey(task) {
 export function shouldSwitch(current, next) {
   if (current.type === next.type && current.type !== 'build' && current.type !== 'eat') return false;
   if (current.type === 'sleep' && current.phase === 'sleeping') return next.score > current.score * 1.6 + 0.2;
+  if (current.type === 'love' && current.phase === 'inside') return next.score > 1.1;
   return next.score > (current.score || 0) * 1.3 + 0.05;
 }
 
@@ -267,6 +266,9 @@ export function runTask(colony, c, task, dt, env) {
       if (b.progress >= 1) b.finish?.(c);
       return b.done ? 'done' : 'running';
     }
+
+    case 'love':
+      return runLove(colony, c, task, dt, env, go);
 
     case 'work':
       return runWork(colony, c, task, dt, env);
@@ -440,6 +442,7 @@ function runHarvest(colony, c, task, dt, env) {
 export function endTask(colony, c, task) {
   if (task.spot && task.spot.taken === c) task.spot.taken = null;
   if (task.type === 'sleep') c.sleeping = false;
+  if (task.type === 'love') endLove(colony, c);
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +461,11 @@ export function taskActivity(colony, c, task) {
       return walking ? 'Va a beber agua' : 'Bebiendo agua';
     case 'sleep':
       return c.sleeping ? 'Durmiendo en la tienda' : 'Va a dormir';
+    case 'love':
+      if (task.phase === 'inside') return `En casa con ${task.partner.name}`;
+      if (task.phase === 'asking') return walking ? `Va a buscar a ${task.partner.name}` : `Le propone a ${task.partner.name} estar juntos`;
+      if (task.phase === 'waiting') return `Espera la respuesta de ${task.partner.name}`;
+      return walking ? `Va a casa con ${task.partner.name}` : `Espera a ${task.partner.name} en la puerta`;
     case 'warm':
       return walking ? 'Va a calentarse al fuego' : 'Calentándose junto al fuego';
     case 'dress':
@@ -504,6 +512,8 @@ export function taskLog(c, task) {
       return 'Se fue a dormir';
     case 'warm':
       return 'Fue a calentarse junto al fuego';
+    case 'love':
+      return task.role === 'ask' ? `Fue a buscar a ${task.partner.name}` : `Aceptó ir a casa con ${task.partner.name}`;
     case 'dress':
       return 'Se vistió con ropa de pieles';
     case 'build':

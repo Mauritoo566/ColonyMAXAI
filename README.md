@@ -72,6 +72,12 @@ Cada colono tiene:
 
 La interfaz (`src/colonyUI.js`) muestra arriba a la izquierda el **bienestar de la colonia**, la media de cada necesidad, el **almacén** (comida, agua, madera, piedra) y la lista de colonos. Al hacer clic en un colono (en el mundo, en su nombre o en la lista) se abre su **ficha** con tres pestañas: Estado (necesidades, trabajo y habilidades), Genes e Historia, y un botón para seguirlo con la cámara.
 
+### Familia y población
+- El campamento admite **10 colonos** y empiezan 5. Cada **vivienda** terminada (Choza de ramas: +2, Casa de barro: +3) sube el máximo; los vecinos duermen en su casa (las parejas juntas) y el resto en las tiendas.
+- Nadie tiene hijos por un guion: cada adulto siente **ganas** que crecen cuando está bien (bienestar, ánimo, descanso) y decide a quién invitar según su afinidad, su carácter y su pareja; el invitado **acepta o rechaza** según su estado. Si aceptan van juntos a su casa, entran (corazones sobre el techo) y puede haber embarazo. No se emparejan padres, hijos ni hermanos.
+- El hijo hereda genes de ambos (con mutaciones), nace con un nombre de la **edad de la aldea en ese momento** (los nombres nunca cambian) y crece en 3 días: de niño es más bajo y de cabeza grande, no trabaja. Los genes se ven en el cuerpo: piel, pelo (canas con los años), estatura y complexión.
+- La **bandera** de la aldea se elige de una lista de países (botón Bandera) y la ven los demás jugadores.
+
 ### Ropa
 
 Los colonos llegan **sin ropa** (sólo un taparrabos) y en el campamento hay una pila de ropa de pieles para todos. No van a buscarla por costumbre: cuando tienen frío, ir a vestirse pasa a ser una necesidad (abriga para siempre, así que la prefieren a la fogata). Sin ropa se enfrían mucho más; con ropa aguantan bastante aunque el lugar sea frío. El frío baja poco a poco (cada vez más lento al acercarse a la temperatura del ambiente).

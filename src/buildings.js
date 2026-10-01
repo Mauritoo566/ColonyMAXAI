@@ -375,6 +375,8 @@ export class BuildingSystem {
         ? `${Math.round(this.sim.storeFill() * 100)}% lleno`
         : b.done && b.def.id === 'stockpile'
           ? 'Almacén'
+          : b.done && b.def.id === 'house'
+            ? `Vivienda · ${this.sim.colonists.filter((c) => c.home === b.id).length}/${levelOf(b).housing}`
           : b.done ? (b.worker ? b.worker.name : 'Sin trabajador') : `${b.upgrading ? 'Mejorando' : 'En obra'} · ${Math.round(b.progress * 100)}%`;
       if (sub.textContent !== text) sub.textContent = text;
       bar.hidden = b.done;

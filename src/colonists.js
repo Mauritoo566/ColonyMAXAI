@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RADIUS } from './elevation.js';
 import { Parts, mat, stick, v } from './modelKit.js';
 import { CLOTHES_SPOT, TOTEM_SPOT } from './sim/colony.js';
+import { appearanceFromGenes } from './genes.js';
 
 // Vista de los colonos: dibuja a los de la simulación (sim/colony.js) con su modelo low
 // poly, los anima al caminar y trabajar, pone su nombre encima y permite elegirlos con
@@ -43,6 +44,48 @@ function limb(w, h, d, color, endColor, x, y, endForward = 0) {
   return pivot;
 }
 
+// Corazones que suben sobre la casa cuando dos colonos están juntos dentro.
+let heartTexture = null;
+function heartMaterial() {
+  if (!heartTexture) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 64;
+    const g = canvas.getContext('2d');
+    g.fillStyle = '#e8466b';
+    g.beginPath();
+    g.moveTo(32, 58);
+    g.bezierCurveTo(2, 36, 6, 8, 24, 8);
+    g.bezierCurveTo(29, 8, 31, 12, 32, 16);
+    g.bezierCurveTo(33, 12, 35, 8, 40, 8);
+    g.bezierCurveTo(58, 8, 62, 36, 32, 58);
+    g.fill();
+    g.fillStyle = 'rgba(255,255,255,0.45)';
+    g.beginPath();
+    g.ellipse(21, 20, 6, 4, -0.7, 0, Math.PI * 2);
+    g.fill();
+    heartTexture = new THREE.CanvasTexture(canvas);
+    heartTexture.colorSpace = THREE.SRGBColorSpace;
+  }
+  return new THREE.SpriteMaterial({ map: heartTexture, transparent: true, depthWrite: false });
+}
+
+// Escala del cuerpo: los niños son más bajos y de cabeza grande; la constitución (gen)
+// ensancha a los adultos. La estatura (gen) ya viene en look.height.
+const childScale = (growth) => 0.42 + 0.58 * Math.min(1, Math.max(0, growth));
+
+function applyBody(object, look, build, growth) {
+  const s = look.height * childScale(growth);
+  const w = build * (1 + (1 - Math.min(1, growth)) * 0.1);
+  object.scale.set(s * w, s, s * w);
+  const headScale = 1 + (1 - Math.min(1, growth)) * 0.65;
+  const { head, hair } = object.userData;
+  head.scale.setScalar(headScale);
+  hair.scale.setScalar(headScale);
+  // Cabeza y pelo más grandes: se bajan para que sigan apoyados en los hombros.
+  head.position.y = 1.7 - (headScale - 1) * 0.04;
+  hair.position.y = 1.72 - (headScale - 1) * 0.04;
+}
+
 function createPersonModel(look) {
   const root = new THREE.Group();
   const body = new THREE.Group(); // se balancea al caminar
@@ -68,8 +111,7 @@ function createPersonModel(look) {
   body.add(armL, armR);
   root.add(legL, legR);
 
-  root.scale.setScalar(look.height);
-  root.userData = { body, armL, armR, legL, legR, torso, hip };
+  root.userData = { body, armL, armR, legL, legR, torso, hip, head, hair };
   return root;
 }
 
@@ -144,12 +186,18 @@ export class ColonyView {
   rebuild() {
     for (const e of this.entries.values()) {
       this.group.remove(e.object);
+      for (const h of e.hearts) {
+        this.group.remove(h);
+        h.material.dispose();
+      }
       e.label.remove();
     }
     this.entries.clear();
     this.select(null);
     for (const c of this.sim.colonists) {
       const object = createPersonModel(c.look);
+      const build = appearanceFromGenes(c.genome, c.age).build;
+      applyBody(object, c.look, build, c.growth ?? 1);
       dressModel(object, c.look, c.clothed);
       this.group.add(object);
       // Etiqueta sobre la cabeza: nombre y barra de salud. Se puede hacer clic en ella.
@@ -164,7 +212,7 @@ export class ColonyView {
       this.labelsRoot.appendChild(label);
       // x, z, facing: dónde se dibuja; sigue con suavidad a la simulación (que por la red
       // llega a saltos, varias veces por segundo).
-      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, clothed: c.clothed, x: c.x, z: c.z, facing: c.facing });
+      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, clothed: c.clothed, build, growth: c.growth ?? 1, hearts: [], heartTimer: 0, x: c.x, z: c.z, facing: c.facing });
     }
     this.refreshClothes();
     this.refreshTotem();
@@ -231,7 +279,7 @@ export class ColonyView {
     for (const { c, object } of this.entries.values()) {
       // Centro del cuerpo, a ~1 m del suelo.
       p.copy(object.position);
-      p.add(this.tmp.local.copy(p).normalize().multiplyScalar(1.0 * c.look.height));
+      p.add(this.tmp.local.copy(p).normalize().multiplyScalar(1.0 * c.look.height * childScale(c.growth ?? 1)));
       const dist3 = this.camera.position.distanceTo(p);
       p.project(this.camera);
       if (p.z > 1) continue;
@@ -294,8 +342,13 @@ export class ColonyView {
 
   place(e, animDelta) {
     const { c, object } = e;
-    // Durmiendo está dentro de la tienda: no se ve.
-    object.visible = !c.sleeping;
+    // Durmiendo o en casa: está dentro y no se ve.
+    object.visible = !c.sleeping && !c.inside;
+    const growth = c.growth ?? 1;
+    if (Math.abs(growth - e.growth) > 0.004 || (growth >= 1 && e.growth < 1)) {
+      e.growth = growth;
+      applyBody(object, c.look, e.build, growth);
+    }
     const { world, yaw } = this.tmp;
     const walking = c.walking ? 1 : 0;
     e.moving += (walking - e.moving) * Math.min(1, animDelta * 6);
@@ -321,8 +374,41 @@ export class ColonyView {
       armL.rotation.x = -swing * 0.8;
       armR.rotation.x = swing * 0.8;
     }
+    this.updateHearts(e, animDelta);
     const breathe = Math.sin(performance.now() * 0.0018 + e.phase) * 0.01 * (1 - e.moving);
     body.position.y = Math.abs(Math.cos(e.phase)) * 0.05 * e.moving + breathe;
+  }
+
+  // Corazones sobre la casa mientras están juntos (la posición es la de la casa).
+  updateHearts(e, animDelta) {
+    const { c, object } = e;
+    if (c.loving) {
+      e.heartTimer -= animDelta;
+      if (e.heartTimer <= 0 && e.hearts.length < 8) {
+        e.heartTimer = 0.55;
+        const sprite = new THREE.Sprite(heartMaterial());
+        sprite.userData = { age: 0, sway: Math.random() * 6.28 };
+        sprite.scale.setScalar(0.7);
+        this.group.add(sprite);
+        e.hearts.push(sprite);
+      }
+    }
+    for (let k = e.hearts.length - 1; k >= 0; k--) {
+      const heart = e.hearts[k];
+      heart.userData.age += animDelta;
+      const t = heart.userData.age / 2.6;
+      if (t >= 1) {
+        this.group.remove(heart);
+        heart.material.dispose();
+        e.hearts.splice(k, 1);
+        continue;
+      }
+      const up = this.tmp.local.copy(object.position).normalize();
+      heart.position.copy(object.position).addScaledVector(up, 4.2 + t * 2.4);
+      heart.position.x += Math.sin(heart.userData.sway + t * 5) * 0.25;
+      heart.material.opacity = t < 0.8 ? 1 : (1 - t) / 0.2;
+      heart.scale.setScalar(0.5 + Math.min(t * 3, 1) * 0.35);
+    }
   }
 
   hideLabels() {
@@ -346,10 +432,10 @@ export class ColonyView {
     for (const { c, object, label } of this.entries.values()) {
       // Un poco por encima de la cabeza.
       p.copy(object.position);
-      p.add(this.tmp.local.copy(p).normalize().multiplyScalar(2.3 * c.look.height));
+      p.add(this.tmp.local.copy(p).normalize().multiplyScalar(2.3 * c.look.height * childScale(c.growth ?? 1)));
       const dist = cam.position.distanceTo(p);
       p.project(cam);
-      const visible = !c.sleeping && dist < LABEL_DISTANCE && p.z < 1 && Math.abs(p.x) < 1.05 && Math.abs(p.y) < 1.05;
+      const visible = !c.sleeping && !c.inside && dist < LABEL_DISTANCE && p.z < 1 && Math.abs(p.x) < 1.05 && Math.abs(p.y) < 1.05;
       label.hidden = !visible;
       if (visible) {
         const hp = label.lastChild.firstChild;

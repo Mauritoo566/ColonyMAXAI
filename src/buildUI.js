@@ -286,6 +286,17 @@ export class BuildUI {
       </section>`;
   }
 
+  // Vivienda: cuántos caben, quién vive y cuánto sube el máximo de población.
+  houseHtml(b, level, next) {
+    const residents = this.colony.colonists.filter((c) => c.home === b.id);
+    return `<section class="cp-section">
+        <h3>Vecinos (${residents.length}/${level.housing})</h3>
+        <p class="reason">${residents.length ? residents.map((c) => escapeHtml(c.name)).join(', ') : 'Aún no vive nadie aquí: se mudarán quienes duerman en las tiendas.'}</p>
+        <div class="stat-line"><span>Población máxima de la colonia</span><strong>${this.colony.colonists.length} / ${this.colony.maxPopulation}</strong></div>
+        ${next ? `<p class="reason">Mejorada a ${next.name}: caben ${next.housing}.</p>` : ''}
+      </section>`;
+  }
+
   // Lo que suma un almacén construido (y lo que sumará mejorado).
   storageAddsHtml(level, next) {
     const list = (cap) => STOCK.map((r) => `<span style="--res:${r.color}">${icon(r.icon)}+${cap[r.id] ?? 0}</span>`).join('');
@@ -361,6 +372,7 @@ export class BuildUI {
     const def = b.def;
     const skill = SKILLS.find((s) => s.id === def.skill);
     const isStorage = !def.skill;
+    const isHouse = def.id === 'house';
     const level = levelOf(b);
     const next = levelOf(b, 1);
     const age = ageInfo(b.level);
@@ -369,7 +381,7 @@ export class BuildUI {
       : !b.done
         ? `En construcción · ${Math.round(b.progress * 100)}%`
         : isStorage
-          ? 'En uso'
+          ? isHouse ? `${this.colony.colonists.filter((c) => c.home === b.id).length}/${level.housing} vecinos` : 'En uso'
           : b.worker
             ? 'Funcionando'
             : 'Sin trabajador';
@@ -377,7 +389,7 @@ export class BuildUI {
     const upgradeProblem = this.buildings.upgradeProblem(b);
     const stored = level.rainOnly ? Math.floor(b.store) : null;
     // Clave para no redibujar si nada cambió.
-    const key = [state, b.level, b.worker?.id, Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, this.colony.age, ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [state, this.colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, b.worker?.id, Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, this.colony.age, ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -404,9 +416,9 @@ export class BuildUI {
             ? `<section class="cp-section">
                 <h3>Obra</h3>
                 <div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.progress * 100)}%"></i></div>
-                <p class="reason">Los colonos construyen de día cuando tienen lo básico cubierto. Quien sabe más de construcción avanza más rápido. ${isStorage ? 'Al terminar, el almacén de la colonia podrá guardar más.' : `Al terminar, la colonia elegirá a la persona más capacitada en ${skill.name.toLowerCase()} para trabajar aquí.`}</p>
+                <p class="reason">Los colonos construyen de día cuando tienen lo básico cubierto. Quien sabe más de construcción avanza más rápido. ${isHouse ? 'Al terminar, la colonia admitirá más colonos y quienes vivan aquí dormirán bajo techo.' : isStorage ? 'Al terminar, el almacén de la colonia podrá guardar más.' : `Al terminar, la colonia elegirá a la persona más capacitada en ${skill.name.toLowerCase()} para trabajar aquí.`}</p>
               </section>`
-            : `${isStorage ? this.storageAddsHtml(level, next) : `<section class="cp-section">
+            : `${isHouse ? this.houseHtml(b, level, next) : isStorage ? this.storageAddsHtml(level, next) : `<section class="cp-section">
                 <h3>Trabajador</h3>
                 ${
                   b.worker

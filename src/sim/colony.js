@@ -4,7 +4,7 @@ import { DAY_LENGTH_SECONDS } from '../daynight.js';
 import { AGES, ageInfo, nextAgeStatus } from '../ages.js';
 import { insideRect, rectDistance, upgradeRect } from '../rect.js';
 import { temperature, biomeAt, BIOMES } from '../biomes.js';
-import { createProfile, updateNeeds, hasTrait, wellbeing, addLog, SKILLS } from '../needs.js';
+import { createProfile, updateNeeds, hasTrait, wellbeing, addLog, SKILLS, TRAITS } from '../needs.js';
 import { appearanceFromGenes, gene } from '../genes.js';
 import { RESOURCE_TYPES } from '../resourceTypes.js';
 import { TILE_ANGLE, generateTile, generateCampGrove, GROVE_KEY, SPROUT_KEY, sproutItem, tileFromItems } from '../resourceGen.js';
@@ -14,6 +14,7 @@ import { BUILDINGS, levelOf, STOCK_NAMES } from './buildingTypes.js';
 import { WeatherState } from './weather.js';
 import { pickName } from './names.js';
 import { FLAG_IDS, DEFAULT_FLAG } from '../flags.js';
+import { updateFamily, assignHomes, maxPopulation } from './family.js';
 
 // Simulación de una colonia: colonos (necesidades, genes, IA), edificios, almacén, zona
 // de acopio, recursos del entorno, edades y guardado. No dibuja nada ni toca la página:
@@ -111,6 +112,9 @@ export class ColonySim {
     this.assignTimer = 0;
     this.clothesLeft = 0;
     this.flag = DEFAULT_FLAG; // bandera del mástil (flags.js)
+    this.nextColonistId = START_COLONISTS;
+    this.staticsRevision = 0; // sube con cada nacimiento (el servidor manda entonces los datos fijos)
+    this.birthRand = seededRandom(1);
     this.layout = campLayout();
     this.campTemperature = 0.5;
     this.obstacles = campObstacles();
@@ -170,6 +174,7 @@ export class ColonySim {
     this.updateRain(gameDt, rain);
     this.updateSpoilage();
     this.updateBuildings(gameDt, rain);
+    updateFamily(this, gameDt, time);
     let simTime = gameDt;
     let steps = 0;
     while (simTime > 1e-4 && steps++ < maxSteps) {
@@ -178,13 +183,13 @@ export class ColonySim {
       this.gameTime += dt;
       env.gameTime = this.gameTime;
       for (const c of this.colonists) {
-        c.companion = c.sleeping ? null : this.nearestColonist(c, COMPANY_RADIUS);
+        c.companion = c.sleeping || c.inside ? null : this.nearestColonist(c, COMPANY_RADIUS);
         c.nearFire = Math.hypot(c.x, c.z) < FIRE_WARMTH_RADIUS;
         updateNeeds(c, {
           dt,
           ambient,
           nearFire: c.nearFire,
-          sheltered: c.sleeping,
+          sheltered: c.sleeping || c.inside,
           clothed: c.clothed,
           companion: c.companion,
           walking: c.walking,
@@ -223,6 +228,8 @@ export class ColonySim {
     this.clothesLeft = 0;
     this.age = 1;
     this.flag = DEFAULT_FLAG;
+    this.nextColonistId = START_COLONISTS;
+    this.staticsRevision = 0;
     this.refreshObstacles();
     if (!camp) {
       this.camp = null;
@@ -265,6 +272,7 @@ export class ColonySim {
       const j = Math.floor(idRand() * (k + 1));
       [sexes[k], sexes[j]] = [sexes[j], sexes[k]];
     }
+    this.birthRand = seededRandom((this.camp.seed ?? 1) ^ 0x2c1b3c6d);
     const taken = new Set();
     for (let i = 0; i < START_COLONISTS; i++) {
       rand(); // antes elegía el nombre de una lista: se sigue gastando ese número
@@ -305,10 +313,78 @@ export class ColonySim {
         rand: seededRandom(Math.floor(rand() * 4294967296)),
         activity: 'Descansando un momento',
         clothed: false,
+        growth: 1,
+        desire: 5 + idRand() * 15,
+        mate: null,
+        pregnant: null,
+        home: null,
+        born: null,
+        inside: false,
+        loving: false,
+        invite: null,
       };
       addLog(colonist, 'Día 1', 'Llegó al campamento');
       this.colonists.push(colonist);
     }
+  }
+
+  // Un colono a partir de sus datos fijos (nombre, genes, rasgos...) y su estado. Lo usan
+  // los nacimientos, cargar una partida y el navegador al recibir al niño del servidor.
+  makeColonist(st, dyn = {}) {
+    const growth = dyn.growth ?? 1;
+    const x = dyn.x ?? 0;
+    const z = dyn.z ?? 0;
+    return {
+      id: st.id,
+      name: st.name,
+      sex: st.sex,
+      genome: st.genome,
+      traits: (st.traits ?? []).map((t) => (typeof t === 'string' ? TRAITS.find((o) => o.id === t) : t)).filter(Boolean),
+      skills: st.skills,
+      bio: st.bio,
+      look: st.look,
+      born: st.born ?? null,
+      age: dyn.age ?? (growth < 1 ? Math.round(growth * 17) : 18),
+      job: null,
+      needs: { ...dyn.needs },
+      health: dyn.health ?? 100,
+      log: dyn.log ?? [],
+      flags: dyn.flags ?? {},
+      chatCooldown: 0,
+      x,
+      z,
+      facing: dyn.facing ?? Math.atan2(-x, -z),
+      task: null,
+      thinkTimer: 0.5,
+      walking: false,
+      working: false,
+      sleeping: false,
+      phase: st.id * 1.7,
+      stuckTimer: 0,
+      lastProgress: 0,
+      rand: seededRandom(((this.camp?.seed ?? 1) ^ Math.imul(st.id + 1, 2654435761)) >>> 0),
+      activity: 'Descansando un momento',
+      clothed: !!dyn.clothed,
+      growth,
+      desire: dyn.desire ?? 0,
+      mate: dyn.mate ?? null,
+      pregnant: dyn.pregnant ?? null,
+      home: dyn.home ?? null,
+      inside: false,
+      loving: false,
+      invite: null,
+    };
+  }
+
+  // Lo que no cambia de un colono que nació en la colonia (los fundadores salen de la semilla).
+  staticOf(c) {
+    return { id: c.id, name: c.name, sex: c.sex, genome: c.genome, traits: c.traits.map((t) => t.id), skills: c.skills, bio: c.bio, look: c.look, born: c.born };
+  }
+
+  // Máximo de colonos que admite la colonia ahora (10 del campamento + viviendas).
+  get maxPopulation() {
+    // En el navegador el servidor manda el máximo; en el servidor se calcula.
+    return this.remote ? (this.maxPop ?? maxPopulation(this)) : maxPopulation(this);
   }
 
   // ---- Ropa ---------------------------------------------------------------------------
@@ -1219,6 +1295,7 @@ export class ColonySim {
     if (this.assignTimer <= 0) {
       this.assignTimer = ASSIGN_EVERY;
       for (const b of this.buildings) this.assignWorker(b);
+      assignHomes(this);
     }
   }
 
@@ -1256,6 +1333,13 @@ export class ColonySim {
           x: c.x,
           z: c.z,
           facing: c.facing,
+          growth: c.growth,
+          desire: c.desire,
+          mate: c.mate,
+          pregnant: c.pregnant,
+          home: c.home,
+          age: c.age,
+          static: c.born ? this.staticOf(c) : undefined, // los nacidos aquí no salen de la semilla
         })),
         regrowing: this.spots.filter((s) => s.readyAt > this.gameTime).map((s) => [s.key, s.index, s.readyAt]),
         removed: this.serializeRemoved(),
@@ -1375,9 +1459,11 @@ export class ColonySim {
 
   // Estado para mandar por la red. "fast": sólo dónde está cada colono y qué hace con el
   // cuerpo (varias veces por segundo); "full": todo lo que muestra la interfaz.
-  snapshot(part = 'full') {
+  // statics: incluir los datos fijos de los nacidos en la colonia (se mandan al conectarse y
+  // cuando nace alguien; después no hace falta repetirlos).
+  snapshot(part = 'full', { statics = true } = {}) {
     const r2 = (v) => Math.round(v * 100) / 100;
-    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0);
+    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0);
     if (part === 'fast') return { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]) };
     const camp = this.camp;
     return {
@@ -1386,6 +1472,8 @@ export class ColonySim {
       age: this.age,
       clothesLeft: this.clothesLeft,
       flag: this.flag,
+      maxPopulation: this.maxPopulation,
+      born: statics ? this.colonists.filter((c) => c.born).map((c) => ({ ...this.staticOf(c), x: r2(c.x), z: r2(c.z) })) : undefined,
       stock: this.stock,
       outdoor: this.outdoor,
       zones: this.zones,
@@ -1400,6 +1488,12 @@ export class ColonySim {
         clothed: c.clothed,
         activity: c.activity,
         job: c.job?.id ?? null,
+        growth: Math.round(c.growth * 1000) / 1000,
+        desire: Math.round(c.desire),
+        mate: c.mate,
+        pregnant: c.pregnant?.due ?? null,
+        home: c.home,
+        age: c.age,
         x: r2(c.x),
         z: r2(c.z),
         facing: r2(c.facing),
@@ -1431,6 +1525,17 @@ export class ColonySim {
   // Aplica en el navegador el estado que manda el servidor (esta copia no se simula: sólo
   // refleja la del servidor). Avisa con eventos sólo lo que cambió.
   applySnapshot(s, part = 'full') {
+    // Los que nacieron en la colonia: se crean con sus datos fijos (la copia del navegador
+    // sólo conoce de la semilla a los fundadores).
+    let arrived = false;
+    for (const st of s.born ?? []) {
+      if (this.colonist(st.id)) continue;
+      const row = (s.colonists ?? []).find((r) => !Array.isArray(r) && r.id === st.id);
+      this.colonists.push(this.makeColonist(st, { ...(row ?? {}), needs: row?.needs, x: st.x, z: st.z, clothed: true }));
+      arrived = true;
+    }
+    if (arrived) this.emit('colonists');
+    if (s.maxPopulation) this.maxPop = s.maxPopulation;
     for (const row of s.colonists ?? []) {
       const fast = Array.isArray(row);
       const c = this.colonist(fast ? row[0] : row.id);
@@ -1442,6 +1547,8 @@ export class ColonySim {
       c.walking = !!(f & 1);
       c.working = !!(f & 2);
       c.sleeping = !!(f & 4);
+      c.loving = !!(f & 16);
+      c.inside = !!(f & 32);
       if (c.clothed !== !!(f & 8)) {
         c.clothed = !!(f & 8);
         this.emit('clothes');
@@ -1451,6 +1558,12 @@ export class ColonySim {
       c.health = row.health;
       c.log = row.log;
       c.activity = row.activity;
+      c.growth = row.growth ?? 1;
+      c.desire = row.desire ?? 0;
+      c.mate = row.mate ?? null;
+      c.pregnant = row.pregnant != null ? { due: row.pregnant } : null;
+      c.home = row.home ?? null;
+      if (row.age != null) c.age = row.age;
     }
     if (part === 'fast') return;
 
@@ -1556,8 +1669,20 @@ export class ColonySim {
     const naked = (data.colonists || []).filter((s) => !s.clothed).length;
     this.clothesLeft = Number.isFinite(data.clothesLeft) ? data.clothesLeft : naked;
     for (const saved of data.colonists || []) {
+      if (!saved.static || this.colonist(saved.id)) continue;
+      this.colonists.push(this.makeColonist(saved.static, { ...saved, needs: saved.needs }));
+    }
+    this.nextColonistId = Math.max(START_COLONISTS, ...this.colonists.map((o) => o.id + 1));
+    this.birthRand = seededRandom((this.camp.seed ?? 1) ^ 0x2c1b3c6d ^ Math.floor(this.gameTime));
+    for (const saved of data.colonists || []) {
       const c = this.colonists.find((o) => o.id === saved.id);
       if (!c) continue;
+      if (Number.isFinite(saved.growth)) c.growth = saved.growth;
+      if (Number.isFinite(saved.desire)) c.desire = saved.desire;
+      c.mate = saved.mate ?? null;
+      c.pregnant = saved.pregnant && Number.isFinite(saved.pregnant.due) ? saved.pregnant : null;
+      c.home = saved.home ?? null;
+      if (Number.isFinite(saved.age)) c.age = saved.age;
       Object.assign(c.needs, saved.needs);
       c.health = saved.health ?? c.health;
       c.log = Array.isArray(saved.log) ? saved.log : c.log;
@@ -1596,5 +1721,6 @@ export class ColonySim {
     this.emit('marks');
     this.emit('clothes');
     this.emit('resources');
+    this.emit('colonists');
   }
 }

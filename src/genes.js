@@ -99,6 +99,9 @@ export function appearanceFromGenes(genome, age) {
     skin: mix(SKIN_STOPS, gene(genome, 'skin')),
     hair,
     height: 0.98 + gene(genome, 'height') * 0.26,
+    // Cuerpo: la constitución ensancha torso y miembros; la agilidad alarga las piernas.
+    build: 0.86 + gene(genome, 'vigor') * 0.32,
+    legs: 0.94 + gene(genome, 'agility') * 0.14,
   };
 }
 

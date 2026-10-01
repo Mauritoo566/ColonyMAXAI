@@ -132,6 +132,31 @@ BUILDING_TYPES.push({
     },
   ],
 });
+// Viviendas: no tienen trabajador. Cada una aloja a algunos colonos (duermen allí y es
+// donde crían) y sube el máximo de población de la colonia (el campamento solo admite 10).
+BUILDING_TYPES.push({
+  id: 'house',
+  category: 'housing',
+  icon: 'people',
+  cost: { wood: 18, fiber: 6 },
+  buildTime: 60,
+  footprint: 2.5,
+  levels: [
+    {
+      name: 'Choza de ramas',
+      desc: 'Ramas, pieles y hojas sobre un armazón: un techo propio para dos colonos. Aumenta en 2 el máximo de población.',
+      housing: 2,
+      model: 'houseModel1',
+    },
+    {
+      name: 'Casa de barro',
+      desc: 'Paredes de barro y techo de paja, más abrigada: caben tres colonos. Aumenta en 3 el máximo de población.',
+      housing: 3,
+      model: 'houseModel2',
+      upgradeCost: { wood: 25, stone: 10, fiber: 10 },
+    },
+  ],
+});
 for (const def of BUILDING_TYPES) {
   def.name ??= def.levels[0].name;
   def.desc ??= def.levels[0].desc;
@@ -140,7 +165,7 @@ for (const def of BUILDING_TYPES) {
 // Categorías de la barra de construcción (las vacías se muestran como "próximamente").
 export const BUILD_CATEGORIES = [
   { id: 'production', name: 'Producción', icon: 'hammer', soon: 'Edificios que consiguen comida, agua y materiales.' },
-  { id: 'housing', name: 'Vivienda', icon: 'people', soon: 'Chozas y casas para que los colonos duerman mejor.' },
+  { id: 'housing', name: 'Vivienda', icon: 'people', soon: 'Chozas y casas para que los colonos duerman mejor y la colonia crezca.' },
   { id: 'storage', name: 'Almacenes', icon: 'wood', soon: 'Graneros y depósitos para guardar más recursos.' },
   { id: 'decoration', name: 'Decoración', icon: 'leaf', soon: 'Jardines, estatuas y caminos que alegran a la colonia.' },
   { id: 'defense', name: 'Defensa', icon: 'shield', soon: 'Empalizadas y torres de vigilancia.' },

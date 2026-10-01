@@ -6,7 +6,7 @@
 // IA (ai.js). La salud sólo baja si falta comida, agua o calor.
 
 import { DAY_LENGTH_SECONDS } from './daynight.js';
-import { createGenome, gene } from './genes.js';
+import { createGenome, inheritGenome, gene } from './genes.js';
 
 const DAY = DAY_LENGTH_SECONDS;
 
@@ -112,6 +112,34 @@ export function createProfile(rand) {
     skills: createSkills(genome, past, rand),
     job: null, // edificio donde trabaja (lo asigna la colonia)
     bio: `${pick(ORIGINS, rand)}. Antes de unirse a la colonia ${past.text}. ${pick(DREAMS, rand)}`,
+    needs,
+    health: 100,
+    log: [],
+    flags: {},
+    chatCooldown: 0,
+  };
+}
+
+// Perfil de un recién nacido: genes mezclados de los padres, algún rasgo heredado, sin
+// pasado (las habilidades salen de su cuerpo y se afinan al crecer).
+export function createChildProfile(rand, mother, father, birthLabel) {
+  const traits = [];
+  const inherited = [...mother.traits, ...father.traits];
+  while (traits.length < 2) {
+    const t = rand() < 0.5 ? pick(inherited, rand) : pick(TRAITS, rand);
+    if (traits.includes(t) || traits.some((o) => o.id === t.excludes || t.id === o.excludes)) continue;
+    traits.push(t);
+  }
+  const needs = {};
+  for (const n of NEEDS) needs[n.id] = 85 + rand() * 15;
+  const genome = inheritGenome(mother.genome, father.genome, rand);
+  return {
+    genome,
+    age: 0,
+    traits,
+    skills: createSkills(genome, { skills: {} }, rand),
+    job: null,
+    bio: `Nació en el campamento (${birthLabel}), de ${mother.name} y ${father.name}. ${pick(DREAMS, rand)}`,
     needs,
     health: 100,
     log: [],

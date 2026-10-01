@@ -203,9 +203,17 @@ export class World {
       if (!cache.has(key)) cache.set(key, JSON.stringify(make()));
       return cache.get(key);
     };
+    const pendingStatics = [];
     for (const client of this.clients) {
       const own = this.colonies.get(client.player.id);
-      if (own && full) client.sendRaw(once(`full:${own.playerId}`, () => ({ t: 'colony', ...own.sim.snapshot('full') })));
+      if (own && full) {
+        // Los datos fijos de los nacidos en la colonia sólo se mandan cuando nace alguien.
+        client.sendRaw(once(`full:${own.playerId}`, () => ({ t: 'colony', ...own.sim.snapshot('full', { statics: own.staticsSent !== own.sim.staticsRevision }) })));
+        if (!cache.has(`sent:${own.playerId}`)) {
+          cache.set(`sent:${own.playerId}`, true);
+          pendingStatics.push(own);
+        }
+      }
       else if (own && fast) client.sendRaw(once(`fast:${own.playerId}`, () => ({ t: 'fast', ...own.sim.snapshot('fast') })));
       if (others && client.view) {
         for (const colony of this.colonies.values()) {
@@ -215,6 +223,7 @@ export class World {
       }
       if (t % TIME_EVERY === 0) client.sendRaw(once('time', () => ({ t: 'time', elapsed: this.elapsed })));
     }
+    for (const colony of pendingStatics) colony.staticsSent = colony.sim.staticsRevision;
     if (t % PLAYERS_EVERY === 0) this.sendPlayers();
   }
 

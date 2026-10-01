@@ -116,9 +116,10 @@ export class ColonyUI {
       this.panel.hidden = true;
       return;
     }
-    if (this.rosterFor !== this.colony.colonists) this.buildRoster();
+    if (this.rosterFor !== this.colony.colonists || this.rosterCount !== this.colony.colonists.length) this.buildRoster();
 
-    this.count.textContent = String(this.colony.count);
+    const popText = `${this.colony.count}/${this.colony.maxPopulation}`;
+    if (this.count.textContent !== popText) this.count.textContent = popText;
     this.wellbeingValue.textContent = `${Math.round(summary.wellbeing)}%`;
     setBar(this.wellbeingBar, summary.wellbeing);
     setTone(this.wellbeingValue.closest('.meter'), summary.wellbeing);
@@ -136,6 +137,7 @@ export class ColonyUI {
 
   buildRoster() {
     this.rosterFor = this.colony.colonists;
+    this.rosterCount = this.colony.colonists.length;
     this.roster.innerHTML = '';
     this.rows = new Map();
     for (const c of this.colony.colonists) {
@@ -204,7 +206,7 @@ export class ColonyUI {
         <span class="avatar avatar--lg"></span>
         <div>
           <h2 class="cp-name">${escapeHtml(c.name)}</h2>
-          <p class="cp-sub">${c.age} años · <span data-activity></span></p>
+          <p class="cp-sub"><span data-who></span> · <span data-activity></span></p>
         </div>
         <button type="button" class="icon-button" data-close aria-label="Cerrar ficha">${icon('close')}</button>
       </header>
@@ -240,6 +242,10 @@ export class ColonyUI {
         <section class="cp-section">
           <h3>Ahora</h3>
           <p class="activity-now" data-activity></p>
+        </section>
+        <section class="cp-section">
+          <h3>Familia</h3>
+          <p class="activity-now" data-family></p>
         </section>
         <section class="cp-section">
           <h3>Trabajo</h3>
@@ -319,6 +325,23 @@ export class ColonyUI {
   updatePanel(c) {
     if (this.panel.hidden) return;
     for (const el of this.panel.querySelectorAll('[data-activity]')) el.textContent = c.activity;
+    const who = this.panel.querySelector('[data-who]');
+    const growth = c.growth ?? 1;
+    const whoText = growth < 1 ? `${c.sex === 'f' ? 'Niña' : 'Niño'} · ${Math.round(growth * 100)}% crecido` : `${c.sex === 'f' ? 'Mujer' : 'Hombre'} · ${c.age} años`;
+    if (who.textContent !== whoText) who.textContent = whoText;
+    const family = this.panel.querySelector('[data-family]');
+    const byId = (id) => this.colony.colonist(id)?.name;
+    const parts = [];
+    if (c.born) parts.push(`Hijo de ${byId(c.born.mother) ?? 'alguien'} y ${byId(c.born.father) ?? 'alguien'}.`.replace('Hijo', c.sex === 'f' ? 'Hija' : 'Hijo'));
+    if (c.mate != null && byId(c.mate)) parts.push(`Pareja: ${byId(c.mate)}.`);
+    const kids = this.colony.colonists.filter((o) => o.born && (o.born.mother === c.id || o.born.father === c.id)).map((o) => o.name);
+    if (kids.length) parts.push(`Hijos: ${kids.join(', ')}.`);
+    if (c.pregnant) parts.push('Espera un hijo.');
+    const house = c.home != null ? this.colony.building(c.home) : null;
+    parts.push(house ? `Vive en: ${house.name}.` : 'Duerme en las tiendas del campamento.');
+    if (growth >= 1 && c.desire != null) parts.push(c.desire >= 70 ? 'Tiene ganas de compañía.' : '');
+    const familyText = parts.filter(Boolean).join(' ');
+    if (family.textContent !== familyText) family.textContent = familyText;
     const job = this.panel.querySelector('[data-job]');
     const jobText = c.job ? `${c.job.def.job} en ${c.job.name}` : 'Sin trabajo asignado';
     if (job.textContent !== jobText) job.textContent = jobText;
