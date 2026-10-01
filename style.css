@@ -2635,3 +2635,10 @@ canvas.is-harvesting {
 .candidate.is-assigned { background: rgba(216, 162, 74, 0.14); border-radius: 8px; }
 .site-candidates .candidate { grid-template-columns: 26px minmax(0, 1fr) auto; padding: 3px 4px; }
 .btn--danger { border-color: rgba(229, 100, 90, 0.6); color: #ffb3ab; }
+
+/* Lista de tareas para asignar a un colono */
+.task-list { display: grid; gap: 4px; max-height: 200px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.task-group { margin: 6px 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; }
+.task-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--ui-line); border-radius: 8px; background: rgba(255, 255, 255, 0.05); color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.task-row:hover { background: rgba(255, 255, 255, 0.12); border-color: var(--accent); }
+.task-row small { opacity: 0.65; white-space: nowrap; }

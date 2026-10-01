@@ -280,11 +280,9 @@ export class ColonyUI {
           <p class="activity-now" data-order></p>
           <p class="activity-now" data-avail></p>
           <div class="order-box" data-orderbox>
-            <label class="order-label">Asignar tarea
-              <select data-order-pick></select>
-            </label>
+            <h4 class="site-sub">Asignar tarea</h4>
+            <div class="task-list" data-order-list></div>
             <div class="order-buttons">
-              <button type="button" class="btn" data-order-go>Asignar</button>
               <button type="button" class="btn" data-order-cancel>Cancelar orden</button>
             </div>
             <p class="order-msg" data-order-msg role="status"></p>
@@ -349,9 +347,10 @@ export class ColonyUI {
     }
     this.orderOptionsKey = null;
     const msg = this.panel.querySelector('[data-order-msg]');
-    this.panel.querySelector('[data-order-go]').addEventListener('click', () => {
-      const [kind, id] = this.panel.querySelector('[data-order-pick]').value.split(':');
-      if (!kind) return;
+    this.panel.querySelector('[data-order-list]').addEventListener('click', (e) => {
+      const row = e.target.closest('[data-task]');
+      if (!row) return;
+      const [kind, id] = row.dataset.task.split(':');
       if (kind === 'work') {
         const b = this.colony.building(Number(id));
         const why = !b || !b.done ? 'Ese edificio no está disponible.' : !this.colony.available(c) ? 'No puede trabajar: es un niño o soldado.' : null;
@@ -459,15 +458,14 @@ export class ColonyUI {
     const key = `${sites.map((b) => b.id).join()}|${posts.map((b) => `${b.id}:${b.workers.length}`).join()}|${hasMarks}`;
     if (key === this.orderOptionsKey) return;
     this.orderOptionsKey = key;
-    const pick = this.panel.querySelector('[data-order-pick]');
-    const keep = pick.value;
-    const opt = (v, t) => `<option value="${v}">${escapeHtml(t)}</option>`;
-    pick.innerHTML =
-      (sites.length ? `<optgroup label="Construir">${sites.map((b) => opt(`build:${b.id}`, `${b.upgrading ? 'Mejorar' : 'Construir'}: ${b.name}`)).join('')}</optgroup>` : '') +
-      (hasMarks ? `<optgroup label="Recolectar">${opt('harvest:', 'Recolectar lo marcado')}</optgroup>` : '') +
-      (posts.length ? `<optgroup label="Puesto de trabajo">${posts.map((b) => opt(`work:${b.id}`, `${b.def.job} en ${b.name} (${b.workers.length}/${this.colony.crewNeeded(b)})`)).join('')}</optgroup>` : '');
-    if (!pick.options.length) pick.innerHTML = opt('', 'No hay obras ni puestos disponibles');
-    if (keep) pick.value = keep;
+    const list = this.panel.querySelector('[data-order-list]');
+    const row = (v, title, sub = '') => `<button type="button" class="task-row" data-task="${v}"><span>${escapeHtml(title)}</span>${sub ? `<small>${escapeHtml(sub)}</small>` : ''}</button>`;
+    const group = (name, rows) => (rows.length ? `<p class="task-group">${name}</p>${rows.join('')}` : '');
+    list.innerHTML =
+      group('Construir', sites.map((b) => row(`build:${b.id}`, `${b.upgrading ? 'Mejorar' : 'Construir'}: ${b.name}`))) +
+      group('Recolectar', hasMarks ? [row('harvest:', 'Recolectar lo marcado')] : []) +
+      group('Puesto de trabajo', posts.map((b) => row(`work:${b.id}`, b.name, `${b.def.job} · ${b.workers.length}/${this.colony.crewNeeded(b)}`)));
+    if (!list.innerHTML) list.innerHTML = '<p class="reason">No hay obras ni puestos disponibles.</p>';
   }
 
   // ---- Seguir con la cámara --------------------------------------------------
