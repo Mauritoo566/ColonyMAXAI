@@ -1,7 +1,7 @@
 import { BUILDING_TYPES, BUILD_CATEGORIES, STOCK_NAMES, levelOf } from './buildings.js';
 import { GOODS, BASE_GOODS } from './sim/goods.js';
-import { defImplemented, minAgeOf } from './sim/progression.js';
-import { AGES, ageInfo } from './ages.js';
+import { defImplemented, minAgeOf, levelBenefits } from './sim/progression.js';
+import { ageInfo } from './ages.js';
 import { FOOD_SPOIL_SECONDS, zoneCapacity } from './sim/colony.js';
 import { storageKey } from './storage.js';
 import { DAY_LENGTH_SECONDS } from './daynight.js';
@@ -398,31 +398,95 @@ export class BuildUI {
 
   render(b) {
     if (b.isStore) return this.renderStore(b);
+    const colony = this.colony;
     const def = b.def;
     const skill = SKILLS.find((s) => s.id === def.skill);
-    const isStorage = !def.skill;
-    const isHouse = def.id === 'house';
+    const isStorage = !!def.levels[0].capacity;
+    const isHouse = def.levels[0].housing != null;
+    const needed = colony.crewNeeded(b);
     const level = levelOf(b);
     const next = levelOf(b, 1);
-    const age = ageInfo(b.level);
-    const state = b.upgrading
-      ? `Mejorando · ${Math.round(b.progress * 100)}%`
-      : !b.done
-        ? `En construcción · ${Math.round(b.progress * 100)}%`
-        : isStorage
-          ? isHouse ? `${this.colony.colonists.filter((c) => c.home === b.id).length}/${level.housing} vecinos` : 'En uso'
-          : b.worker
-            ? 'Funcionando'
-            : 'Sin trabajador';
-    const ranking = isStorage ? [] : this.buildings.ranking(b);
+    const age = ageInfo(level.age);
+    const crew = b.workers;
+    const stateText = () => {
+      if (b.upgrading) return `Mejorando · ${Math.round(b.progress * 100)}%`;
+      if (!b.done) return `En construcción · ${Math.round(b.progress * 100)}%`;
+      if (isHouse) return `${colony.colonists.filter((c) => c.home === b.id).length}/${level.housing} vecinos`;
+      if (needed) return crew.length === 0 ? 'Sin trabajador' : crew.length < needed ? `Falta personal · ${crew.length}/${needed}` : b.status ? 'Detenido' : 'Funcionando';
+      return 'En uso';
+    };
+    const state = stateText();
+    const ranking = needed ? this.buildings.ranking(b).filter((c) => colony.available(c)) : [];
     const upgradeProblem = this.buildings.upgradeProblem(b);
     const stored = level.rainOnly ? Math.floor(b.store) : null;
     // Clave para no redibujar si nada cambió.
-    const key = [state, this.colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, b.worker?.id, Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, this.colony.age, ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [state, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, colony.age, Math.floor((b.cycle ?? 0) * 20), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
-    const produced = isStorage ? '' : def.id === 'well' ? `${Math.floor(b.produced)} jarras de agua` : `${Math.floor(b.produced)} de ${STOCK_NAMES[def.stock]}`;
+    const outGood = level.recipe ? Object.keys(level.recipe.out ?? {})[0] : null;
+    const produced = !needed
+      ? ''
+      : def.id === 'well'
+        ? `${Math.floor(b.produced)} jarras de agua`
+        : def.stock
+          ? `${Math.floor(b.produced)} de ${STOCK_NAMES[def.stock]}`
+          : outGood
+            ? `${Math.floor(b.produced)} de ${STOCK_NAMES[outGood]}`
+            : `${Math.floor(b.produced)}`;
+    const recipeHtml = level.recipe
+      ? `<div class="stat-line"><span>Receta</span><strong>${Object.entries(level.recipe.in ?? {}).map(([k, n]) => `${n} ${STOCK_NAMES[k]}`).join(' + ') || 'sin materiales'} → ${Object.entries(level.recipe.out ?? {}).map(([k, n]) => `${n} ${STOCK_NAMES[k]}`).join(' + ') || 'energía'} · ${level.recipe.time} s</strong></div>`
+      : '';
+    const crewHtml = needed
+      ? `<section class="cp-section">
+          <h3>Trabajadores (${crew.length}/${needed})</h3>
+          ${crew
+            .map(
+              (w) => `<div class="worker-card">
+                <span class="avatar" data-avatar="${w.id}"></span>
+                <div><div class="worker-name">${escapeHtml(w.name)}</div><div class="reason">${skill.name}: ${colony.skillOf(w, def.skill)}/10</div></div>
+                <button type="button" class="btn" data-see-worker="${w.id}">Ver</button>
+                <button type="button" class="btn" data-release="${w.id}">Quitar</button>
+              </div>`,
+            )
+            .join('')}
+          ${crew.length < needed ? `<p class="reason" style="color:var(--warn)">${needed - crew.length === 1 ? 'Falta 1 puesto' : `Faltan ${needed - crew.length} puestos`}: con la dotación incompleta trabaja más despacio.</p>` : ''}
+          <p class="reason">${escapeHtml(b.reason)}</p>
+          ${b.status ? `<p class="reason" style="color:var(--warn)">${escapeHtml(b.status)}</p>` : ''}
+        </section>
+        <section class="cp-section">
+          <h3>Producción</h3>
+          ${recipeHtml}
+          ${b.cycle != null && level.recipe ? `<div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.cycle * 100)}%"></i></div>` : ''}
+          <div class="stat-line"><span>Ha producido</span><strong>${produced}</strong></div>
+          ${stored !== null ? `<div class="stat-line"><span>Agua en las vasijas</span><strong>${stored} / ${level.capacity}</strong></div>` : ''}
+        </section>`
+      : '';
+    const effectsHtml = !needed && !isHouse && !isStorage ? this.effectsHtml(b, level) : '';
+    const levels = def.levels;
+    const nextBenefits = next ? levelBenefits(def, level, next) : [];
+    const upgradeHtml = def.autoLevel
+      ? ''
+      : `<section class="cp-section">
+          <h3>Mejora</h3>
+          <ol class="level-track" aria-label="Niveles">
+            ${levels.map((lv, i) => `<li class="${i + 1 < b.level ? 'is-past' : i + 1 === b.level ? 'is-now' : ''}" title="${lv.name} (${ageInfo(lv.age).name})">${ageInfo(lv.age).numeral}</li>`).join('')}
+          </ol>
+          ${
+            next
+              ? `<div class="upgrade-card">
+                  <div class="upgrade-title"><span>Siguiente nivel · ${ageInfo(next.age).name}</span><strong>${next.name}</strong></div>
+                  <p class="reason">${next.desc}</p>
+                  <ul class="benefits">${nextBenefits.map((t) => `<li>${t}</li>`).join('')}</ul>
+                  <div class="upgrade-foot">
+                    <span class="build-cost">${costHtml({ cost: next.upgradeCost }, colony.stock)}</span>
+                    <button type="button" class="btn btn--primary" data-upgrade ${upgradeProblem ? 'disabled' : ''}>${icon('hammer')}Mejorar</button>
+                  </div>
+                  ${upgradeProblem ? `<p class="reason" style="color:var(--warn)">${escapeHtml(upgradeProblem)}</p>` : ''}
+                </div>`
+              : `<p class="reason">${escapeHtml(upgradeProblem ?? '')}</p>`
+          }
+        </section>`;
     this.panel.innerHTML = `
       <header class="cp-head">
         <span class="bp-icon">${icon(def.icon)}</span>
@@ -439,54 +503,19 @@ export class BuildUI {
             ? `<section class="cp-section">
                 <h3>Mejora a ${next.name}</h3>
                 <div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.progress * 100)}%"></i></div>
-                <p class="reason">Los constructores trabajan en la mejora. Mientras tanto no se produce nada; al terminar, ${b.worker ? escapeHtml(b.worker.name) + ' vuelve a su trabajo' : 'la colonia elegirá un trabajador'}.</p>
+                <p class="reason">Los constructores trabajan en la mejora. Mientras tanto no se produce nada${crew.length ? `; al terminar, ${escapeHtml(crew.map((w) => w.name).join(', '))} vuelve${crew.length > 1 ? 'n' : ''} a su trabajo` : ''}.</p>
               </section>`
             : !b.done
-            ? `<section class="cp-section">
-                <h3>Obra</h3>
-                <div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.progress * 100)}%"></i></div>
-                <p class="reason">Los colonos construyen de día cuando tienen lo básico cubierto. Quien sabe más de construcción avanza más rápido. ${isHouse ? 'Al terminar, la colonia admitirá más colonos y quienes vivan aquí dormirán bajo techo.' : isStorage ? 'Al terminar, el almacén de la colonia podrá guardar más.' : `Al terminar, la colonia elegirá a la persona más capacitada en ${skill.name.toLowerCase()} para trabajar aquí.`}</p>
-              </section>`
-            : `${isHouse ? this.houseHtml(b, level, next) : isStorage ? this.storageAddsHtml(level, next) : `<section class="cp-section">
-                <h3>Trabajador</h3>
-                ${
-                  b.worker
-                    ? `<div class="worker-card">
-                        <span class="avatar"></span>
-                        <div><div class="worker-name">${escapeHtml(b.worker.name)}</div><div class="reason">${skill.name}: ${b.worker.skills[def.skill]}/10</div></div>
-                        <button type="button" class="btn" data-see-worker>Ver</button>
-                      </div>`
-                    : ''
-                }
-                <p class="reason">${escapeHtml(b.reason)}</p>
-                ${b.status ? `<p class="reason" style="color:var(--warn)">${escapeHtml(b.status)}</p>` : ''}
-              </section>
-              <section class="cp-section">
-                <h3>Producción</h3>
-                <div class="stat-line"><span>Ha producido</span><strong>${produced}</strong></div>
-                ${stored !== null ? `<div class="stat-line"><span>Agua en las vasijas</span><strong>${stored} / ${level.capacity}</strong></div>` : ''}
-              </section>`}
-              <section class="cp-section">
-                <h3>Mejora</h3>
-                <ol class="level-track" aria-label="Niveles">
-                  ${AGES.map((a) => `<li class="${a.n < b.level ? 'is-past' : a.n === b.level ? 'is-now' : ''}" title="${a.name}">${a.numeral}</li>`).join('')}
-                </ol>
-                ${
-                  next
-                    ? `<div class="upgrade-card">
-                        <div class="upgrade-title"><span>Siguiente nivel</span><strong>${next.name}</strong></div>
-                        <p class="reason">${next.desc}</p>
-                        <div class="upgrade-foot">
-                          <span class="build-cost">${costHtml({ cost: next.upgradeCost }, this.colony.stock)}</span>
-                          <button type="button" class="btn btn--primary" data-upgrade ${upgradeProblem ? 'disabled' : ''}>${icon('hammer')}Mejorar</button>
-                        </div>
-                        ${upgradeProblem ? `<p class="reason" style="color:var(--warn)">${escapeHtml(upgradeProblem)}</p>` : ''}
-                      </div>`
-                    : `<p class="reason">${escapeHtml(upgradeProblem ?? '')}</p>`
-                }
-              </section>`
+              ? `<section class="cp-section">
+                  <h3>Obra</h3>
+                  <div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.progress * 100)}%"></i></div>
+                  <p class="reason">Los colonos construyen de día cuando tienen lo básico cubierto. Quien sabe más de construcción avanza más rápido. ${isHouse ? 'Al terminar, la colonia admitirá más colonos y quienes vivan aquí dormirán bajo techo.' : isStorage ? 'Al terminar, el almacén de la colonia podrá guardar más.' : needed ? `Al terminar, la colonia elegirá a las personas más capacitadas en ${skill.name.toLowerCase()} para trabajar aquí.` : 'Al terminar, entrará en servicio.'}</p>
+                </section>`
+              : `${isHouse ? this.houseHtml(b, level, next) : isStorage ? this.storageAddsHtml(level, next) : ''}${crewHtml}${effectsHtml}${upgradeHtml}`
         }
-        ${isStorage ? '' : `<section class="cp-section">
+        ${
+          needed && b.done
+            ? `<section class="cp-section">
           <h3>Más capacitados en ${skill.name.toLowerCase()}</h3>
           <ul class="candidate-list">
             ${ranking
@@ -495,27 +524,47 @@ export class BuildUI {
               <li class="candidate">
                 <span class="avatar" data-avatar="${c.id}"></span>
                 <span>${escapeHtml(c.name)}${c.job && c.job !== b ? ` <span class="reason">· ${escapeHtml(c.job.def.job)}</span>` : ''}</span>
-                <span class="bar"><i style="width:${c.skills[def.skill] * 10}%"></i></span>
-                ${b.done ? `<button type="button" data-assign="${c.id}" ${b.worker === c ? 'disabled' : ''}>${b.worker === c ? 'Asignado' : 'Asignar'}</button>` : `<span class="reason">${c.skills[def.skill]}/10</span>`}
+                <span class="bar"><i style="width:${colony.skillOf(c, def.skill) * 10}%"></i></span>
+                ${crew.includes(c) ? `<button type="button" data-release="${c.id}">Quitar</button>` : `<button type="button" data-assign="${c.id}">Asignar</button>`}
               </li>`,
               )
               .join('')}
           </ul>
-        </section>`}
+        </section>`
+            : ''
+        }
       </div>`;
-    const workerAvatar = this.panel.querySelector('.worker-card .avatar');
-    if (b.worker && workerAvatar) paintAvatar(workerAvatar, b.worker.look);
     for (const el of this.panel.querySelectorAll('[data-avatar]')) {
-      paintAvatar(el, this.colony.colonists.find((c) => c.id === Number(el.dataset.avatar)).look);
+      const who = colony.colonists.find((c) => c.id === Number(el.dataset.avatar));
+      if (who) paintAvatar(el, who.look);
     }
     this.panel.querySelector('[data-close]').addEventListener('click', () => this.buildings.select(null));
     this.panel.querySelector('[data-upgrade]')?.addEventListener('click', () => this.buildings.upgrade(b));
-    this.panel.querySelector('[data-see-worker]')?.addEventListener('click', () => this.onFocusColonist?.(b.worker));
+    for (const button of this.panel.querySelectorAll('[data-see-worker]')) {
+      button.addEventListener('click', () => this.onFocusColonist?.(colony.colonist(Number(button.dataset.seeWorker))));
+    }
+    for (const button of this.panel.querySelectorAll('[data-release]')) {
+      button.addEventListener('click', () => colony.releaseWorker(b, colony.colonist(Number(button.dataset.release))));
+    }
     for (const button of this.panel.querySelectorAll('[data-assign]')) {
       button.addEventListener('click', () => {
-        const c = this.colony.colonists.find((o) => o.id === Number(button.dataset.assign));
+        const c = colony.colonists.find((o) => o.id === Number(button.dataset.assign));
         this.buildings.setWorker(b, c);
       });
     }
+  }
+
+  // Efectos de los edificios sin trabajadores (defensas, cuarteles, postes...): lo que aportan.
+  effectsHtml(b, level) {
+    const lines = [];
+    if (level.defense) lines.push(['Puntos de defensa', level.defense]);
+    if (level.garrison) lines.push(['Guarnición', level.garrison]);
+    if (level.reach) lines.push(['Alcance', `${level.reach} m`]);
+    if (level.power) lines.push(['Energía que produce', level.power]);
+    if (level.speed) lines.push(['Velocidad de entrega', `×${level.speed}`]);
+    if (level.energy) lines.push(['Energía que consume', level.energy]);
+    if (b.status) lines.push(['Estado', b.status]);
+    if (!lines.length) return '';
+    return `<section class="cp-section"><h3>Efectos</h3>${lines.map(([k, v]) => `<div class="stat-line"><span>${k}</span><strong>${v}</strong></div>`).join('')}</section>`;
   }
 }

@@ -4,7 +4,7 @@ import { DAY_LENGTH_SECONDS } from '../daynight.js';
 import { AGES, ageInfo, nextAgeStatus } from '../ages.js';
 import { insideRect, rectDistance, upgradeRect } from '../rect.js';
 import { temperature, biomeAt, BIOMES } from '../biomes.js';
-import { createProfile, updateNeeds, hasTrait, wellbeing, addLog, SKILLS, TRAITS } from '../needs.js';
+import { createProfile, updateNeeds, hasTrait, wellbeing, addLog, SKILLS, TRAITS, completeSkill, completeSkills } from '../needs.js';
 import { appearanceFromGenes, gene } from '../genes.js';
 import { RESOURCE_TYPES } from '../resourceTypes.js';
 import { TILE_ANGLE, generateTile, generateCampGrove, GROVE_KEY, SPROUT_KEY, sproutItem, tileFromItems } from '../resourceGen.js';
@@ -336,6 +336,7 @@ export class ColonySim {
         loving: false,
         invite: null,
       };
+      completeSkills(colonist);
       addLog(colonist, 'Día 1', 'Llegó al campamento');
       this.colonists.push(colonist);
     }
@@ -345,15 +346,16 @@ export class ColonySim {
   // los nacimientos, cargar una partida y el navegador al recibir al niño del servidor.
   makeColonist(st, dyn = {}) {
     const growth = dyn.growth ?? 1;
+    const skills = { ...st.skills };
     const x = dyn.x ?? 0;
     const z = dyn.z ?? 0;
-    return {
+    const colonist = {
       id: st.id,
       name: st.name,
       sex: st.sex,
       genome: st.genome,
       traits: (st.traits ?? []).map((t) => (typeof t === 'string' ? TRAITS.find((o) => o.id === t) : t)).filter(Boolean),
-      skills: st.skills,
+      skills,
       bio: st.bio,
       look: st.look,
       born: st.born ?? null,
@@ -387,6 +389,8 @@ export class ColonySim {
       loving: false,
       invite: null,
     };
+    completeSkills(colonist);
+    return colonist;
   }
 
   // Lo que no cambia de un colono que nació en la colonia (los fundadores salen de la semilla).
@@ -1249,7 +1253,10 @@ export class ColonySim {
       get name() {
         return this.def.levels[this.level - 1].name;
       },
-      worker: null,
+      workers: [], // la dotación (varios colonos en los edificios que lo piden)
+      get worker() {
+        return this.workers[0] ?? null;
+      },
       reason: '',
       status: null,
       zone,
@@ -1266,7 +1273,7 @@ export class ColonySim {
     for (const b of this.buildings) {
       b.removed = true;
       removeTerrainZone(b.zone);
-      if (b.worker) b.worker.job = null;
+      for (const w of b.workers) w.job = null;
     }
     const had = this.buildings.length > 0;
     this.buildings = [];
@@ -1285,7 +1292,7 @@ export class ColonySim {
       b.upgrading = false;
       b.level++;
       if (builder && !silent) addLog(builder, time, `Terminó de mejorar ${old}: ahora es ${b.name}`);
-      if (b.worker && b.worker !== builder && !silent) addLog(b.worker, time, `Su lugar de trabajo ahora es ${b.name}`);
+      if (!silent) for (const w of b.workers) if (w !== builder) addLog(w, time, `Su lugar de trabajo ahora es ${b.name}`);
     } else if (builder && !silent) {
       addLog(builder, time, `Terminó de construir: ${b.name}`);
     }
@@ -1324,7 +1331,7 @@ export class ColonySim {
 
   // Puntuación de un colono para un oficio: su habilidad y su actitud.
   aptitude(c, def) {
-    return c.skills[def.skill] + (hasTrait(c, 'hardworking') ? 0.8 : 0) - (hasTrait(c, 'lazy') ? 1.2 : 0);
+    return completeSkill(c, def.skill) + (hasTrait(c, 'hardworking') ? 0.8 : 0) - (hasTrait(c, 'lazy') ? 1.2 : 0);
   }
 
   // Colonos ordenados de más a menos capacitados para un edificio.
@@ -1332,39 +1339,78 @@ export class ColonySim {
     return [...this.colonists].sort((a, c) => this.aptitude(c, b.def) - this.aptitude(a, b.def));
   }
 
-  // La colonia elige al colono libre más capacitado.
+  // Cuántos trabajadores pide un edificio en su nivel actual.
+  crewNeeded(b) {
+    if (!b.def.skill) return 0;
+    return levelOf(b).workers ?? b.def.workers;
+  }
+
+  // ¿Puede trabajar este colono? Adultos que no son soldados.
+  available(c) {
+    return (c.growth ?? 1) >= 1 && !c.soldier;
+  }
+
+  // La colonia completa la dotación con los colonos libres más capacitados.
   assignWorker(b) {
     // En la copia del navegador conectada al servidor, los trabajadores los elige el servidor.
-    if (this.remote || !b.done || b.worker || !b.def.skill) return;
-    const free = this.ranking(b).filter((c) => !c.job);
+    if (this.remote || !b.done) return;
+    const needed = this.crewNeeded(b);
+    if (!needed || b.workers.length >= needed) return;
+    const free = this.ranking(b).filter((c) => !c.job && this.available(c));
     if (!free.length) {
       b.reason = 'No hay colonos libres. Puedes elegir a uno de la lista.';
       return;
     }
-    const best = free[0];
     const skillName = SKILLS.find((s) => s.id === b.def.skill).name;
-    const others = free.length > 1 ? ' entre los colonos libres' : '';
-    this.setWorker(b, best, `La colonia le eligió por tener la mejor ${skillName.toLowerCase()} (${best.skills[b.def.skill]}/10)${others}.`);
+    while (b.workers.length < needed && free.length) {
+      const best = free.shift();
+      const others = free.length ? ' entre los colonos libres' : '';
+      this.setWorker(b, best, `La colonia le eligió por tener la mejor ${skillName.toLowerCase()} (${this.skillOf(best, b.def.skill)}/10)${others}.`);
+    }
   }
 
-  // Asignar a mano (desde la ficha del edificio).
+  // Asignar a mano (desde la ficha del edificio). Si la dotación está completa, sale el
+  // que lleva más tiempo.
   setWorker(b, c, reason = 'Elegido por ti.') {
     if (this.remote) {
       this.remote('setWorker', [b.id, c.id]);
       return;
     }
+    const needed = this.crewNeeded(b);
+    if (!needed || !this.available(c) || b.workers.includes(c)) return;
     if (c.job && c.job !== b) {
       const old = c.job;
-      old.worker = null;
+      old.workers = old.workers.filter((w) => w !== c);
       old.reason = `${c.name} se fue a trabajar a ${b.name}.`;
     }
-    if (b.worker && b.worker !== c) b.worker.job = null;
-    b.worker = c;
+    while (b.workers.length >= needed) b.workers.shift().job = null;
+    b.workers.push(c);
     b.reason = reason;
     c.job = b;
     addLog(c, this.timeLabel(), `Ahora trabaja en: ${b.name}`);
     this.emit('buildings');
     this.emit('changed');
+  }
+
+  // Dejar a un colono sin trabajo (desde la ficha del edificio). Queda libre para otro puesto.
+  releaseWorker(b, c) {
+    if (this.remote) {
+      this.remote('releaseWorker', [b.id, c.id]);
+      return;
+    }
+    if (!b.workers.includes(c)) return;
+    b.workers = b.workers.filter((w) => w !== c);
+    c.job = null;
+    c.task = null;
+    b.reason = `${c.name} dejó el puesto.`;
+    addLog(c, this.timeLabel(), `Dejó su trabajo en: ${b.name}`);
+    this.emit('buildings');
+    this.emit('changed');
+  }
+
+  // Habilidad de un colono (las nuevas se completan solas a partir de sus genes).
+  skillOf(c, id) {
+    return completeSkill(c, id);
   }
 
   // Lo que pasa en los edificios con el tiempo: el recolector de lluvia se llena solo
@@ -1452,6 +1498,7 @@ export class ColonySim {
         upgrading: b.upgrading,
         store: b.store,
         worker: b.worker ? b.worker.id : null,
+        workers: b.workers.map((w) => w.id),
       })),
     };
   }
@@ -1472,12 +1519,14 @@ export class ColonySim {
         b.progress = s.progress;
         b.buildTime = def.buildTime * (1 + b.level * 0.4);
       }
-      const worker = this.colonists.find((c) => c.id === s.worker);
-      if (b.done && worker) {
-        if (b.worker) b.worker.job = null;
-        b.worker = worker;
-        worker.job = b;
-        b.reason = 'Trabajaba aquí antes.';
+      const ids = Array.isArray(s.workers) ? s.workers : s.worker != null ? [s.worker] : [];
+      for (const id of ids) {
+        const worker = this.colonists.find((c) => c.id === id);
+        if (b.done && worker && !worker.job && b.workers.length < Math.max(1, this.crewNeeded(b))) {
+          b.workers.push(worker);
+          worker.job = b;
+          b.reason = 'Trabajaba aquí antes.';
+        }
       }
     }
     this.restoreColony(data.colony);
@@ -1512,8 +1561,15 @@ export class ColonySim {
       case 'setWorker': {
         const b = this.building(args[0]);
         const c = this.colonist(args[1]);
-        if (!b || !c || !b.def.skill || !b.done) return false;
+        if (!b || !c || !b.def.skill || !b.done || !this.available(c)) return false;
         this.setWorker(b, c);
+        return true;
+      }
+      case 'releaseWorker': {
+        const b = this.building(args[0]);
+        const c = this.colonist(args[1]);
+        if (!b || !c || !b.workers.includes(c)) return false;
+        this.releaseWorker(b, c);
         return true;
       }
       case 'advanceAge':
@@ -1609,7 +1665,7 @@ export class ColonySim {
         buildTime: b.buildTime ?? null,
         store: r2(b.store),
         produced: Math.floor(b.produced),
-        worker: b.worker?.id ?? null,
+        workers: b.workers.map((w) => w.id),
         reason: b.reason,
         status: b.status,
       })),
@@ -1715,9 +1771,9 @@ export class ColonySim {
         status: row.status,
       });
       if (row.buildTime) b.buildTime = row.buildTime;
-      const worker = row.worker === null ? null : this.colonist(row.worker);
-      if (b.worker !== worker) {
-        b.worker = worker;
+      const crew = (row.workers ?? []).map((id) => this.colonist(id)).filter(Boolean);
+      if (crew.length !== b.workers.length || crew.some((w, i) => w !== b.workers[i])) {
+        b.workers = crew;
         changed = true;
       }
     }
@@ -1733,7 +1789,7 @@ export class ColonySim {
       changed = true;
     }
     for (const c of this.colonists) c.job = null;
-    for (const b of this.buildings) if (b.worker) b.worker.job = b;
+    for (const b of this.buildings) for (const w of b.workers) w.job = b;
     if (changed) this.emit('buildings');
 
     // Recursos: marcas, lo talado y lo que brotó.

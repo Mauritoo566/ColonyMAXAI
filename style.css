@@ -2478,3 +2478,15 @@ canvas.is-harvesting {
 .age-limits {
   margin: 0 0 8px;
 }
+
+.benefits {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ui-faint, #9aa3a8);
+}
+
+.benefits li::marker {
+  color: var(--accent, #f2b24c);
+}

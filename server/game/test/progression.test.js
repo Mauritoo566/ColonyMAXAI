@@ -80,6 +80,27 @@ sim.stock.food = 1;
 assert.match(growthBlocker(sim), /reservas de comida/);
 console.log('✓ el crecimiento exige abastecimiento');
 
+// Dotaciones: se asignan solas, se pueden quitar y poner a mano y los niños o soldados no trabajan.
+const gath = sim.buildings.find((b) => b.def.id === 'gatherer');
+sim.assignWorker(gath);
+assert.equal(gath.workers.length, 1);
+const w0 = gath.workers[0];
+assert.equal(gath.worker, w0);
+sim.releaseWorker(gath, w0);
+assert.equal(gath.workers.length, 0);
+assert.equal(w0.job, null);
+const kid = sim.colonists[1];
+kid.growth = 0.5;
+sim.setWorker(gath, kid);
+assert.equal(gath.workers.length, 0, 'un niño no trabaja');
+kid.growth = 1;
+sim.setWorker(gath, kid);
+assert.equal(gath.workers[0], kid);
+const snap = JSON.parse(JSON.stringify(sim.snapshot('full')));
+assert.deepEqual(snap.buildings.find((r) => r.id === gath.id).workers, [kid.id]);
+assert.equal(sim.crewNeeded(sim.buildings.find((b) => b.def.id === 'house')), 0);
+console.log('✓ dotaciones de trabajadores (asignar, quitar, niños no trabajan, snapshot)');
+
 // Partida anterior: edificios de nivel II en edad I y viviendas de nivel I en edad II se conservan.
 const old = colony();
 const g = place(old, 'gatherer', 0, 2); // ya mejorada antes de las nuevas reglas

@@ -11,10 +11,11 @@ import { AGES, ageInfo, MAX_AGE, AGE_HOOKS } from '../ages.js';
 import { BUILDING_TYPES, BUILDINGS, levelOf } from './buildingTypes.js';
 import { GOOD_NAMES } from './goods.js';
 import { TECHS_BY_ID } from './techs.js';
+import { DAY_LENGTH_SECONDS } from '../daynight.js';
 
 // ---- Qué está implementado -------------------------------------------------------------------
 // Lo que todavía no funciona no se ofrece ni se puede construir. Cada fase añade sus funciones.
-export const FEATURES = new Set(['gather', 'storage', 'house', 'well']);
+export const FEATURES = new Set(['gather', 'storage', 'house', 'well', 'crew']);
 
 const KIND_FEATURE = { undefined: 'gather', process: 'process', power: 'power', node: 'power', drop: 'drop', market: 'market', admin: 'admin', research: 'research', service: 'service', military: 'military', defense: 'defense' };
 
@@ -293,3 +294,45 @@ function goodProducible(good) {
 }
 
 export { MAX_AGE };
+
+// ---- Qué gana una mejora (para mostrarlo en la ficha) ----------------------------------------------
+
+const rate = (r) => {
+  const out = Object.entries(r.out ?? {})[0];
+  return out ? { good: out[0], perDay: Math.round((out[1] * DAY_LENGTH_SECONDS) / r.time) } : null;
+};
+
+// Lista de beneficios concretos de pasar del nivel "from" al "to" de un tipo de edificio.
+export function levelBenefits(def, from, to) {
+  const out = [];
+  const num = (key, label) => {
+    if (to[key] != null && to[key] !== (from[key] ?? 0)) out.push(`${label}: ${from[key] ?? 0} → ${to[key]}`);
+  };
+  num('yield', 'Trae por viaje');
+  num('housing', 'Plazas de vivienda');
+  num('defense', 'Puntos de defensa');
+  num('garrison', 'Guarnición');
+  num('trade', 'Cupo diario de comercio');
+  num('power', 'Energía que produce');
+  num('reach', 'Alcance (m)');
+  num('regen', 'Recuperación de salud');
+  num('teach', 'Enseñanza');
+  num('expansions', 'Ampliaciones de territorio');
+  if (to.workTime && from.workTime && to.workTime !== from.workTime) out.push(`Tiempo por jarra: ${from.workTime} s → ${to.workTime} s`);
+  if (to.capacity && from.capacity) {
+    const sum = (c) => Object.values(c).reduce((a, b) => a + b, 0);
+    out.push(`Capacidad de recursos básicos: ${sum(from.capacity)} → ${sum(to.capacity)}`);
+    if (to.other !== from.other) out.push(`Capacidad de cada otro bien: ${from.other ?? 0} → ${to.other}`);
+  }
+  if (to.recipe) {
+    const a = from.recipe ? rate(from.recipe) : null;
+    const b = rate(to.recipe);
+    if (b && (!a || a.good !== b.good || a.perDay !== b.perDay)) out.push(`Produce ${GOOD_NAMES[b.good] ?? b.good} por día: ${a ? a.perDay : 0} → ${b.perDay} (con dotación completa)`);
+  }
+  const wf = from.workers ?? def.workers;
+  const wt = to.workers ?? def.workers;
+  if (wt !== wf) out.push(`Trabajadores: ${wf} → ${wt}`);
+  if ((to.energy ?? 0) !== (from.energy ?? 0)) out.push(`Energía que consume: ${from.energy ?? 0} → ${to.energy ?? 0}`);
+  if (!out.length) out.push('Nuevo aspecto y más prestigio para la aldea');
+  return out;
+}

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { NEEDS, SKILLS, wellbeing, needStatus } from './needs.js';
+import { NEEDS, SKILLS, wellbeing, needStatus, completeSkill } from './needs.js';
 import { GENES, gene, genomeCode, lifeExpectancy } from './genes.js';
 
 // Interfaz de la colonia: tarjeta con el bienestar general, lista de colonos y la
@@ -261,7 +261,7 @@ export class ColonyUI {
           <h3>Habilidades</h3>
           <ul class="skill-list">
             ${SKILLS.map(
-              (sk) => `<li class="skill-row"><span>${sk.name}</span><span class="bar"><i style="width:${c.skills[sk.id] * 10}%"></i></span><span>${c.skills[sk.id]}/10</span></li>`,
+              (sk) => `<li class="skill-row"><span>${sk.name}</span><span class="bar"><i style="width:${completeSkill(c, sk.id) * 10}%"></i></span><span>${completeSkill(c, sk.id)}/10</span></li>`,
             ).join('')}
           </ul>
         </section>

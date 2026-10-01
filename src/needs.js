@@ -63,7 +63,34 @@ export const SKILLS = [
   { id: 'mining', name: 'Cantería' },
   { id: 'hauling', name: 'Acarreo de agua' },
   { id: 'building', name: 'Construcción' },
+  { id: 'farming', name: 'Agricultura' },
+  { id: 'crafting', name: 'Artesanía' },
+  { id: 'smelting', name: 'Fundición' },
+  { id: 'engineering', name: 'Ingeniería' },
+  { id: 'research', name: 'Investigación' },
+  { id: 'trading', name: 'Comercio' },
+  { id: 'service', name: 'Servicios' },
+  { id: 'combat', name: 'Combate' },
 ];
+
+// Las habilidades nuevas (oficios de edades posteriores) no se guardan: salen de los genes del
+// colono y de su número, siempre iguales, para no tocar los colonos ya existentes.
+export function completeSkill(c, id) {
+  const known = c.skills[id];
+  if (known !== undefined) return known;
+  const g = (k) => gene(c.genome, k);
+  const base =
+    { farming: g('stamina') * 3 + g('vigor') * 2, crafting: g('agility') * 3 + g('vigor') * 1.5, smelting: g('vigor') * 3 + g('stamina'), engineering: g('agility') * 2 + g('stamina') * 2, research: 1.5, trading: 1.5, service: 2, combat: g('vigor') * 3 + g('agility') * 2 }[id] ?? 2;
+  const idx = SKILLS.findIndex((s) => s.id === id);
+  const h = Math.sin(c.id * 12.9898 + idx * 78.233) * 43758.5453;
+  const value = Math.max(1, Math.min(10, Math.round(base + (h - Math.floor(h)) * 3)));
+  c.skills[id] = value;
+  return value;
+}
+
+export function completeSkills(c) {
+  for (const s of SKILLS) completeSkill(c, s.id);
+}
 
 function createSkills(genome, past, rand) {
   const g = (id) => gene(genome, id);
