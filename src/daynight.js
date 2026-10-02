@@ -1,14 +1,15 @@
 import * as THREE from 'three';
+import { DAY_LENGTH_SECONDS, declinationAt } from './sim/calendar.js';
 
 // Ciclo de día y noche: el planeta queda quieto y el Sol gira a su alrededor.
 // El "punto subsolar" es el lugar del planeta donde es mediodía exacto.
 
-export const DAY_LENGTH_SECONDS = 360; // un día completo dura 6 minutos a velocidad ×1
+export { DAY_LENGTH_SECONDS }; // un día completo dura 6 minutos a velocidad ×1 (ver sim/calendar.js)
 export const MOON_CYCLE_DAYS = 8; // días de juego entre dos lunas llenas
 
 export class DayNight {
   constructor({ startLon = 0, startHour = 10 } = {}) {
-    this.declination = THREE.MathUtils.degToRad(12); // el Sol no está en el ecuador: da estaciones
+    this.declination = 0; // inclinación del Sol: sale de la fecha del año (sim/calendar.js): da estaciones
     // Colocamos el Sol de forma que en "startLon" sean las "startHour".
     this.subsolarLon = startLon - ((startHour - 12) / 24) * Math.PI * 2;
     this.baseLon = this.subsolarLon; // dónde estaba el mediodía en el segundo 0
@@ -47,6 +48,7 @@ export class DayNight {
   }
 
   updateDirections() {
+    this.declination = declinationAt(this.elapsed, this.startHour);
     this.subsolarLon = THREE.MathUtils.euclideanModulo(this.subsolarLon, Math.PI * 2);
     const c = Math.cos(this.declination);
     this.sunDirection.set(

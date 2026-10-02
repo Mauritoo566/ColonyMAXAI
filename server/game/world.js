@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { naturalSurfaceHeight, RADIUS } from '../../src/elevation.js';
 import { DayNight, formatHour } from '../../src/daynight.js';
+import { dateAt, seasonAt, snowCover } from '../../src/sim/calendar.js';
 import { campProblem } from '../../src/camp.js';
 import { ColonySim } from '../../src/sim/colony.js';
 import { WeatherState } from '../../src/sim/weather.js';
@@ -42,9 +43,16 @@ export class World {
     this.loadColonies();
   }
 
-  // Segundos de juego desde que existe el mundo.
+  // Segundos de juego desde que existe el mundo. Sigue la hora real aunque el servidor esté caído: el
+  // calendario no se pausa. Lo que sí tiene tope es el "ponerse al día" económico de cada colonia
+  // (catchUp, dos días de juego), que no cambia la fecha de nadie.
   get elapsed() {
     return ((Date.now() - this.epoch) / 1000) * this.speed;
+  }
+
+  // La fecha del mundo ahora: { day, year, dayOfYear, phase, hour } (ver sim/calendar.js).
+  get date() {
+    return dateAt(this.elapsed);
   }
 
   // ---- Colonias ---------------------------------------------------------------------
@@ -94,11 +102,17 @@ export class World {
   step(colony, dt, elapsed, absent, maxSteps) {
     this.clock.setElapsed(elapsed);
     const dir = colony.dir;
-    const label = () => `Día ${this.clock.day} · ${formatHour(this.clock.localHour(Math.atan2(dir.x, dir.z)))}`;
+    const label = () => { const d = dateAt(elapsed); return `Año ${d.year} · Día ${d.dayOfYear} · ${formatHour(this.clock.localHour(Math.atan2(dir.x, dir.z)))}`; };
+    // Estación del lugar según la fecha del mundo (la misma para todos): manda sobre el clima, el calor,
+    // el crecimiento y qué cae del cielo (lluvia o nieve).
+    const isNight = dir.dot(this.clock.sunDirection) < -0.05;
+    const sim = colony.sim;
+    sim.setSeason(seasonAt(dir.y, dateAt(elapsed).phase));
+    sim.weather.setClimate({ wetBias: sim.season.wetBias, snowy: snowCover(sim.currentTemperature - (isNight ? 0.04 : 0)) > 0.35 });
     colony.sim.weather.advance(dt);
     colony.sim.update(dt, {
       timeScale: 1,
-      isNight: dir.dot(this.clock.sunDirection) < -0.05,
+      isNight,
       timeLabel: label,
       absent,
       maxSteps,

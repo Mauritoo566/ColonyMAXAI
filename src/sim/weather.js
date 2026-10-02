@@ -1,5 +1,5 @@
 import { moisture } from '../elevation.js';
-import { DAY_LENGTH_SECONDS } from '../daynight.js';
+import { DAY_LENGTH_SECONDS } from './calendar.js';
 
 // Clima de un lugar: cambia cada pocas horas de juego entre despejado, nublado, lluvia y
 // tormenta; en lugares húmedos llueve más y en los desiertos casi nunca. Es parte de la
@@ -33,6 +33,8 @@ export class WeatherState {
     this.rain = 0; // intensidad actual de la lluvia (0–1), cambia con suavidad
     this.clouds = 0;
     this.humidity = 0; // humedad del lugar (-0,5 seco … 0,5 húmedo)
+    this.wetBias = 0; // cuánto más o menos llueve ahora por la estación (monzón tropical)
+    this.snowy = false; // lo que cae es nieve (hace frío de verdad en ese lugar y época)
     this.rand = seededRandom(seed & 0xffffffff);
   }
 
@@ -41,9 +43,20 @@ export class WeatherState {
     this.humidity = moisture(dir.x, dir.y, dir.z);
   }
 
-  // Probabilidades del próximo estado según el actual y la humedad del lugar.
+  // La estación manda sobre el clima (sim/calendar.js): más o menos lluvia, y si lo que cae es nieve.
+  setClimate({ wetBias = 0, snowy = false } = {}) {
+    this.wetBias = wetBias;
+    this.snowy = !!snowy;
+  }
+
+  // Lluvia que de verdad llena pozos y riega: la nieve casi no (se derrite despacio).
+  get effectiveRain() {
+    return this.rain * (this.snowy ? 0.3 : 1);
+  }
+
+  // Probabilidades del próximo estado según el actual, la humedad del lugar y la estación.
   next() {
-    const wet = Math.min(0.95, Math.max(0.05, 0.5 + this.humidity * 1.4)); // 0 desierto, 1 selva
+    const wet = Math.min(0.95, Math.max(0.05, 0.5 + this.humidity * 1.4 + this.wetBias)); // 0 desierto, 1 selva
     const r = this.rand();
     const s = this.state.id;
     let id;
@@ -67,14 +80,14 @@ export class WeatherState {
   }
 
   save() {
-    return { state: this.state.id, timer: this.timer, rain: this.rain, clouds: this.clouds };
+    return { state: this.state.id, timer: this.timer, rain: this.rain, clouds: this.clouds, snowy: this.snowy };
   }
 
   // Resumen corto para mandar a los demás jugadores (el clima de esta colonia, en vivo):
   // estado, intensidad de la lluvia y de las nubes.
   brief() {
     const r2 = (v) => Math.round(v * 100) / 100;
-    return { s: this.state.id, r: r2(this.rain), c: r2(this.clouds) };
+    return { s: this.state.id, r: r2(this.rain), c: r2(this.clouds), n: this.snowy ? 1 : 0 };
   }
 
   loadBrief(b) {
@@ -82,6 +95,7 @@ export class WeatherState {
     this.state = WEATHER[b.s];
     this.rain = Number.isFinite(b.r) ? b.r : this.state.rain;
     this.clouds = Number.isFinite(b.c) ? b.c : this.state.clouds;
+    this.snowy = !!b.n;
   }
 
   load(data) {
@@ -90,5 +104,6 @@ export class WeatherState {
     this.timer = data.timer ?? this.timer;
     this.rain = data.rain ?? this.state.rain;
     this.clouds = data.clouds ?? this.state.clouds;
+    this.snowy = !!data.snowy;
   }
 }

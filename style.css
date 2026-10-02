@@ -742,6 +742,15 @@ summary:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+/* Estación del lugar y de qué aldea es el clima que se ve. */
+.place-info .season { font-weight: 600; }
+.place-info .climate-place {
+  flex-basis: 100%;
+  color: var(--ui-muted);
+  font: 500 11px/1.2 var(--font-ui);
+}
+.place-info .climate-place:empty { display: none; }
+
 /* Conexión con el servidor: verde en línea; ámbar mientras reconecta. */
 .net-status {
   grid-area: net;
@@ -810,6 +819,7 @@ summary:focus-visible {
 }
 
 .weather[data-state='rain'] .icon,
+.weather[data-state='snow'] .icon,
 .weather[data-state='storm'] .icon {
   color: #7fb6ea;
 }

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { graphics } from './graphics.js';
+import { SEASON_GLSL, bindSeasonUniforms } from './seasonShader.js';
 
 // Material del terreno con un efecto de agua ligero. El mar es parte del propio terreno
 // (caras planas a nivel 0); cada vértice lleva un atributo "aWater":
@@ -33,6 +34,7 @@ export function createTerrainMaterial() {
 
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, waterUniforms);
+    bindSeasonUniforms(shader);
 
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -42,6 +44,8 @@ export function createTerrainMaterial() {
         varying float vWater;
         varying vec3 vWavePos;
         varying vec3 vSphereNormal;
+        varying float vSinLat;
+        varying float vFlat;
         void main() {
           vWater = aWater;
           vWavePos = position + uChunkOffset;
@@ -49,7 +53,9 @@ export function createTerrainMaterial() {
           // normal suave en vez de la de la cara plana, así no se notan los bordes
           // entre trozos de terreno con distinto detalle.
           vec3 worldUp = normalize((modelMatrix * vec4(position, 1.0)).xyz);
-          vSphereNormal = (viewMatrix * vec4(worldUp, 0.0)).xyz;`,
+          vSphereNormal = (viewMatrix * vec4(worldUp, 0.0)).xyz;
+          vSinLat = worldUp.y; // seno de la latitud (estaciones)
+          vFlat = dot(normalize(normal), worldUp); // 1 = llano`,
       );
 
     shader.fragmentShader = shader.fragmentShader
@@ -60,6 +66,9 @@ export function createTerrainMaterial() {
         varying float vWater;
         varying vec3 vWavePos;
         varying vec3 vSphereNormal;
+        varying float vSinLat;
+        varying float vFlat;
+        ${SEASON_GLSL}
 
         const float TAU = 6.2831853;
         const float TILE = ${WAVE_TILE.toFixed(1)};
@@ -85,6 +94,14 @@ export function createTerrainMaterial() {
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
+        if (isWater < 0.5 && uSeasonOn > 0.5) {
+          // Estaciones: hierba y hojas cambian de color; la nieve cubre lo llano donde hace frío de verdad.
+          diffuseColor.rgb = seasonTint(diffuseColor.rgb, vSinLat, 0.8);
+          float baseT = (-vWater - 1.0) * 1.7 - 0.5;
+          float effT = baseT + seasonWarmth(vSinLat) * 0.28;
+          float snowAmt = smoothstep(0.3, 0.12, effT) * smoothstep(0.5, 0.88, vFlat);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.86, 0.93), snowAmt * 0.92);
+        }
         // Espuma junto a la costa, que late suavemente.
         float foam = (1.0 - smoothstep(0.0, 0.35, vWater)) * isWater;
         foam *= 0.55 + 0.45 * sin(uTime * 1.3 + vWavePos.x * 0.004 + vWavePos.z * 0.003);

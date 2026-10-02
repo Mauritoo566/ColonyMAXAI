@@ -10,6 +10,8 @@ import { biomeAt } from './biomes.js';
 import { ResourceSystem } from './resources.js';
 import { createSky } from './sky.js';
 import { graphics } from './graphics.js';
+import { DAY_LENGTH_SECONDS, dateAt, seasonAt, effectiveTemperature, snowCover } from './sim/calendar.js';
+import { setSeasonPhase } from './seasonShader.js';
 import { ColonySim } from './sim/colony.js';
 import { ColonyView } from './colonists.js';
 import { ColonyUI } from './colonyUI.js';
@@ -51,6 +53,8 @@ const weatherChip = document.getElementById('weather');
 const weatherIcon = document.getElementById('weather-icon');
 const weatherName = document.getElementById('weather-name');
 const dayLabel = document.getElementById('day');
+const seasonName = document.getElementById('season-name');
+const climatePlace = document.getElementById('climate-place');
 const biomeLabel = document.getElementById('biome');
 const netStatus = document.getElementById('net-status');
 
@@ -615,7 +619,9 @@ if (new URLSearchParams(location.search).has('debug')) window.__dbg = { graphics
 
 function campTimeLabel() {
   const d = camps.camp?.dir;
-  return d ? `Día ${dayNight.day} · ${formatHour(dayNight.localHour(Math.atan2(d.x, d.z)))}` : '';
+  if (!d) return '';
+  const date = dateAt(worldTime());
+  return `Año ${date.year} · Día ${date.dayOfYear} · ${formatHour(dayNight.localHour(Math.atan2(d.x, d.z)))}`;
 }
 
 function showAwaySummary({ title, lines, bad }) {
@@ -642,6 +648,15 @@ const lap = prof ? (name) => { const t = performance.now(); prof[name] = (prof[n
 let labelTimer = 0;
 let weatherPlaceTimer = 0;
 let sitesTimer = 0;
+// Sólo para pruebas visuales: ?doy=200&hour=13 fija el día del año y la hora local que se dibujan (no toca el
+// mundo ni el servidor: el clima y la simulación siguen siendo los reales).
+const debugPhase = flags.has('doy') ? (Number(flags.get('doy')) - 0.5) / 365 : null;
+function debugElapsed(lon) {
+  const hour = flags.has('hour') ? Number(flags.get('hour')) : 13;
+  const lonHours = (lon / (Math.PI * 2)) * 24;
+  const f = (((hour - lonHours) / 24) % 1 + 1) % 1;
+  return (Number(flags.get('doy')) - 1 + f - 0.5) * DAY_LENGTH_SECONDS;
+}
 let sitesSig = '';
 renderer.setAnimationLoop(() => {
   if (prof) profT = performance.now();
@@ -649,9 +664,13 @@ renderer.setAnimationLoop(() => {
   const delta = Math.min(rawDelta, 0.1);
   updateQuality(rawDelta);
   controls.update(delta);
+  // La fecha sale del reloj del servidor (no del de esta máquina): todos ven la misma estación.
+  const worldNow = debugPhase !== null ? debugElapsed(controls.lon) : worldTime();
+  const date = dateAt(worldNow);
+  setSeasonPhase(date.phase);
   if (controls.flight) planet.terrain.setPrefetch(controls.flight.pivot, controls.flight.clearance);
   lap('controls');
-  dayNight.setElapsed(worldTime());
+  dayNight.setElapsed(worldNow);
   waterUniforms.uTime.value += delta;
 
   const altitude = camera.position.length() - RADIUS;
@@ -691,7 +710,7 @@ renderer.setAnimationLoop(() => {
     weatherPlaceTimer = 2;
     weather.setPlace(controls.dir);
   }
-  let source = campDir && colony.weather ? { weather: colony.weather, distance: controls.dir.angleTo(campDir) * RADIUS } : null;
+  let source = campDir && colony.weather ? { weather: colony.weather, distance: controls.dir.angleTo(campDir) * RADIUS, name: 'tu aldea' } : null;
   const theirs = others.nearestWeather(controls.dir);
   if (theirs && (!source || theirs.distance < source.distance)) source = theirs;
   const nearZone = source ? 1 - THREE.MathUtils.smoothstep(source.distance, 40_000, 150_000) : 1;
@@ -731,16 +750,25 @@ renderer.setAnimationLoop(() => {
     labelTimer = 0.1;
     if (altitudeLabel) altitudeLabel.textContent = formatAltitude(clearance);
     if (timeLabel) timeLabel.textContent = formatHour(dayNight.localHour(controls.lon));
-    if (dayLabel) dayLabel.textContent = `Día ${dayNight.day}`;
+    if (dayLabel) dayLabel.textContent = `Año ${date.year} · Día ${date.dayOfYear}`;
+    // Estación del lugar que se mira (fecha del mundo + latitud) y de qué aldea es el clima mostrado.
+    const here = seasonAt(controls.dir.y, date.phase);
+    if (seasonName) seasonName.textContent = `${here.name} · hemisferio ${here.north ? 'norte' : 'sur'}`;
+    const placeText = source && nearZone > 0.5 ? `Clima de ${source.name === 'tu aldea' ? 'tu aldea' : 'la aldea de ' + source.name}` : 'Sin aldea cerca: clima de ejemplo';
+    if (climatePlace && climatePlace.textContent !== placeText) climatePlace.textContent = placeText;
     if (weatherChip) {
       const w = weather.state;
-      if (weatherChip.dataset.state !== w.id) {
-        weatherChip.dataset.state = w.id;
-        weatherIcon.setAttribute('href', `#i-w-${w.icon}`);
-        weatherName.textContent = w.name;
+      const snowy = weather.snowy && weather.rain > 0.05;
+      const key = w.id + (snowy ? '-nieve' : '') + placeText;
+      if (weatherChip.dataset.key !== key) {
+        weatherChip.dataset.key = key;
+        weatherChip.dataset.state = snowy ? 'snow' : w.id;
+        weatherIcon.setAttribute('href', snowy ? '#i-w-snow' : `#i-w-${w.icon}`);
+        const name = snowy ? (w.id === 'storm' ? 'Ventisca' : 'Nevada') : w.name;
+        weatherName.textContent = name;
         weatherChip.title = w.rain
-          ? `${w.name} en esta zona: con lluvia el pozo rinde más y las bayas y setas crecen antes`
-          : `${w.name} en esta zona`;
+          ? `${name} (${placeText.toLowerCase()}): con lluvia el pozo rinde más y las bayas y setas crecen antes`
+          : `${name} (${placeText.toLowerCase()})`;
       }
     }
     if (biomeLabel) {

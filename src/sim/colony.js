@@ -7,6 +7,7 @@ import { temperature, biomeAt, BIOMES } from '../biomes.js';
 import { createProfile, updateNeeds, hasTrait, wellbeing, addLog, SKILLS, TRAITS, completeSkill, completeSkills } from '../needs.js';
 import { appearanceFromGenes, gene } from '../genes.js';
 import { RESOURCE_TYPES } from '../resourceTypes.js';
+import { SEASON_AMBIENT_AMP, effectiveTemperature, growthFactor, seasonAt, snowCover } from './calendar.js';
 import { TILE_ANGLE, generateTile, generateCampGrove, GROVE_KEY, SPROUT_KEY, GROVE_TREES, sproutItem, tileFromItems } from '../resourceGen.js';
 import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, taskKey, siteStatus, orderProblem, PRIORITY } from '../ai.js';
 import { campLayout, campObstacles, campZone } from './campLayout.js';
@@ -225,6 +226,7 @@ export class ColonySim {
     this.birthRand = seededRandom(1);
     this.layout = campLayout();
     this.campTemperature = 0.5;
+    this.season = null; // la estación en este campamento (la fija el mundo cada paso; ver sim/calendar.js)
     this.obstacles = campObstacles();
     this.heights = new Map();
     this.timeLabel = () => '';
@@ -279,8 +281,11 @@ export class ColonySim {
     const time = timeLabel();
     this.nightNow = isNight;
     const env = { isNight, time, gameTime: this.gameTime };
-    const rain = this.weather?.rain ?? 0;
-    const ambient = Math.min(1, Math.max(0, (this.campTemperature - (isNight ? 0.3 : 0) - 0.12 - rain * 0.12) * 1.6));
+    const rain = this.weather?.effectiveRain ?? 0;
+    // La estación sube o baja un poco el calor del lugar (menos que lo que se ve en el paisaje).
+    const seasonal = this.season ? this.season.warmth * SEASON_AMBIENT_AMP : 0;
+    const ambient = Math.min(1, Math.max(0, (this.campTemperature + seasonal - (isNight ? 0.3 : 0) - 0.12 - (this.weather?.rain ?? 0) * 0.12) * 1.6));
+    const thirst = 1 + (this.season ? this.season.warmth * 0.2 : 0); // en verano se bebe más
     this.updateRain(gameDt, rain);
     this.updateSpoilage();
     this.updateBuildings(gameDt, rain);
@@ -306,6 +311,7 @@ export class ColonySim {
         updateNeeds(c, {
           dt,
           ambient,
+          thirst,
           nearFire: c.nearFire,
           sheltered: (c.sleeping && !c.outdoorSleep) || c.inside,
           clothed: c.clothed,
@@ -1566,6 +1572,28 @@ export class ColonySim {
     return ageInfo(this.age);
   }
 
+  // ---- Estaciones -------------------------------------------------------------------------
+
+  // La estación de este campamento en este momento (la fija el mundo; ver sim/calendar.js).
+  setSeason(season) {
+    this.season = season;
+  }
+
+  // Temperatura del campamento en esta época (escala de biomes.js).
+  get currentTemperature() {
+    return this.season ? effectiveTemperature(this.campTemperature, this.season) : this.campTemperature;
+  }
+
+  // Cuánto crece lo que se siembra y rebrota ahora: 0,15 con helada, 1 en una buena época.
+  growth() {
+    return this.season ? growthFactor(this.currentTemperature, this.season) : 1;
+  }
+
+  // ¿Nevaría aquí ahora si precipitara? (frío de verdad en esta época)
+  get snowing() {
+    return snowCover(this.currentTemperature) > 0.35;
+  }
+
   // ---- Lluvia -----------------------------------------------------------------------------
 
   // Con lluvia las bayas y setas recogidas vuelven a crecer mucho antes y, de vez en
@@ -1663,6 +1691,7 @@ export class ColonySim {
 
   addSprout(item) {
     if (this.sprouts.length >= SPROUT_ARRAY_MAX && !this.remote) this.compactSprouts();
+    this.staticsRevision++;
     this.sprouts.push(item);
     this.refreshSprouts();
     return this.spots.find((s) => s.key === SPROUT_KEY && s.index === this.sprouts.length - 1);
@@ -1709,6 +1738,7 @@ export class ColonySim {
       keep.push(it);
     });
     if (keep.length === this.sprouts.length) return;
+    this.staticsRevision++;
     const old = new Map(this.spots.filter((s) => s.key === SPROUT_KEY).map((s) => [s.index, s]));
     this.sprouts = keep;
     this.removed.delete(SPROUT_KEY);
@@ -1904,16 +1934,15 @@ export class ColonySim {
     }
     if (wasMarked && !this.spots.some((o) => o.marked && !o.gone)) this.emit('notice', 'Se recogió todo lo marcado: señala otra zona si hace falta');
     if (spot.kind === 'food') {
-      spot.readyAt = gameTime + REGROW_SECONDS;
+      spot.readyAt = gameTime + REGROW_SECONDS / this.growth();
     } else {
       spot.gone = true;
       let set = this.removed.get(spot.key);
       if (!set) this.removed.set(spot.key, (set = new Set()));
       set.add(spot.index);
       this.emit('resources');
-      // Para que un visitante también vea esto ya talado/picado (sólo baldosas normales:
-      // la arboleda y los brotes son de cada campamento y no viajan por la red).
-      if (spot.key !== GROVE_KEY && spot.key !== SPROUT_KEY) this.staticsRevision++;
+      // Para que un visitante también vea esto ya talado/picado (baldosas normales, arboleda y brotes).
+      this.staticsRevision++;
       // Al talar un árbol de verdad, a veces caen semillas: van al almacén y los colonos las
       // plantan solos en su tiempo libre.
       if (spot.tree && Math.random() < SEED_CHANCE) {
@@ -3065,6 +3094,11 @@ export class ColonySim {
         // Lo ya talado/picado de baldosas normales (no la arboleda ni los brotes, que son
         // de cada campamento): así un visitante no ve árboles que ya no están.
         out.removed = [...this.removed].filter(([k]) => k !== GROVE_KEY && k !== SPROUT_KEY).map(([k, set]) => [k, [...set]]);
+        // La arboleda de la aldea sale de su semilla (el visitante la regenera); aquí va lo que ya no está.
+        // Los brotes (lluvia, árboles plantados, ramas) no salen de ninguna semilla: van completos.
+        out.groveRemoved = [...(this.removed.get(GROVE_KEY) ?? [])];
+        out.sprouts = this.sprouts;
+        out.sproutRemoved = [...(this.removed.get(SPROUT_KEY) ?? [])];
       }
       return out;
     }

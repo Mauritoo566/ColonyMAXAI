@@ -211,7 +211,7 @@ export function updateNeeds(c, env) {
   const g = c.genome;
   const metabolism = 0.75 + gene(g, 'metabolism') * 0.5; // 0,75× a 1,25×
   n.food = clamp(n.food - (100 / (4 * DAY)) * metabolism * dt);
-  n.water = clamp(n.water - (100 / (3 * DAY)) * metabolism * dt);
+  n.water = clamp(n.water - (100 / (3 * DAY)) * metabolism * (env.thirst ?? 1) * dt);
   const tiredness = 1.25 - gene(g, 'stamina') * 0.5; // 1,25× a 0,75×
   const restRate = (100 / (3 * DAY)) * tiredness * (env.walking ? 1 : 0.5);
   n.rest = clamp(n.rest - restRate * dt);

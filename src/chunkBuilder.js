@@ -88,7 +88,12 @@ function hash3(x, y, z) {
   return s - Math.floor(s);
 }
 
+// Temperatura (biomes.js) del último lugar coloreado: va a la tarjeta gráfica junto con "agua/tierra" para
+// que las estaciones sepan dónde nieva sin volver a calcular el clima por píxel.
+let lastTemp = 1;
+
 function faceColor(e, dir, slope, out) {
+  lastTemp = 1;
   const lat = Math.abs(dir[1]);
   if (e <= 0) {
     if (lat > 0.93) return copy(out, linear(BIOMES.ice.ground));
@@ -97,7 +102,8 @@ function faceColor(e, dir, slope, out) {
   }
   const [dx, dy, dz] = dir;
   const m = needsMoisture(e, lat, slope) ? moisture(dx, dy, dz) : 0;
-  const biome = classifyBiome(e, lat, slope, m, temperature(dx, dy, dz, e));
+  lastTemp = temperature(dx, dy, dz, e);
+  const biome = classifyBiome(e, lat, slope, m, lastTemp);
   copy(out, linear(biome.ground));
   if (biome.vegetated) {
     // Manchas de pasto más seco o más oscuro, de ~300 m y de ~40 m.
@@ -231,9 +237,11 @@ export function buildChunkData({ face: faceIndex, level, a, b, size, center, wor
     color[1] *= k;
     color[2] *= k;
 
-    // Agua: 0 en los vértices que tocan tierra (espuma), 1 en agua abierta, -1 tierra.
+    // Agua: 0 en los vértices que tocan tierra (espuma), 1 en agua abierta. Tierra: entre -1 y -2, y el
+    // decimal guarda la temperatura del lugar (ver seasonShader.js: -1 - (temperatura + 0,5) / 1,7).
     const isWater = e <= 0 && Math.abs(tmpDir[1]) <= 0.93;
-    const w = (idx) => (isWater ? (elev[idx] > 0 ? 0 : 1) : -1);
+    const land = -1 - Math.min(1, Math.max(0, (lastTemp + 0.5) / 1.7));
+    const w = (idx) => (isWater ? (elev[idx] > 0 ? 0 : 1) : land);
     writeVertex(ax, ay, az, w(i0));
     writeVertex(bx, by, bz, w(j1));
     writeVertex(qx, qy, qz, w(j2));
@@ -281,7 +289,7 @@ export function buildChunkData({ face: faceIndex, level, a, b, size, center, wor
       tmpDir[2] = dirs[i0 * 3 + 2];
       faceColor(e, tmpDir, 0, color);
       // Si el borde es de agua, el faldón también: así brilla igual y no se nota.
-      const sw = e <= 0 && Math.abs(tmpDir[1]) <= 0.93 ? 1 : -1;
+      const sw = e <= 0 && Math.abs(tmpDir[1]) <= 0.93 ? 1 : -1 - Math.min(1, Math.max(0, (lastTemp + 0.5) / 1.7));
 
       const ax = pos[i0 * 3], ay = pos[i0 * 3 + 1], az = pos[i0 * 3 + 2];
       const bx = pos[i1 * 3], by = pos[i1 * 3 + 1], bz = pos[i1 * 3 + 2];

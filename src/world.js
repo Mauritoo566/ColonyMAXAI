@@ -8,6 +8,8 @@ import { ColonyView } from './colonists.js';
 import { WeatherState } from './sim/weather.js';
 import { roadMaterials, buildRoadGeometry } from './roadMesh.js';
 import { ROAD_LEVELS } from './sim/economy.js';
+import { generateCampGrove, tileFromItems } from './resourceGen.js';
+import { biomeAt } from './biomes.js';
 
 // Los demás jugadores del mundo: sus campamentos, sus edificios y sus colonos, en vivo.
 // El servidor manda la lista de jugadores (con campamento, edad, población y edificios) y,
@@ -77,7 +79,7 @@ export class OtherCamps {
       const roadMeshes = roadMaterials(ROAD_LEVELS.length).map((m) => new THREE.Mesh(new THREE.BufferGeometry(), m));
       const roadsGroup = new THREE.Group();
       for (const m of roadMeshes) roadsGroup.add(m);
-      entry = { key, object, zone, dir: camp.dir, height: camp.height, label, buildingsKey: '', buildings: new THREE.Group(), sim, view, weather: new WeatherState(1), roadMeshes, roadsDirty: true };
+      entry = { seed: camp.seed, name: p.name.slice(0, 20), key, object, zone, dir: camp.dir, height: camp.height, label, buildingsKey: '', buildings: new THREE.Group(), sim, view, weather: new WeatherState(1), roadMeshes, roadsDirty: true };
       object.add(entry.buildings);
       object.add(roadsGroup);
       sim.on('roads', () => (entry.roadsDirty = true));
@@ -87,7 +89,8 @@ export class OtherCamps {
       entry.flag = p.flag;
       applyFlag(entry.object, p.flag);
     }
-    entry.label.querySelector('strong').textContent = p.name.slice(0, 20);
+    entry.name = p.name.slice(0, 20);
+    entry.label.querySelector('strong').textContent = entry.name;
     entry.label.querySelector('small').textContent = ` · ${ageInfo(p.age | 0 || 1).name} · ${p.population | 0} colonos${p.online ? '' : ' · desconectado'}`;
     // Edificios (en coordenadas de su campamento).
     const list = Array.isArray(p.buildings) ? p.buildings.slice(0, 80) : [];
@@ -107,6 +110,34 @@ export class OtherCamps {
     if (msg.w) entry.weather.loadBrief(msg.w);
     // Lo que esta colonia ya taló o picó: que tampoco se vea desde afuera.
     if (msg.removed) this.resources?.mergeRemoved(msg.removed);
+    this.applyExtras(id, entry, msg);
+  }
+
+  // La arboleda de una aldea ajena (sale de su semilla, igual que en el servidor) y sus brotes: lo que
+  // sus colonos recolectan tiene que verse también desde aquí. Cada aldea usa claves propias.
+  applyExtras(id, entry, msg) {
+    const res = this.resources;
+    if (!res) return;
+    const groveKey = -1000 - id * 2;
+    const sproutKey = -1001 - id * 2;
+    entry.extraKeys = [groveKey, sproutKey];
+    if (!entry.grove) {
+      const d = entry.dir;
+      entry.grove = generateCampGrove(d.x, d.y, d.z, biomeAt(d.x, d.y, d.z).id, entry.seed ?? 1);
+      res.setExtraTile(groveKey, entry.grove);
+    }
+    if (Array.isArray(msg.groveRemoved)) {
+      const set = new Set(msg.groveRemoved);
+      if (!sameSet(res.removed.get(groveKey), set)) {
+        res.removed.set(groveKey, set);
+        res.dirty = true;
+      }
+    }
+    if (Array.isArray(msg.sprouts)) {
+      res.setExtraTile(sproutKey, msg.sprouts.length ? tileFromItems(msg.sprouts) : null);
+      const set = new Set(msg.sproutRemoved ?? []);
+      if (!sameSet(res.removed.get(sproutKey), set)) res.removed.set(sproutKey, set);
+    }
   }
 
   // El clima del campamento ajeno más cercano a un punto del planeta: { weather, distance }
@@ -115,7 +146,7 @@ export class OtherCamps {
     let best = null;
     for (const entry of this.camps.values()) {
       const distance = entry.dir.angleTo(dir) * RADIUS;
-      if (!best || distance < best.distance) best = { weather: entry.weather, distance };
+      if (!best || distance < best.distance) best = { weather: entry.weather, distance, name: entry.name };
     }
     return best;
   }
@@ -145,6 +176,10 @@ export class OtherCamps {
     const entry = this.camps.get(id);
     if (!entry) return;
     entry.view.dispose();
+    for (const k of entry.extraKeys ?? []) {
+      this.resources?.setExtraTile(k, null);
+      this.resources?.removed.delete(k);
+    }
     this.scene.remove(entry.object);
     entry.object.traverse((o) => o.geometry?.dispose());
     removeTerrainZone(entry.zone);
@@ -190,6 +225,8 @@ export class OtherCamps {
     }
   }
 }
+
+const sameSet = (a, b) => !!a && a.size === b.size && [...b].every((v) => a.has(v));
 
 function parseCamp(c) {
   if (!c?.dir || ![c.dir.x, c.dir.y, c.dir.z].every(Number.isFinite)) return null;

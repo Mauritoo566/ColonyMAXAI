@@ -39,7 +39,7 @@ export function productionEstimate(colony, b) {
     const crew = Math.min(1, workers / needed);
     const pf = lv.energy ? (b.virtual ? 1 : b.pf ?? 0) : 1;
     const speed = crew * (1 / (1.4 - skill * 0.07)) * pf;
-    const rain = lv.rain ? 1 + (colony.weather?.rain ?? 0) * 0.5 : 1;
+    const rain = lv.rain ? 1 + (colony.weather?.effectiveRain ?? 0) * 0.5 : 1;
     const seconds = lv.recipe.time / Math.max(0.01, speed);
     const cycles = (DAY * PRESENCE) / seconds;
     for (const [k, n] of Object.entries(lv.recipe.out)) out.perDay[k] = n * rain * cycles;
@@ -67,7 +67,7 @@ export function productionEstimate(colony, b) {
       return out;
     }
     const seconds = (lv.workTime ?? 10) + walk;
-    const rainMult = 1 + (colony.weather?.rain ?? 0);
+    const rainMult = 1 + (colony.weather?.effectiveRain ?? 0);
     out.seconds = seconds;
     out.perDay.water = ((DAY * ACTIVE_FRACTION) / seconds) * lv.yield * rainMult * Math.min(1, workers / 1);
     out.lines.push(`Un viaje cada ~${fmt(seconds)} s: +${fmt(lv.yield * rainMult)} jarras${rainMult > 1 ? ' (con lluvia rinde más)' : ''}.`);

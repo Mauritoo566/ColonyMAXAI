@@ -53,7 +53,7 @@ export function waterReport(colony) {
   const stock = colony.stock.water ?? 0;
   const n = Math.max(1, colony.colonists.length);
   const perDay = n * WATER_PER_DAY;
-  const rain = colony.weather?.rain ?? 0;
+  const rain = colony.weather?.effectiveRain ?? 0;
   const dewPerDay = collectors.length * DEW_RATE * DAY;
   const capturePerDay = collectors.length * (DEW_RATE + rain * RAIN_RATE) * DAY;
   const dry = rain < 0.05;

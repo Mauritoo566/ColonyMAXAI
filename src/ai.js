@@ -534,7 +534,7 @@ function runWork(colony, c, task, dt, env) {
       b.store -= water;
     } else {
       // Con lluvia el pozo se llena solo: rinde hasta el doble.
-      water = level.yield * (1 + (colony.weather?.rain ?? 0));
+      water = level.yield * (1 + (colony.weather?.effectiveRain ?? 0));
     }
     water = colony.produce('water', water);
     b.produced += water;

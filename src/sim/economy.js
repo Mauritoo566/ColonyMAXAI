@@ -140,7 +140,8 @@ export function updateProduction(colony, b, dt) {
   b.status = present < needed ? `Falta personal (${present}/${needed}): trabaja más despacio` : pf < 1 ? `Poca energía (${Math.round(pf * 100)} %)` : null;
   b.cycle += (dt / recipe.time) * speed;
   if (b.cycle >= 1) {
-    const rain = lv.rain ? 1 + (colony.weather?.rain ?? 0) * 0.5 : 1;
+    // Los cultivos al aire libre rinden más con lluvia y según la época (la helada los frena mucho).
+    const rain = lv.rain ? (1 + (colony.weather?.effectiveRain ?? 0) * 0.5) * colony.growth() : 1;
     let first = true;
     for (const [k, n] of Object.entries(recipe.out ?? {})) {
       const added = colony.produce(k, n * rain);

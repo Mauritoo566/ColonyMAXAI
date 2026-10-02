@@ -3,6 +3,7 @@ import { RADIUS, terrainZones, zoneDistance } from './elevation.js';
 import { partsGeometry, mat, stick, v } from './modelKit.js';
 import { RESOURCE_TYPES, TILE } from './resourceTypes.js';
 import { TILE_ANGLE, generateTile, GROVE_KEY, SPROUT_KEY } from './resourceGen.js';
+import { SEASON_GLSL, bindSeasonUniforms } from './seasonShader.js';
 
 // Recursos naturales: aparecen solos por todo el planeta, al azar pero siempre en el
 // mismo lugar (cada baldosa de 320 m usa su propia semilla), según el bioma.
@@ -17,6 +18,56 @@ import { TILE_ANGLE, generateTile, GROVE_KEY, SPROUT_KEY } from './resourceGen.j
 
 export { RESOURCE_TYPES };
 
+// Estaciones en los recursos: cuánto pierde las hojas cada tipo (1 = caduco del todo, 0 = perenne).
+const DECIDUOUS = { broadleaf: 1, berryBush: 0.8, acacia: 0.5, reeds: 0.6, mushrooms: 0.3, cactus: 0.1 };
+
+// Un material por nivel de "caducidad". El sombreador es el mismo para todos (mismo programa en la tarjeta
+// gráfica); sólo cambia un número. Cambia el color de lo verde, el árbol caduco encoge su copa en invierno
+// y la nieve se queda sobre las caras que miran hacia arriba donde hace frío.
+function seasonalMaterial(deciduous) {
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+  material.onBeforeCompile = (shader) => {
+    bindSeasonUniforms(shader);
+    shader.uniforms.uDecid = { value: deciduous };
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', `uniform float uDecid;
+        varying float vSinLatR;
+        varying vec3 vUpView;
+        ${SEASON_GLSL}
+        void main() {`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+          vec4 wpS = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
+        #else
+          vec4 wpS = modelMatrix * vec4(transformed, 1.0);
+        #endif
+        vec3 upS = normalize(wpS.xyz);
+        vSinLatR = upS.y;
+        vUpView = normalize((viewMatrix * vec4(upS, 0.0)).xyz);
+        {
+          float coolS = smoothstep(0.35, -0.55, seasonWarmth(upS.y)) * smoothstep(0.1, 0.45, seasonAmp(upS.y));
+          float bare = uDecid * smoothstep(0.55, 0.95, coolS);
+          transformed.xz *= 1.0 - 0.4 * bare * greenness(color);
+        }`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', `uniform float uDecid;
+        varying float vSinLatR;
+        varying vec3 vUpView;
+        ${SEASON_GLSL}
+        void main() {`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        if (uSeasonOn > 0.5) diffuseColor.rgb = seasonTint(diffuseColor.rgb, vSinLatR, uDecid);`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        if (uSeasonOn > 0.5) {
+          float latFrac = asin(clamp(abs(vSinLatR), 0.0, 1.0)) / 1.5708;
+          float effT = 1.05 - latFrac + seasonWarmth(vSinLatR) * 0.28;
+          float snowAmt = smoothstep(0.3, 0.12, effT) * smoothstep(0.3, 0.75, dot(normal, vUpView));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.86, 0.93), snowAmt * 0.9);
+        }`);
+  };
+  material.customProgramCacheKey = () => 'recurso-estacional';
+  return material;
+}
 const MAX_NEAR = 30_000; // ejemplares con el modelo completo, por tipo
 const MAX_FAR = 60_000; // ejemplares con el modelo simple, por tipo
 const LOD_DISTANCE = 380; // metros: más lejos, modelo simple
@@ -243,13 +294,18 @@ export class ResourceSystem {
     this.group = new THREE.Group();
     this.group.name = 'resources';
     scene.add(this.group);
-    this.material = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+    const byDeciduous = new Map();
+    const materialFor = (id) => {
+      const d = DECIDUOUS[id] ?? 0;
+      if (!byDeciduous.has(d)) byDeciduous.set(d, seasonalMaterial(d));
+      return byDeciduous.get(d);
+    };
     this.near = [];
     this.far = [];
     for (const type of RESOURCE_TYPES) {
-      const near = createInstanced(partsGeometry(MODELS[type.id]), this.material, MAX_NEAR, type.id);
+      const near = createInstanced(partsGeometry(MODELS[type.id]), materialFor(type.id), MAX_NEAR, type.id);
       const lod = LOD_MODELS[type.id];
-      const far = lod ? createInstanced(partsGeometry(lod), this.material, MAX_FAR, type.id + '-lejos') : null;
+      const far = lod ? createInstanced(partsGeometry(lod), materialFor(type.id), MAX_FAR, type.id + '-lejos') : null;
       this.group.add(near);
       if (far) this.group.add(far);
       this.near.push(near);
