@@ -10,6 +10,7 @@ import { BUILDINGS } from '../../../src/sim/buildingTypes.js';
 import { naturalSurfaceHeight } from '../../../src/elevation.js';
 import { DAY_LENGTH_SECONDS as DAY } from '../../../src/daynight.js';
 import { chooseTask } from '../../../src/ai.js';
+import { roadCellProblem } from '../../../src/sim/economy.js';
 import { validSpec } from '../../../src/sim/specialties.js';
 
 const dir = new THREE.Vector3(-0.8984470605519815, 0.4271785546817849, 0.10154487582091702).normalize();
@@ -394,6 +395,34 @@ const site = (sim, id, x, z) => {
   }
   assert.ok(sq.stock.stone >= 6 && sq.stock.stone <= 24, `~2 piedras por minuto en 6 min (${sq.stock.stone})`);
 }
+// Caminos: pegados a una casa se pueden poner (sólo chocan las casillas que el edificio ocupa).
+{
+  const sim = colony();
+  sim.age = 2;
+  const b = sim.createBuilding(BUILDINGS.stockpile, 24, 12, 0, 1, 0);
+  sim.refreshObstacles();
+  const half = (Math.max(1, Math.round((b.def.footprint * 2) / 4)) * 4) / 2;
+  const edge = Math.ceil((b.x + half + 2 - 1e-6) / 4); // primera casilla pegada al costado
+  const cell = (ix, iz) => roadCellProblem(sim, ix, iz);
+  assert.equal(cell(edge, Math.round(b.z / 4)), null, 'la casilla pegada al edificio se puede pintar');
+  assert.equal(cell(edge - 1, Math.round(b.z / 4)), 'Hay algo encima', 'la que pisa el edificio no');
+  assert.equal(cell(Math.round(b.x / 4), Math.round(b.z / 4)), 'Hay algo encima', 'ni el centro');
+}
+
+// Semillas de árbol: no hay plantación manual; las plantan solos los colonos en su tiempo libre.
+{
+  const sim = colony();
+  sim.age = 2;
+  sim.stock.tree_seed = 2;
+  assert.equal(sim.applyCommand('plantTreeSeed', [10, 10]), false, 'la orden manual ya no existe');
+  assert.equal(sim.sprouts.length, 0);
+  run(sim, 120);
+  assert.ok(sim.stock.tree_seed < 2, `un colono gastó una semilla (${sim.stock.tree_seed})`);
+  assert.ok(sim.sprouts.length >= 1, 'nació un brote');
+  const sprout = sim.sprouts[0];
+  assert.ok(sprout.readyAt > sim.gameTime - 1, 'el árbol plantado todavía tiene que crecer');
+}
+
 function site_(sim) {
   const b = sim.createBuilding(BUILDINGS.stockpile, 24, -12, 0, 0, 0);
   b.done = false;

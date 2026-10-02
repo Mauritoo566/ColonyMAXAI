@@ -17,7 +17,8 @@ const WALK_SPEED = 1.4; // m/s (para el ritmo de las piernas)
 const LABEL_DISTANCE = 170; // metros: más lejos no se muestra ni el aviso de problema
 const LABEL_NEAR = 50; // metros: el nombre de un colono sano sólo se ve así de cerca
 const LABEL_MAX = 10; // etiquetas a la vez (además del elegido)
-const FAR_DISTANCE = 90; // metros: más lejos se dibuja la versión simple del colono
+const MOB_PROXY_DISTANCE = 320; // metros: más lejos el animal se dibuja como un bloque simple (unos pocos píxeles)
+const FAR_DISTANCE = 260; // metros: más lejos se dibuja la versión simple del colono (a esa distancia mide unos pocos píxeles)
 const PICK_RADIUS_PX = 26; // tolerancia al hacer clic sobre un colono
 const LOINCLOTH = '#6b4a2e'; // lo único que llevan al llegar
 const X_AXIS = new THREE.Vector3(1, 0, 0);
@@ -523,7 +524,7 @@ export class ColonyView {
       e.object.position.copy(world).multiplyScalar(RADIUS + h);
       e.object.quaternion.copy(sim.camp.quaternion).multiply(yaw.setFromAxisAngle(Y_AXIS, e.facing));
       e.object.userData.state = m.state === 2 ? 'attack' : 'idle';
-      setMobLOD(e.object, this.camera.position.distanceToSquared(e.object.position) > 120 * 120);
+      setMobLOD(e.object, this.camera.position.distanceToSquared(e.object.position) > MOB_PROXY_DISTANCE * MOB_PROXY_DISTANCE);
       e.def.animate(e.object, this.mobTime, e.speed);
     }
     for (const [id, e] of this.mobViews) {

@@ -1620,15 +1620,39 @@ export class ColonySim {
     this.emit('resources');
   }
 
-  // Plantar a mano una semilla de árbol (gastada del almacén): nace el árbol propio del
-  // bioma de ese lugar, y tarda en crecer antes de poder talarse. Null si se pudo, o el motivo.
-  plantTreeSeed(x, z, gameTime) {
+  // Un lugar donde un colono puede plantar una semilla: cerca de la aldea, libre de edificios,
+  // zona de acopio, caminos y otros árboles. Null si no hay ninguno (o ya hay demasiados brotes).
+  plantSpotFor(c) {
+    if (this.remote || this.sprouts.length >= MAX_SPROUTS) return null;
+    for (let k = 0; k < 8; k++) {
+      const a = c.rand() * Math.PI * 2;
+      const r = 18 + c.rand() * 50;
+      const x = Math.cos(a) * r;
+      const z = Math.sin(a) * r;
+      if (this.plantProblem(x, z)) continue;
+      return { x, z };
+    }
+    return null;
+  }
+
+  plantProblem(x, z) {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return 'Lugar no válido';
-    if ((this.stock.tree_seed ?? 0) < 1) return 'No quedan semillas de árbol';
     if (Math.hypot(x, z) > SPOT_RADIUS) return 'Demasiado lejos de la aldea';
     if (!this.walkable(x, z, 1.2) || this.blockedByBuilding(x, z)) return 'Ahí no se puede plantar';
+    if (this.zones.some((zone) => rectDistance(zone, x, z) < 3)) return 'Es la zona de acopio';
+    if (this.roads.has(roadKey(...roadCellOf(x, z)))) return 'Es un camino';
+    for (const s of this.spots) if (!s.gone && Math.hypot(s.x - x, s.z - z) < 3) return 'Ya hay algo ahí';
+    return null;
+  }
+
+  // Un colono planta una semilla de árbol (gastada del almacén): nace el árbol propio del
+  // bioma de ese lugar, y tarda en crecer antes de poder talarse. Null si se pudo, o el motivo.
+  // Sólo la llaman los colonos (la IA corre en el servidor): no hay plantación manual.
+  plantTreeSeed(x, z, gameTime) {
+    if ((this.stock.tree_seed ?? 0) < 1) return 'No quedan semillas de árbol';
+    const problem = this.plantProblem(x, z);
+    if (problem) return problem;
     if (this.sprouts.length >= MAX_SPROUTS) return 'Ya hay demasiados brotes esperando a crecer';
-    this.remote?.('plantTreeSeed', [x, z]);
     const p = new THREE.Vector3();
     this.toDirection(x, z, p);
     const biome = biomeAt(p.x, p.y, p.z).id;
@@ -1780,11 +1804,11 @@ export class ColonySim {
       // Para que un visitante también vea esto ya talado/picado (sólo baldosas normales:
       // la arboleda y los brotes son de cada campamento y no viajan por la red).
       if (spot.key !== GROVE_KEY && spot.key !== SPROUT_KEY) this.staticsRevision++;
-      // Al talar un árbol de verdad, a veces caen semillas: el jugador las guarda y las
-      // planta donde quiera (no se planta solo).
+      // Al talar un árbol de verdad, a veces caen semillas: van al almacén y los colonos las
+      // plantan solos en su tiempo libre.
       if (spot.tree && Math.random() < SEED_CHANCE) {
         this.produce('tree_seed', 1);
-        this.emit('notice', 'Al talar cayeron semillas: tenés una semilla de árbol en el almacén para plantar donde quieras');
+        this.emit('notice', 'Al talar cayeron semillas: los colonos las plantarán solos');
       }
     }
   }
@@ -2909,11 +2933,6 @@ export class ColonySim {
       case 'clearMarks':
         this.clearMarks(cleanKinds(args[0]));
         return true;
-      case 'plantTreeSeed': {
-        const [x, z] = args;
-        if (num(x, 500) === null || num(z, 500) === null) return false;
-        return this.plantTreeSeed(x, z, this.gameTime) === null;
-      }
     }
     return false;
   }

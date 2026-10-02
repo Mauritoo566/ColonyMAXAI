@@ -10,7 +10,10 @@ const MAX_LOOK_UP = THREE.MathUtils.degToRad(80); // cuánto se puede levantar l
 const MAX_ORBIT_TILT = THREE.MathUtils.degToRad(82); // inclinación máxima orbitando: casi al horizonte, sin pasar al cielo
 const MIN_ORBIT_TILT = THREE.MathUtils.degToRad(8); // y casi desde arriba, sin dar la vuelta
 const FLIGHT_MIN_SECONDS = 1.5;
-const FLIGHT_MAX_SECONDS = 10;
+const FLIGHT_MAX_SECONDS = 9;
+const FLIGHT_LOOKAHEAD = [0.03, 0.07, 0.12]; // fracciones del vuelo por delante donde se mira el relieve
+const ORBIT_SPEED =0.11; // rad/s de la órbita automática al llegar a una aldea (~57 s por vuelta)
+const ORBIT_EASE_SECONDS = 3.5; // la órbita arranca despacio, sin tirón al terminar el vuelo
 
 // 0 = mirando desde el espacio, 1 = a ras de suelo.
 function lowness(clearance) {
@@ -25,9 +28,6 @@ function tiltFor(clearance) {
 // la rueda (o pellizcar) cambia la altitud de forma exponencial para poder pasar de
 // miles de kilómetros a unos pocos metros, y cerca del suelo la cámara se inclina
 // sola hacia el horizonte.
-// Inclinación mínima de la mirada respecto de la vertical durante un vuelo (rad): ~62°.
-const FLIGHT_MIN_TILT = THREE.MathUtils.degToRad(62);
-
 export class PlanetControls {
   constructor(camera, element) {
     this.camera = camera;
@@ -49,6 +49,7 @@ export class PlanetControls {
     this.pointers = new Map();
     this.pinch = null;
     this.orbit = null; // órbita en curso: el punto del suelo que queda fijo en el centro
+    this.autoOrbit = null; // al llegar a una aldea la cámara la rodea sola hasta que el jugador toque algo
 
     this.dir = new THREE.Vector3();
     this.east = new THREE.Vector3();
@@ -113,7 +114,8 @@ export class PlanetControls {
   // Como cerca del suelo la cámara va inclinada, termina un poco por detrás del punto
   // para que quede en el centro de la pantalla. El vuelo sube más cuanto más lejos
   // está el destino y dura más (entre FLIGHT_MIN_SECONDS y FLIGHT_MAX_SECONDS).
-  flyTo(targetDir, clearance) {
+  flyTo(targetDir, clearance, { orbit = false } = {}) {
+    this.autoOrbit = null;
     const lat = Math.asin(THREE.MathUtils.clamp(targetDir.y, -1, 1));
     const lon = Math.atan2(targetDir.x, targetDir.z);
     const back = clearance * Math.tan(tiltFor(clearance));
@@ -190,6 +192,9 @@ export class PlanetControls {
     );
     this.target.lookUp = 0; // el vuelo termina con la vista normal
     this.flight = {
+      orbit,
+      clearance,
+      pivot: targetDir.clone().normalize(),
       startHeading: this.heading,
       // Punto que la cámara mira durante todo el vuelo (el destino, sobre el suelo).
       focus: targetDir.clone().normalize().multiplyScalar(RADIUS + Math.max(0, surfaceHeight(targetDir))),
@@ -202,7 +207,9 @@ export class PlanetControls {
       groundEnd,
       duration,
       time: 0,
+      distance,
       dir: new THREE.Vector3(),
+      look: new THREE.Vector3(),
       partial: new THREE.Quaternion(),
     };
   }
@@ -233,6 +240,7 @@ export class PlanetControls {
 
   // El jugador toma el control: la cámara se queda donde está.
   cancelFlight() {
+    this.autoOrbit = null;
     if (!this.flight) return;
     this.flight = null;
     this.viewClearance = null;
@@ -253,8 +261,21 @@ export class PlanetControls {
     this.lon = Math.atan2(f.dir.x, f.dir.z);
     this.groundHeight = surfaceHeight(f.dir);
     const altitude = f.base + Math.exp(f.line(e) + f.bump * Math.sin(Math.PI * e));
-    // Por seguridad nunca por debajo del suelo (la ruta ya lo evita casi siempre).
-    this.altitude = Math.max(altitude, this.groundHeight + MIN_CLEARANCE);
+    // La ruta se calculó con pocas muestras del relieve y una montaña chica se le puede escapar:
+    // se mira el terreno por donde viene la cámara y se le deja un margen (grande al principio, que
+    // se achica al acercarse al destino). Sube de golpe si hace falta y baja con suavidad.
+    let peak = this.groundHeight;
+    for (const ahead of FLIGHT_LOOKAHEAD) {
+      f.partial.identity().slerp(f.rotation, Math.min(1, e + ahead));
+      f.look.copy(f.start).applyQuaternion(f.partial);
+      peak = Math.max(peak, surfaceHeight(f.look, 12));
+    }
+    const margin = THREE.MathUtils.clamp((1 - e) * f.distance * 0.04, MIN_CLEARANCE, 4_000);
+    const floor = peak + margin;
+    f.floor = f.floor === undefined || floor > f.floor ? floor : f.floor + (floor - f.floor) * (1 - Math.exp(-delta * 2.5));
+    // Al final del vuelo el piso deja de mandar: la cámara llega a la altura pedida.
+    const safe = this.groundHeight + MIN_CLEARANCE;
+    this.altitude = Math.max(altitude, safe + (f.floor - safe) * (1 - THREE.MathUtils.smoothstep(e, 0.85, 1)));
     // La inclinación usa un suelo "de referencia" que pasa suavemente del de salida al
     // de llegada, para que la cámara no cabecee con cada colina.
     const reference = f.groundStart + (f.groundEnd - f.groundStart) * e;
@@ -263,6 +284,7 @@ export class PlanetControls {
     this.target.lon = this.lon;
     this.target.altitude = this.altitude;
     if (t >= 1) {
+      if (f.orbit) this.autoOrbit = { pivot: f.pivot, clearance: f.clearance, time: 0 };
       this.flight = null;
       this.viewClearance = null;
     }
@@ -271,6 +293,7 @@ export class PlanetControls {
   onPointerDown(e) {
     this.element.setPointerCapture(e.pointerId);
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button, shift: e.shiftKey, alt: e.altKey });
+    this.autoOrbit = null;
     this.pinch = null;
     this.orbit = null;
     if (e.button === 2 && !e.altKey) this.beginOrbit();
@@ -359,6 +382,7 @@ export class PlanetControls {
 
   onWheel(e) {
     e.preventDefault();
+    this.autoOrbit = null;
     const delta = e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY;
     this.zoom(Math.exp(delta * 0.0015));
   }
@@ -384,6 +408,22 @@ export class PlanetControls {
       const dir = this.follow();
       if (dir) this.aimAt(dir);
       else this.stopFollow();
+    }
+    if (this.autoOrbit) {
+      if (this.follow || this.orbit) {
+        this.autoOrbit = null;
+      } else {
+        // Rodear la aldea: el rumbo gira despacio y el punto mirado queda fijo en el centro.
+        const o = this.autoOrbit;
+        o.time += delta;
+        const ease = THREE.MathUtils.smoothstep(o.time / ORBIT_EASE_SECONDS, 0, 1);
+        this.target.heading += ORBIT_SPEED * ease * delta;
+        this.heading = this.target.heading;
+        this.lookUp = this.target.lookUp = 0;
+        this.aimAt(o.pivot, o.clearance);
+        this.lat = this.target.lat;
+        this.lon = this.target.lon;
+      }
     }
     const k = 1 - Math.exp(-delta * 8);
     const t = this.target;
@@ -435,17 +475,6 @@ export class PlanetControls {
       const blend = THREE.MathUtils.smoothstep(t, 0, turnIn) * (1 - THREE.MathUtils.smoothstep(t, 0.8, 1));
       f.blend = blend;
       look.lerp(toFocus, blend).normalize();
-      // Nunca mira hacia abajo: durante el vuelo la mirada se mantiene al menos a
-      // FLIGHT_MIN_TILT del suelo vertical (se ve el horizonte y el destino a lo lejos).
-      const minTilt = FLIGHT_MIN_TILT * blend;
-      const angleFromDown = Math.acos(THREE.MathUtils.clamp(-look.dot(dir), -1, 1));
-      if (angleFromDown < minTilt) {
-        // Parte horizontal de la mirada (o el rumbo si apunta justo hacia abajo).
-        const flat = this.flatLook.copy(look).addScaledVector(dir, -look.dot(dir));
-        if (flat.lengthSq() < 1e-6) flat.copy(forward);
-        flat.normalize();
-        look.copy(dir).multiplyScalar(-Math.cos(minTilt)).addScaledVector(flat, Math.sin(minTilt));
-      }
     }
     // "Arriba" de la cámara. En la vista normal es el del planeta inclinado según el ángulo
     // de mirada (hacia abajo del todo pasa a ser el rumbo). En vuelo se pasa suavemente a un

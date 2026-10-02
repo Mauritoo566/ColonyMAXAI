@@ -366,7 +366,13 @@ export function roadCellProblem(colony, ix, iz) {
   if (Math.hypot(x, z) > radiusOf(colony)) return 'Fuera del territorio';
   if (colony.heightAt(x, z) <= 0.8) return 'En el agua';
   // El camino mide ~2,7 m de ancho: se deja margen a los lados de lo que hay (los tipis, sólo su base).
-  for (const o of colony.obstacles) if (Math.hypot(x - o.x, z - o.z) < o.r + (o.kind === 'tent' ? 0 : 2.2)) return 'Hay algo encima';
+  for (const o of colony.obstacles) {
+    if (o.kind === 'building' && !o.line) {
+      // Un edificio ocupa casillas enteras: el camino sólo choca si pisa alguna, pegado al lado no.
+      const half = (Math.max(1, Math.round((o.r * 2) / ROAD_CELL)) * ROAD_CELL) / 2;
+      if (Math.abs(x - o.x) < half + ROAD_CELL / 2 - 1e-6 && Math.abs(z - o.z) < half + ROAD_CELL / 2 - 1e-6) return 'Hay algo encima';
+    } else if (Math.hypot(x - o.x, z - o.z) < o.r + (o.kind === 'tent' ? 0 : 2.2)) return 'Hay algo encima';
+  }
   for (const zone of colony.zones) if (rectDistance(zone, x, z) < 2.4) return 'En la zona de acopio';
   return null;
 }

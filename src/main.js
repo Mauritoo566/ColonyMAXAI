@@ -17,7 +17,6 @@ import { BuildUI } from './buildUI.js';
 import { WeatherSystem, WEATHER } from './weather.js';
 import { AgeUI } from './ageUI.js';
 import { HarvestTool } from './harvest.js';
-import { PlantTool } from './plant.js';
 import { Connection } from './net.js';
 import { requireLogin, logout } from './auth.js';
 import { SettingsUI } from './settingsUI.js';
@@ -54,10 +53,16 @@ const dayLabel = document.getElementById('day');
 const biomeLabel = document.getElementById('biome');
 const netStatus = document.getElementById('net-status');
 
-// logarithmicDepthBuffer permite dibujar a la vez cosas a 1 m y a 20.000 km sin
-// que los polígonos "parpadeen" por falta de precisión en el buffer de profundidad.
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// Profundidad: en vez de logarithmicDepthBuffer (que obliga a cada píxel a escribir su profundidad
+// a mano y apaga el descarte temprano de la GPU: el terreno costaba el doble) se usa el buffer
+// normal con near/far que siguen a la cámara (ver updateCameraRange). El Sol, la Luna y las
+// estrellas se dibujan antes, en su propio pase con otro rango, así que se ven igual de lejos.
+// Con ?log en la dirección se vuelve al buffer logarítmico (para comparar).
+const flags = new URLSearchParams(location.search);
+const useLogDepth = flags.has('log');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: !flags.has('noaa'), logarithmicDepthBuffer: useLogDepth });
+renderer.setPixelRatio(flags.has('pr') ? Number(flags.get('pr')) : Math.min(window.devicePixelRatio, 2));
+renderer.autoClear = false; // se limpia a mano: pase del cielo y luego el del mundo
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true;
@@ -82,10 +87,15 @@ const SUN_WHITE = new THREE.Color('#fff6e8');
 const SUN_ORANGE = new THREE.Color('#ffae6b');
 
 const scene = new THREE.Scene();
-scene.background = SPACE_COLOR.clone();
+// El color de fondo (espacio o cielo) lo pinta el pase del cielo; el mundo se dibuja encima.
+const background = SPACE_COLOR.clone();
+const skyScene = new THREE.Scene();
+skyScene.background = background;
 scene.fog = new THREE.Fog(SKY_DAY.clone(), 1e12, 1e12);
 
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.4, RADIUS * 20);
+// Cámara del pase del cielo: mismo punto de vista, pero ve de RADIUS a RADIUS * 30 (Sol, Luna y estrellas).
+const skyCamera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, RADIUS, RADIUS * 30);
 const controls = new PlanetControls(camera, canvas);
 // El reloj del mundo es el mismo para todos (lo manda el servidor; aquí se extrapola).
 const dayNight = new DayNight({ startLon: 0, startHour: 12 });
@@ -110,8 +120,8 @@ const ambient = new THREE.AmbientLight('#5a6c99', 0.55);
 scene.add(ambient);
 
 const stars = createStars(4000);
-const sky = createSky(scene);
-scene.add(stars);
+const sky = createSky(skyScene);
+skyScene.add(stars);
 
 const planet = createPlanet();
 scene.add(planet.object);
@@ -153,7 +163,6 @@ const buildings = new BuildingSystem({
   pickColonist: (x, y) => colonyView.pickAt(x, y) ?? (colonyView.pickMobAt(x, y) != null ? true : null),
 });
 const harvest = new HarvestTool({ scene, camera, canvas, colony, controls, campObject });
-const plant = new PlantTool({ scene, camera, canvas, colony });
 // Recursos del mundo: lo talado desaparece y lo que brota con la lluvia aparece.
 // mergeRemoved (no restoreRemoved): lo propio nunca se "destala", así que sumar es seguro
 // y no pisa lo que ya se sumó de una aldea visitada (restoreRemoved lo reemplazaba entero).
@@ -266,7 +275,7 @@ roads.onMessage = (text) => showNotice(text, true);
   syncGrid();
 }
 controls.blockLeftDrag = () => harvest.active || roads.active || !!buildings.placing?.line;
-const buildUI = new BuildUI({ buildings, colony, harvest, roads, plant, onFocusColonist: (c) => colonyUI.focusColonist(c) });
+const buildUI = new BuildUI({ buildings, colony, harvest, roads, onFocusColonist: (c) => colonyUI.focusColonist(c) });
 // Sólo una ficha abierta a la vez.
 colonyUI.onOpen = () => buildings.select(null);
 buildUI.onOpen = () => colonyView.select(null);
@@ -372,7 +381,7 @@ function renderPlayers(players) {
       go.type = 'button';
       go.className = 'btn';
       go.textContent = 'Ir';
-      go.addEventListener('click', () => controls.flyTo(p.camp.dir.clone(), 55));
+      go.addEventListener('click', () => controls.flyTo(p.camp.dir.clone(), 55, { orbit: true }));
       li.append(go);
     }
     list.append(li);
@@ -469,7 +478,7 @@ function updateSky(altitude) {
   waterUniforms.uSkyColor.value.copy(skyColor); // el agua refleja este cielo
 
   const inAtmosphere = 1 - THREE.MathUtils.smoothstep(altitude, 15_000, 120_000);
-  scene.background.copy(SPACE_COLOR).lerp(skyColor, inAtmosphere);
+  background.copy(SPACE_COLOR).lerp(skyColor, inAtmosphere);
   stars.material.opacity = 1 - inAtmosphere * (0.15 + 0.85 * daylight);
   stars.position.copy(camera.position);
 
@@ -483,7 +492,7 @@ function updateSky(altitude) {
 
   if (altitude < 200_000) {
     const horizon = Math.sqrt(altitude * (2 * RADIUS + altitude));
-    scene.fog.color.copy(scene.background);
+    scene.fog.color.copy(background);
     scene.fog.far = horizon * 1.3 + 150_000;
     scene.fog.near = scene.fog.far * 0.15;
     // Lo que la bruma tapa casi del todo no necesita detalle.
@@ -495,6 +504,25 @@ function updateSky(altitude) {
   } else {
     scene.fog.near = scene.fog.far = 1e12;
     planet.terrain.detailDistance = Infinity;
+  }
+}
+
+// near/far de la cámara según dónde está: nada de lo que se ve queda más cerca que una fracción
+// de la altura sobre el suelo, y nada más lejos que el otro lado de la atmósfera. Así el buffer
+// de profundidad normal rinde con precisión de sobra desde 7 m hasta el espacio.
+let rangeNear = 0;
+let rangeFar = 0;
+function updateCameraRange(clearance, altitude) {
+  if (useLogDepth) return;
+  const high = THREE.MathUtils.smoothstep(clearance, 100_000, 1_000_000);
+  const near = Math.max(0.4, clearance * THREE.MathUtils.lerp(0.03, 0.5, high));
+  const far = RADIUS + altitude + RADIUS * 1.2;
+  if (Math.abs(near - rangeNear) > rangeNear * 0.02 || Math.abs(far - rangeFar) > rangeFar * 0.02) {
+    rangeNear = near;
+    rangeFar = far;
+    camera.near = near;
+    camera.far = far;
+    camera.updateProjectionMatrix();
   }
 }
 
@@ -534,8 +562,9 @@ function updateCloudFade(clearance) {
 }
 
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = skyCamera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+  skyCamera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
@@ -551,6 +580,9 @@ function updateQuality(rawDelta) {
   else if (quality.frameTime < 1 / 55) quality.scale = Math.max(1, quality.scale / 1.1);
   planet.terrain.detailScale = quality.scale;
 }
+
+// Diagnóstico: con ?debug en la dirección se expone lo principal para medir (consola del navegador).
+if (new URLSearchParams(location.search).has('debug')) window.__dbg = { renderer, scene, camera, quality, planet, resources, controls, colony, others, camps, THREE };
 
 // ---- Mientras no estabas ------------------------------------------------------------
 // El servidor sigue simulando la colonia cuando el jugador no está (nadie baja de la salud
@@ -578,26 +610,38 @@ document.getElementById('away-close').addEventListener('click', () => {
 });
 
 const clock = new THREE.Clock();
+// Perfil por secciones del bucle (sólo con ?debug): milisegundos medios en window.__dbg.prof.
+const prof = window.__dbg ? (window.__dbg.prof = {}) : null;
+let profT = 0;
+const lap = prof ? (name) => { const t = performance.now(); prof[name] = (prof[name] ?? 0) * 0.95 + (t - profT) * 0.05; profT = t; } : () => {};
 let labelTimer = 0;
 let weatherPlaceTimer = 0;
 renderer.setAnimationLoop(() => {
+  if (prof) profT = performance.now();
   const rawDelta = clock.getDelta();
   const delta = Math.min(rawDelta, 0.1);
   updateQuality(rawDelta);
   controls.update(delta);
+  lap('controls');
   dayNight.setElapsed(worldTime());
   waterUniforms.uTime.value += delta;
 
   const altitude = camera.position.length() - RADIUS;
   const clearance = Math.max(1, altitude - controls.groundHeight);
   updateSun(clearance);
+  updateCameraRange(clearance, altitude);
+  lap('sun');
   planet.update(delta, camera, dayNight.sunDirection, window.innerHeight);
+  lap('planet');
   updateCloudFade(clearance);
+  lap('clouds');
   // Los recursos se dibujan alrededor del punto que se mira (centro de la pantalla).
   if (centerHit) resourceFocus.copy(hit).normalize();
   else resourceFocus.copy(controls.dir);
   resources.update(camera, resourceFocus, clearance, delta);
+  lap('resources');
   camps.update(delta);
+  lap('camps');
   const campDir = camps.camp?.dir;
   // El clima es el de la colonia más cercana a lo que se mira: la propia o la de otro
   // jugador (el servidor manda el de cada zona en vivo). Sin ninguna cerca, uno inventado.
@@ -614,8 +658,11 @@ renderer.setAnimationLoop(() => {
   weather.density = THREE.MathUtils.clamp(1 / quality.scale, 0.35, 1); // menos gotas si va lento
   if (source) weather.follow(source.weather, delta, camera, nearZone > 0.5 ? clearance : Infinity);
   else weather.update(delta, delta, camera, clearance);
+  lap('weather');
   colonyView.update(delta, delta);
+  lap('colonyView');
   buildings.update();
+  lap('buildings');
   colonyUI.update(delta);
   buildUI.update(delta);
   ageUI.update(delta);
@@ -623,11 +670,12 @@ renderer.setAnimationLoop(() => {
   workUI.update(delta);
   villageUI.update(delta);
   militaryUI.update(delta);
+  lap('uis');
   harvest.update(waterUniforms.uTime.value, delta);
   roads.update();
-  plant.update();
   grid.update();
   others.update(delta);
+  lap('harvest+roads+grid+others');
   viewTimer -= delta;
   if (viewTimer <= 0 && lastView.angleTo(resourceFocus) * RADIUS > 500) {
     viewTimer = 1;
@@ -635,6 +683,7 @@ renderer.setAnimationLoop(() => {
     net.send({ t: 'view', dir: { x: resourceFocus.x, y: resourceFocus.y, z: resourceFocus.z } });
   }
   updateSky(altitude);
+  lap('sky');
 
   labelTimer -= delta;
   if (labelTimer <= 0) {
@@ -668,6 +717,19 @@ renderer.setAnimationLoop(() => {
     lastShadowPosition.copy(camera.position);
     lastShadowForward.copy(shadowForward);
   }
+  lap('labels+shadowcheck');
   sky.update(camera, dayNight.sunDirection, dayNight.moonDirection, sun.color);
+  lap('skyupdate');
+  // Pase 1: fondo, estrellas, Sol y Luna. Pase 2: el mundo encima (sin tocar el color ya pintado).
+  skyCamera.position.copy(camera.position);
+  skyCamera.quaternion.copy(camera.quaternion);
+  if (useLogDepth) {
+    renderer.render(skyScene, camera);
+  } else {
+    skyCamera.fov = camera.fov;
+    renderer.render(skyScene, skyCamera);
+  }
+  renderer.clearDepth();
   renderer.render(scene, camera);
+  lap('render');
 });

@@ -4,7 +4,7 @@
 // sale de sus necesidades.
 //
 // Una tarea es un objeto { type, ... } que runTask() ejecuta paso a paso. Tipos:
-//   eat, drink, sleep, warm, chat, build, work, wander
+//   eat, drink, sleep, warm, chat, build, work, harvest, plant, wander
 
 import { hasTrait } from './needs.js';
 import { isChild, loveOptions, runLove, endLove, homeOf } from './sim/family.js';
@@ -244,6 +244,12 @@ export function chooseTask(colony, c, env) {
       const near = 1 / (1 + dist(c, marked) / 600);
       addWork(tierOf(spotCategory(marked, colony.age)), (job ? 0.5 : 0.56) * diligence * fine * near, { type: 'harvest', spot: marked, phase: 'going' });
     }
+    // Las semillas de árbol que cayeron al talar las plantan los propios colonos en su tiempo
+    // libre (no hay plantación manual): un lugar libre cerca de la aldea, sin pisar nada.
+    if ((stock.tree_seed ?? 0) >= 1) {
+      const spot = colony.plantSpotFor(c);
+      if (spot) add(0.33 * diligence * fine * distanceFactor(dist(c, spot)), { type: 'plant', spot });
+    }
     if (work.length) {
       const best = Math.min(...work.map((w) => w.tier));
       for (const w of work) if (w.tier === best) add(w.score, w.task);
@@ -446,6 +452,16 @@ export function runTask(colony, c, task, dt, env) {
 
     case 'work':
       return runWork(colony, c, task, dt, env);
+
+    case 'plant': {
+      if ((stock.tree_seed ?? 0) < 1) return 'done';
+      if (!go(colony, c, task, task.spot, dt, 1)) return 'running';
+      c.working = true;
+      colony.faceTowards(c, task.spot.x, task.spot.z, dt);
+      if (!busy(task, dt, 7)) return 'running';
+      task.delivered = true;
+      return colony.plantTreeSeed(task.spot.x, task.spot.z, env.gameTime) === null ? 'done' : 'failed';
+    }
 
     case 'harvest':
       return runHarvest(colony, c, task, dt, env);
@@ -712,6 +728,8 @@ export function taskActivity(colony, c, task) {
       if (task.drop?.r) return `Lleva ${STOCK_NAMES[def.stock]} a la zona al aire libre`;
       return def.returningText;
     }
+    case 'plant':
+      return walking ? 'Va a plantar una semilla de árbol' : 'Plantando una semilla de árbol';
     case 'wander':
       return walking ? 'Paseando' : 'Descansando un momento';
   }
@@ -739,6 +757,8 @@ export function taskLog(c, task) {
       return `Trabajó en: ${task.building.name}`;
     case 'harvest':
       return `Recolectó ${HARVEST[task.spot.kind].noun} en una zona marcada`;
+    case 'plant':
+      return 'Plantó una semilla de árbol';
   }
   return null;
 }

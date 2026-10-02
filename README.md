@@ -62,6 +62,7 @@ En el servidor de producción el juego corre como servicio de systemd detrás de
 
 - Arrastrar: moverse sobre el planeta
 - Rueda del ratón o pellizcar: acercar / alejar (desde el espacio hasta unos metros del suelo)
+- Al volar a una aldea («Ir al campamento» o el botón de un jugador en «Mundo») la cámara baja como en Google Earth mirando siempre al destino, sin atravesar montañas, y al llegar **rodea la aldea sola y despacio**. Cualquier arrastre, giro o zoom la deja quieta.
 - Botón derecho o Shift + arrastrar: orbitar alrededor del punto del centro de la pantalla (horizontal: girar; vertical: inclinar, con límites). Alt + botón derecho (o botón central): mirar alrededor y al cielo. Dos dedos: girar la vista. Se puede acercar casi a ras de los colonos (7 m)
 - El tiempo es el mismo para todos los jugadores: un día de juego dura 6 minutos
 
@@ -160,6 +161,11 @@ Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s 
 - **Derrota:** si mueren todos se explica la causa y se puede «Volver a fundar» con las condiciones iniciales (no hereda nada ni afecta a otros jugadores).
 
 > Para pruebas, `GAME_SPEED=10 node server/game/index.js` acelera el mundo (reloj y simulación). No cambia ninguna regla; no usar en producción.
+
+> Para medir rendimiento, abre el juego con `?debug` en la dirección: expone `window.__dbg` (renderer, escena, cámara) y `__dbg.prof` con los milisegundos medios de cada parte del bucle. `?log` vuelve al buffer de profundidad logarítmico y `?noaa` apaga el antialiasing, por si hace falta comparar. El render usa un buffer de profundidad normal con `near/far` que siguen a la cámara (`updateCameraRange` en `src/main.js`) y un pase aparte para el Sol, la Luna y las estrellas: es el doble de rápido que el logarítmico sin perder alcance de vista.
+
+### Semillas de árbol
+Al talar un árbol a veces cae una semilla, que va al almacén. **No se planta a mano:** los colonos libres la plantan solos en su tiempo libre (tarea `plant`, `src/ai.js`) en un lugar despejado cerca de la aldea (sin pisar edificios, caminos, la zona de acopio ni otros recursos). Nace el árbol propio del bioma y tarda tres cuartos de día en poder talarse.
 
 ### Cuadrícula
 La aldea tiene una **cuadrícula simétrica de 4 m centrada en la fogata** (la misma de los caminos). Con **R** se gira el edificio 90° al colocarlo o moverlo (Mayús + R al revés). Con el botón «▦ Cuadrícula» (o la tecla **G**, activa por defecto) los edificios se colocan y se mueven pegados al centro de su casilla, y la malla se dibuja sobre el terreno (con los ejes en dorado) mientras se construye o se pintan caminos. Apagada, se coloca libremente.

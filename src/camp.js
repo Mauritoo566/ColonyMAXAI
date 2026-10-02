@@ -682,7 +682,7 @@ export class CampSystem {
   }
 
   flyToCamp() {
-    if (this.camp) this.controls.flyTo(this.camp.dir, FLY_TO_CLEARANCE);
+    if (this.camp) this.controls.flyTo(this.camp.dir, FLY_TO_CLEARANCE, { orbit: true });
   }
 
   refreshUi() {
