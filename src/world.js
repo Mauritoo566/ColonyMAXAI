@@ -19,12 +19,13 @@ const LABEL_FULL_DISTANCE = 400_000; // metros: más lejos el punto sigue, pero 
 const MODEL_MAX_DISTANCE = 30_000; // metros: más lejos no se dibujan sus edificios ni colonos
 
 export class OtherCamps {
-  constructor({ scene, terrain, camera, canvas, labelsRoot }) {
+  constructor({ scene, terrain, camera, canvas, labelsRoot, resources }) {
     this.scene = scene;
     this.terrain = terrain;
     this.camera = camera;
     this.canvas = canvas;
     this.labelsRoot = labelsRoot;
+    this.resources = resources;
     this.myId = null;
     this.camps = new Map(); // id del jugador -> { key, object, zone, dir, label, buildings, sim, view }
     this.players = []; // [{ id, name, online, camp, age, population, isMe }] para la lista del mundo
@@ -104,6 +105,8 @@ export class OtherCamps {
     if (!entry) return;
     entry.sim.applySnapshot(msg, 'fast');
     if (msg.w) entry.weather.loadBrief(msg.w);
+    // Lo que esta colonia ya taló o picó: que tampoco se vea desde afuera.
+    if (msg.removed) this.resources?.mergeRemoved(msg.removed);
   }
 
   // El clima del campamento ajeno más cercano a un punto del planeta: { weather, distance }

@@ -1763,6 +1763,9 @@ export class ColonySim {
       if (!set) this.removed.set(spot.key, (set = new Set()));
       set.add(spot.index);
       this.emit('resources');
+      // Para que un visitante también vea esto ya talado/picado (sólo baldosas normales:
+      // la arboleda y los brotes son de cada campamento y no viajan por la red).
+      if (spot.key !== GROVE_KEY && spot.key !== SPROUT_KEY) this.staticsRevision++;
       if (spot.tree && Math.random() < SEED_CHANCE) this.plantSapling(spot, gameTime);
     }
   }
@@ -2898,6 +2901,9 @@ export class ColonySim {
       if (statics) {
         out.born = this.colonists.filter((c) => c.id >= START_COLONISTS).map((c) => ({ ...this.staticOf(c), x: r2(c.x), z: r2(c.z) }));
         out.roads = [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]);
+        // Lo ya talado/picado de baldosas normales (no la arboleda ni los brotes, que son
+        // de cada campamento): así un visitante no ve árboles que ya no están.
+        out.removed = [...this.removed].filter(([k]) => k !== GROVE_KEY && k !== SPROUT_KEY).map(([k, set]) => [k, [...set]]);
       }
       return out;
     }

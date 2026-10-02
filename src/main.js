@@ -326,7 +326,7 @@ const guideUI = new GuideUI({
 }
 
 // ---- Los demás jugadores: sus campamentos, edificios y colonos, en vivo ---------------
-const others = new OtherCamps({ scene, terrain: planet.terrain, camera, canvas, labelsRoot: document.getElementById('labels') });
+const others = new OtherCamps({ scene, terrain: planet.terrain, camera, canvas, labelsRoot: document.getElementById('labels'), resources });
 others.myId = player.playerId;
 const worldButton = document.getElementById('world-button');
 const worldPanel = document.getElementById('world-panel');

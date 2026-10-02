@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RADIUS, terrainZones, zoneDistance } from './elevation.js';
 import { partsGeometry, mat, stick, v } from './modelKit.js';
 import { RESOURCE_TYPES, TILE } from './resourceTypes.js';
-import { TILE_ANGLE, generateTile } from './resourceGen.js';
+import { TILE_ANGLE, generateTile, GROVE_KEY, SPROUT_KEY } from './resourceGen.js';
 
 // Recursos naturales: aparecen solos por todo el planeta, al azar pero siempre en el
 // mismo lugar (cada baldosa de 320 m usa su propia semilla), según el bioma.
@@ -374,6 +374,20 @@ export class ResourceSystem {
   restoreRemoved(list) {
     this.removed = new Map((list || []).map(([key, idx]) => [key, new Set(idx)]));
     this.dirty = true;
+  }
+
+  // Suma (sin pisar) lo talado/picado de otra colonia (la de un visitante): así tampoco se
+  // ven sus árboles o piedras ya quitados. Nunca baldosas de campamento (arboleda, brotes):
+  // esa clave se reutiliza por cada campamento y mezclarla rompería la propia.
+  mergeRemoved(list) {
+    let changed = false;
+    for (const [key, idx] of list || []) {
+      if (key === GROVE_KEY || key === SPROUT_KEY) continue;
+      let set = this.removed.get(key);
+      if (!set) this.removed.set(key, (set = new Set()));
+      for (const i of idx) if (!set.has(i)) { set.add(i); changed = true; }
+    }
+    if (changed) this.dirty = true;
   }
 
   // Quita un recurso del mundo (un árbol talado, una piedra picada).
