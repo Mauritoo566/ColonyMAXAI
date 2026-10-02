@@ -607,7 +607,7 @@ function setPixelRatio(value) {
 }
 
 // Diagnóstico: con ?debug en la dirección se expone lo principal para medir (consola del navegador).
-if (new URLSearchParams(location.search).has('debug')) window.__dbg = { graphics, renderer, scene, camera, quality, planet, resources, controls, colony, others, camps, THREE };
+if (new URLSearchParams(location.search).has('debug')) window.__dbg = { graphics, renderer, buildings, harvest, colonyView, scene, camera, quality, planet, resources, controls, colony, others, camps, THREE };
 
 // ---- Mientras no estabas ------------------------------------------------------------
 // El servidor sigue simulando la colonia cuando el jugador no está (nadie baja de la salud
@@ -641,6 +641,8 @@ let profT = 0;
 const lap = prof ? (name) => { const t = performance.now(); prof[name] = (prof[name] ?? 0) * 0.95 + (t - profT) * 0.05; profT = t; } : () => {};
 let labelTimer = 0;
 let weatherPlaceTimer = 0;
+let sitesTimer = 0;
+let sitesSig = '';
 renderer.setAnimationLoop(() => {
   if (prof) profT = performance.now();
   const rawDelta = clock.getDelta();
@@ -664,6 +666,19 @@ renderer.setAnimationLoop(() => {
   // Los recursos se dibujan alrededor del punto que se mira (centro de la pantalla).
   if (centerHit) resourceFocus.copy(hit).normalize();
   else resourceFocus.copy(controls.dir);
+  sitesTimer -= delta;
+  if (sitesTimer <= 0) {
+    sitesTimer = 1;
+    // Las aldeas del mundo: alrededor de cada una los recursos se dibujan siempre enteros.
+    const sites = [];
+    if (colony.camp) sites.push({ pos: colony.camp.position, dir: colony.camp.dir });
+    for (const entry of others.camps.values()) sites.push({ pos: entry.dir.clone().multiplyScalar(RADIUS + entry.height), dir: entry.dir });
+    const sig = sites.map((s) => `${s.dir.x.toFixed(5)},${s.dir.y.toFixed(5)},${s.dir.z.toFixed(5)}`).join('|');
+    if (sig !== sitesSig) {
+      sitesSig = sig;
+      resources.setSites(sites);
+    }
+  }
   resources.update(camera, resourceFocus, clearance, delta);
   lap('resources');
   camps.update(delta);

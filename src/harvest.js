@@ -15,6 +15,20 @@ const CLICK_RADIUS = 4; // un clic sin arrastrar marca lo que haya a 4 m
 const TOOL_COLORS = { mark: '#f2b24c', unmark: '#ef6457', zone: '#8fd0ff', bad: '#ef6457' };
 const MARKER_HEIGHT = { wood: 7.2, sticks: 1.3, food: 1.5, stone: 1.4 };
 const MARKER_KINDS = ['wood', 'sticks', 'stone', 'food'];
+// Más lejos que esto los recursos de la aldea se agrupan en un solo pin por zona de 120 m: de lejos no
+// se distingue cada ejemplar y los pines sueltos taparían el terreno.
+const PIN_RANGE = 1_400;
+const CLUSTER_CELL = 120;
+// Estado de un recurso marcado (lo calcula el servidor): 1 = un colono va a por él, 2 = vuelve a crecer
+// (no se puede recoger todavía), 4 = quedó pegado a un edificio, 8 = el almacén está lleno.
+const PIN_TINTS = [[1, 1, 1], [0.55, 0.92, 1], [0.55, 0.55, 0.6], [0.55, 0.92, 1], [1, 0.5, 0.45], [1, 0.5, 0.45], [1, 0.5, 0.45], [1, 0.5, 0.45], [1, 0.82, 0.4]];
+function pinTint(state) {
+  if (state & 4) return PIN_TINTS[4];
+  if (state & 8) return PIN_TINTS[8];
+  if (state & 2) return PIN_TINTS[2];
+  if (state & 1) return PIN_TINTS[1];
+  return PIN_TINTS[0];
+}
 
 export class HarvestTool {
   // colony: la simulación (sim/colony.js); campObject(): el modelo del campamento.
@@ -51,6 +65,8 @@ export class HarvestTool {
     }
     this.markersDirty = true;
     this.billboard = new THREE.Quaternion();
+    this.tint = new THREE.Color();
+    this.clustered = false;
 
     // Rectángulo que se está dibujando (relleno translúcido y borde, pegados al suelo).
     this.area = new THREE.Group();
@@ -293,17 +309,39 @@ export class HarvestTool {
       campObject.add(this.markers);
       this.markersDirty = true;
     }
+    // De cerca un pin por recurso; de lejos uno por zona (ver PIN_RANGE).
+    const clustered = this.camera.position.distanceTo(camp.position) > PIN_RANGE;
+    if (clustered !== this.clustered) {
+      this.clustered = clustered;
+      this.markersDirty = true;
+    }
     if (this.markersDirty) {
       this.markersDirty = false;
       this.lists = {};
       for (const kind of MARKER_KINDS) {
-        this.lists[kind] = this.colony.spots
-          .filter((s) => s.marked && !s.gone && (kind === 'sticks' ? s.stick : kind === 'wood' ? s.kind === 'wood' && !s.stick : s.kind === kind))
-          .slice(0, MAX_MARKERS)
-          .map((s) => ({ s, y: this.colony.heightAt(s.x, s.z) - camp.height + MARKER_HEIGHT[kind] }));
+        const spots = this.colony.spots.filter((s) => s.marked && !s.gone && (kind === 'sticks' ? s.stick : kind === 'wood' ? s.kind === 'wood' && !s.stick : s.kind === kind));
+        if (clustered) {
+          const cells = new Map();
+          for (const s of spots) {
+            const key = `${Math.floor(s.x / CLUSTER_CELL)},${Math.floor(s.z / CLUSTER_CELL)}`;
+            const c = cells.get(key) ?? { x: 0, z: 0, n: 0, spots: [] };
+            c.x += s.x;
+            c.z += s.z;
+            c.n++;
+            c.spots.push(s);
+            cells.set(key, c);
+          }
+          this.lists[kind] = [...cells.values()].slice(0, MAX_MARKERS).map((c) => ({ spots: c.spots, x: c.x / c.n, z: c.z / c.n, y: this.colony.heightAt(c.x / c.n, c.z / c.n) - camp.height + MARKER_HEIGHT[kind], scale: 1 + Math.min(1.5, Math.log10(c.n)) }));
+        } else {
+          this.lists[kind] = spots.slice(0, MAX_MARKERS).map((s) => ({ spots: [s], x: s.x, z: s.z, y: this.colony.heightAt(s.x, s.z) - camp.height + MARKER_HEIGHT[kind], scale: 1 }));
+        }
         this.icons[kind].count = this.lists[kind].length;
       }
+      this.tintTimer = 0;
     }
+    this.tintTimer = (this.tintTimer ?? 0) - delta;
+    const retint = this.tintTimer <= 0;
+    if (retint) this.tintTimer = 0.4;
     // De cara a la cámara (en el sistema del campamento).
     this.billboard.copy(camp.quaternion).invert().multiply(this.camera.quaternion);
     // Más grandes de lejos, para que se sigan viendo.
@@ -313,11 +351,21 @@ export class HarvestTool {
     const pos = new THREE.Vector3();
     for (const kind of MARKER_KINDS) {
       const mesh = this.icons[kind];
-      this.lists[kind].forEach(({ s, y }, i) => {
-        pos.set(s.x, y + Math.sin(time * 2.4 + i * 1.7) * 0.12 * far, s.z);
+      this.lists[kind].forEach(({ spots, x, z, y, scale }, i) => {
+        pos.set(x, y + Math.sin(time * 2.4 + i * 1.7) * 0.12 * far, z);
+        size.set(far * scale, far * scale, far * scale);
         mesh.setMatrixAt(i, m.compose(pos, this.billboard, size));
+        if (retint) {
+          // El pin muestra el peor estado de lo que agrupa: libre, asignado, esperando, bloqueado o sin lugar.
+          let state = 0;
+          for (const s of spots) state |= s.state ?? 0;
+          const t = pinTint(spots.length > 1 ? state & ~1 | (spots.every((s) => (s.state ?? 0) & 1) ? 1 : 0) : state);
+          this.tint.setRGB(t[0], t[1], t[2]);
+          mesh.setColorAt(i, this.tint);
+        }
       });
       mesh.instanceMatrix.needsUpdate = true;
+      if (retint && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
   }
 }

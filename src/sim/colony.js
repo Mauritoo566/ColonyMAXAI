@@ -80,7 +80,8 @@ const CAMP_CLEAR = 45; // alrededor del campamento no hay recursos naturales (re
 const REGROW_SECONDS = 1.5 * DAY_LENGTH_SECONDS; // las bayas y setas vuelven a crecer en día y medio
 const SAPLING_GROW_SECONDS = 0.75 * DAY_LENGTH_SECONDS; // un árbol plantado tarda en crecer
 const SEED_CHANCE = 0.45; // al talar un árbol, probabilidad de que caigan semillas y nazca uno nuevo
-const MAX_SPROUTS = 50; // vegetación nueva que puede brotar con la lluvia o nacer de una semilla
+const MAX_SPROUTS = 50; // vegetación nueva viva a la vez (lluvia, semillas plantadas, ramas y piedras del suelo)
+const SPROUT_ARRAY_MAX = 160; // al llegar aquí se limpian del arreglo los brotes ya consumidos
 const SPROUT_EVERY = 25; // segundos de juego entre brotes con lluvia fuerte
 const ASSIGN_EVERY = 1; // segundos entre repasos de trabajadores libres
 
@@ -1575,7 +1576,7 @@ export class ColonySim {
     for (const s of this.spots) {
       if (s.kind === 'food' && s.readyAt > this.gameTime) s.readyAt -= boost;
     }
-    if (rain < 0.3 || this.sprouts.length >= MAX_SPROUTS) return;
+    if (rain < 0.3 || this.liveSprouts() >= MAX_SPROUTS) return;
     this.sproutTimer += gameDt * rain;
     if (this.sproutTimer < SPROUT_EVERY) return;
     this.sproutTimer = 0;
@@ -1588,14 +1589,14 @@ export class ColonySim {
     const p = new THREE.Vector3();
     for (let attempt = 0; attempt < 8; attempt++) {
       const type = rand() < 0.65 ? 'berryBush' : 'mushrooms';
-      const item = sproutItem(dir.x, dir.y, dir.z, type, rand() * Math.PI * 2, 22 + rand() * 90, rand);
+      // Sólo fuera del claro del campamento y de lo construido: ahí el mundo no dibuja recursos, y un
+      // brote que existe para los colonos pero no se ve era el "recurso invisible".
+      const item = sproutItem(dir.x, dir.y, dir.z, type, rand() * Math.PI * 2, CAMP_CLEAR + 4 + rand() * 70, rand);
       if (!item) continue;
       const r = RADIUS + item.h;
       this.toLocal(p.set(item.d[0] * r, item.d[1] * r, item.d[2] * r), p);
-      if (!this.walkable(p.x, p.z, 1.5) || this.blockedByBuilding(p.x, p.z)) continue;
-      if (Math.hypot(p.x, p.z) < 14) continue; // no en medio del campamento
-      this.sprouts.push(item);
-      this.refreshSprouts();
+      if (this.resourceSiteProblem(p.x, p.z)) continue;
+      this.addSprout(item);
       const name = type === 'berryBush' ? 'un arbusto de bayas' : 'unas setas';
       this.emit('notice', `Con la lluvia brotó ${name} cerca del campamento.`);
       return true;
@@ -1623,10 +1624,10 @@ export class ColonySim {
   // Un lugar donde un colono puede plantar una semilla: cerca de la aldea, libre de edificios,
   // zona de acopio, caminos y otros árboles. Null si no hay ninguno (o ya hay demasiados brotes).
   plantSpotFor(c) {
-    if (this.remote || this.sprouts.length >= MAX_SPROUTS) return null;
+    if (this.remote || this.liveSprouts() >= MAX_SPROUTS) return null;
     for (let k = 0; k < 8; k++) {
       const a = c.rand() * Math.PI * 2;
-      const r = 18 + c.rand() * 50;
+      const r = CAMP_CLEAR + 4 + c.rand() * 60;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
       if (this.plantProblem(x, z)) continue;
@@ -1638,11 +1639,119 @@ export class ColonySim {
   plantProblem(x, z) {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return 'Lugar no válido';
     if (Math.hypot(x, z) > SPOT_RADIUS) return 'Demasiado lejos de la aldea';
-    if (!this.walkable(x, z, 1.2) || this.blockedByBuilding(x, z)) return 'Ahí no se puede plantar';
+    return this.resourceSiteProblem(x, z);
+  }
+
+  // Dónde puede nacer un recurso nuevo (brote de lluvia, árbol plantado, ramas o piedras del suelo):
+  // sólo donde el mundo lo va a dibujar y donde no estorba. Es la única regla: la usan todos, así
+  // lo que existe para los colonos siempre se ve (null = se puede).
+  resourceSiteProblem(x, z) {
+    if (Math.hypot(x, z) < CAMP_CLEAR + 3) return 'Es el claro del campamento';
+    if (!this.walkable(x, z, 1.2) || this.blockedByBuilding(x, z)) return 'Ahí no se puede';
+    if (this.heightAt(x, z) <= 0.8) return 'Es agua';
     if (this.zones.some((zone) => rectDistance(zone, x, z) < 3)) return 'Es la zona de acopio';
     if (this.roads.has(roadKey(...roadCellOf(x, z)))) return 'Es un camino';
-    for (const s of this.spots) if (!s.gone && Math.hypot(s.x - x, s.z - z) < 3) return 'Ya hay algo ahí';
+    if (this.accessBlocked?.(x, z)) return 'Es el acceso de un edificio';
+    for (const s of this.spots) if (!s.gone && Math.hypot(s.x - x, s.z - z) < 2.5) return 'Ya hay un recurso ahí';
     return null;
+  }
+
+  // Brotes vivos (los consumidos quedan como huecos en el arreglo hasta limpiarlo).
+  liveSprouts() {
+    return this.sprouts.length - (this.removed.get(SPROUT_KEY)?.size ?? 0);
+  }
+
+  addSprout(item) {
+    if (this.sprouts.length >= SPROUT_ARRAY_MAX && !this.remote) this.compactSprouts();
+    this.sprouts.push(item);
+    this.refreshSprouts();
+    return this.spots.find((s) => s.key === SPROUT_KEY && s.index === this.sprouts.length - 1);
+  }
+
+  // Ramas caídas o piedrecitas sueltas junto a un edificio de recolección que se quedó sin recursos:
+  // son recursos de verdad (se ven y se consumen), no un trabajo sobre el suelo vacío.
+  spawnLitter(kind, near) {
+    if (this.remote || this.liveSprouts() >= MAX_SPROUTS) return null;
+    const type = kind === 'stone' ? 'pebbles' : 'sticks';
+    const typeIndex = RESOURCE_TYPES.findIndex((t) => t.id === type);
+    const info = RESOURCE_TYPES[typeIndex];
+    const p = new THREE.Vector3();
+    for (let k = 0; k < 10; k++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = (near.def?.footprint ?? 3) + 3 + Math.random() * 20;
+      const x = near.x + Math.cos(a) * r;
+      const z = near.z + Math.sin(a) * r;
+      if (this.resourceSiteProblem(x, z)) continue;
+      this.toDirection(x, z, p);
+      return this.addSprout({
+        typeIndex,
+        d: [p.x, p.y, p.z],
+        h: surfaceHeight(p),
+        yaw: Math.random() * Math.PI * 2,
+        scale: info.scale[0] + Math.random() * (info.scale[1] - info.scale[0]),
+        tint: 0.85 + Math.random() * 0.3,
+        rank: 0,
+        readyAt: 0,
+      });
+    }
+    return null;
+  }
+
+  // Limpia del arreglo los brotes ya consumidos conservando marcas, reservas y tiempos de los vivos.
+  // Sólo en el servidor: los clientes reciben el arreglo ya limpio (rebuildSprouts).
+  compactSprouts(dropIf = null) {
+    const gone = this.removed.get(SPROUT_KEY) ?? new Set();
+    const keep = [];
+    const newToOld = new Map();
+    this.sprouts.forEach((it, i) => {
+      if (gone.has(i) || (dropIf && dropIf(it, i))) return;
+      newToOld.set(keep.length, i);
+      keep.push(it);
+    });
+    if (keep.length === this.sprouts.length) return;
+    const old = new Map(this.spots.filter((s) => s.key === SPROUT_KEY).map((s) => [s.index, s]));
+    this.sprouts = keep;
+    this.removed.delete(SPROUT_KEY);
+    this.rebuildSprouts();
+    for (const s of this.spots) {
+      if (s.key !== SPROUT_KEY) continue;
+      const o = old.get(newToOld.get(s.index));
+      if (o) Object.assign(s, { marked: o.marked, taken: o.taken, readyAt: o.readyAt });
+    }
+    this.emit('marks');
+  }
+
+  // Rehace todos los puntos de recolección de los brotes desde el arreglo.
+  rebuildSprouts() {
+    this.spots = this.spots.filter((s) => s.key !== SPROUT_KEY);
+    this.refreshSprouts();
+  }
+
+  // Aldeas guardadas antes de esta regla: los brotes que nacieron donde el mundo no los dibuja
+  // (el claro del campamento) se descartan, y los consumidos se limpian. Repetible: sobre datos ya
+  // limpios no cambia nada. Devuelve una copia de los datos con las referencias por índice rehechas.
+  migrateSprouts(data) {
+    const items = (Array.isArray(data.sprouts) ? data.sprouts : []).filter((it) => Number.isInteger(it.typeIndex) && RESOURCE_TYPES[it.typeIndex]);
+    const gone = new Set((data.removed || []).find(([key]) => key === SPROUT_KEY)?.[1] ?? []);
+    const p = new THREE.Vector3();
+    const keep = [];
+    const remap = new Map();
+    items.forEach((it, i) => {
+      if (gone.has(i)) return;
+      const r = RADIUS + (it.h ?? 0);
+      this.toLocal(p.set(it.d[0] * r, it.d[1] * r, it.d[2] * r), p);
+      if (Math.hypot(p.x, p.z) < CAMP_CLEAR + 0.5) return; // nunca se dibujó
+      remap.set(i, keep.length);
+      keep.push(it);
+    });
+    const fix = (list) => (list || []).filter(([key, index]) => key !== SPROUT_KEY || remap.has(index)).map(([key, index, ...rest]) => (key === SPROUT_KEY ? [key, remap.get(index), ...rest] : [key, index, ...rest]));
+    return {
+      ...data,
+      sprouts: keep.slice(0, SPROUT_ARRAY_MAX),
+      removed: (data.removed || []).filter(([key]) => key !== SPROUT_KEY),
+      marked: fix(data.marked),
+      regrowing: fix(data.regrowing),
+    };
   }
 
   // Un colono planta una semilla de árbol (gastada del almacén): nace el árbol propio del
@@ -1652,7 +1761,7 @@ export class ColonySim {
     if ((this.stock.tree_seed ?? 0) < 1) return 'No quedan semillas de árbol';
     const problem = this.plantProblem(x, z);
     if (problem) return problem;
-    if (this.sprouts.length >= MAX_SPROUTS) return 'Ya hay demasiados brotes esperando a crecer';
+    if (this.liveSprouts() >= MAX_SPROUTS) return 'Ya hay demasiados brotes esperando a crecer';
     const p = new THREE.Vector3();
     this.toDirection(x, z, p);
     const biome = biomeAt(p.x, p.y, p.z).id;
@@ -1662,7 +1771,7 @@ export class ColonySim {
     const type = RESOURCE_TYPES[typeIndex];
     const h = surfaceHeight(p);
     this.takeStock('tree_seed', 1);
-    this.sprouts.push({
+    const sprout = {
       typeIndex,
       d: [p.x, p.y, p.z],
       h,
@@ -1671,8 +1780,9 @@ export class ColonySim {
       tint: 0.85 + Math.random() * 0.3,
       rank: 0,
       readyAt: gameTime + SAPLING_GROW_SECONDS,
-    });
-    this.refreshSprouts();
+      sown: gameTime,
+    };
+    this.addSprout(sprout);
     this.emit('changed');
     return null;
   }
@@ -3042,7 +3152,8 @@ export class ColonySim {
         reason: b.reason,
         status: b.status,
       })),
-      marked: this.spots.filter((sp) => sp.marked && !sp.gone).map((sp) => [sp.key, sp.index]),
+      // [baldosa, índice, estado]: 1 un colono va a por él, 2 vuelve a crecer, 4 quedó pegado a un edificio, 8 almacén lleno
+      marked: this.spots.filter((sp) => sp.marked && !sp.gone).map((sp) => [sp.key, sp.index, (sp.taken ? 1 : 0) | (sp.readyAt > this.gameTime ? 2 : 0) | (this.blockedByBuilding(sp.x, sp.z) ? 4 : 0) | (this.isFull(sp.kind) ? 8 : 0)]),
       removed: this.serializeRemoved(),
       sprouts: this.sprouts,
     };
@@ -3215,19 +3326,21 @@ export class ColonySim {
     if (changed) this.emit('buildings');
 
     // Recursos: marcas, lo talado y lo que brotó.
-    const marked = new Set((s.marked ?? []).map(([key, index]) => `${key}:${index}`));
+    const marked = new Map((s.marked ?? []).map(([key, index, state]) => [`${key}:${index}`, state | 0]));
     let marksChanged = false;
     for (const sp of this.spots) {
       const m = marked.has(`${sp.key}:${sp.index}`);
+      sp.state = m ? marked.get(`${sp.key}:${sp.index}`) : 0;
       if (!!sp.marked !== m) {
         sp.marked = m;
         marksChanged = true;
       }
     }
     if (marksChanged) this.emit('marks');
-    if ((s.sprouts?.length ?? 0) !== this.sprouts.length) {
+    const sproutSig = (list) => `${list?.length ?? 0}:${list?.[0]?.d?.[0]}:${list?.[list.length - 1]?.d?.[0]}`;
+    if (sproutSig(s.sprouts) !== sproutSig(this.sprouts)) {
       this.sprouts = s.sprouts ?? [];
-      this.refreshSprouts();
+      this.rebuildSprouts();
     }
     const removedKey = JSON.stringify(s.removed ?? []);
     if (removedKey !== JSON.stringify(this.serializeRemoved())) {
@@ -3308,8 +3421,9 @@ export class ColonySim {
       c.task = null;
       c.sleeping = false;
     }
-    if (Array.isArray(data.sprouts) && data.sprouts.length) {
-      this.sprouts = data.sprouts.filter((it) => Number.isInteger(it.typeIndex) && RESOURCE_TYPES[it.typeIndex]).slice(0, MAX_SPROUTS);
+    data = this.migrateSprouts(data);
+    if (data.sprouts.length) {
+      this.sprouts = data.sprouts;
       this.refreshSprouts();
     }
     const byKey = new Map(this.spots.map((s) => [`${s.key}:${s.index}`, s]));

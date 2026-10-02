@@ -25,6 +25,11 @@ const MAX_VISIBLE_CLEARANCE = 6_000; // más alto no se dibujan
 const CAMP_CLEAR_RADIUS = 45; // alrededor del campamento no aparece nada
 const MAX_PENDING = 24; // baldosas encargadas a la vez
 const REBUILD_INTERVAL = 0.12; // segundos mínimos entre dos reconstrucciones
+// Alrededor de cada aldea (los recursos que sus colonos conocen) se dibuja SIEMPRE todo, entero y sin
+// aclarar, mientras la cámara esté a menos de SITE_VISIBLE_DISTANCE: lo que un colono recolecta tiene
+// que poder verse. Más lejos rigen las reglas de distancia de cada tipo.
+const SITE_RADIUS = 260; // metros (los colonos conocen hasta 230)
+const SITE_VISIBLE_DISTANCE = 2_500;
 
 function oreRock(p, vein, glint) {
   p.add(new THREE.DodecahedronGeometry(1.3, 0), '#77726a', mat(0, 0.6, 0, 0.3, 0.4, 0, 1.3, 0.9, 1.1));
@@ -257,6 +262,8 @@ export class ResourceSystem {
     this.lastCamera = new THREE.Vector3(Infinity, 0, 0);
     this.origin = new THREE.Vector3();
     this.zonesSignature = '';
+    this.sites = []; // aldeas: [{ x, y, z, dir }] posición en el mundo y dirección
+    this.activeSites = []; // las que están cerca de la cámara ahora
     this.removed = new Map(); // baldosa -> índices de recursos que ya no están
     this.extra = new Map(); // baldosas especiales (arboleda del campamento)
     this.workers = new ResourceWorkers((key, data) => {
@@ -267,6 +274,12 @@ export class ResourceSystem {
         this.dirty = true;
       }
     });
+  }
+
+  // Las aldeas del mundo (la propia y las ajenas): ver SITE_RADIUS.
+  setSites(list) {
+    this.sites = list;
+    this.dirty = true;
   }
 
   // Radio alrededor del punto que se mira donde se dibujan recursos.
@@ -291,6 +304,12 @@ export class ResourceSystem {
     const radius = this.radiusFor(clearance);
     const tiles = this.collectTiles(focusDir, radius);
     for (const extra of this.extra.values()) tiles.push(extra);
+    // Las baldosas de cada aldea cercana entran aunque queden fuera del radio del punto que se mira.
+    this.activeSites = this.sites.filter((s) => camera.position.distanceToSquared(s.pos) < SITE_VISIBLE_DISTANCE * SITE_VISIBLE_DISTANCE);
+    if (this.activeSites.length) {
+      const have = new Set(tiles);
+      for (const s of this.activeSites) for (const t of this.collectTiles(s.dir, SITE_RADIUS + TILE)) if (!have.has(t)) { have.add(t); tiles.push(t); }
+    }
 
     // Reconstruir si la cámara se movió lo suficiente o llegaron baldosas nuevas.
     const moved = this.lastCamera.distanceTo(camera.position);
@@ -416,6 +435,8 @@ export class ResourceSystem {
     });
     const removed = this.removed;
     const maxDist2 = RESOURCE_TYPES.map((t) => (t.maxDistance ?? Infinity) ** 2);
+    const sites = this.activeSites.map((s) => [s.pos.x, s.pos.y, s.pos.z]);
+    const site2 = SITE_RADIUS * SITE_RADIUS;
 
     const nearCount = new Int32Array(RESOURCE_TYPES.length);
     const farCount = new Int32Array(RESOURCE_TYPES.length);
@@ -431,17 +452,24 @@ export class ResourceSystem {
         if (gone && gone.has(k)) continue; // talado o agotado
         const px = pos[k * 3], py = pos[k * 3 + 1], pz = pos[k * 3 + 2];
         // Distancia al punto que se mira, a la misma altura que el recurso.
-        const plen = Math.sqrt(px * px + py * py + pz * pz);
-        const fdx = px - center.x * plen, fdy = py - center.y * plen, fdz = pz - center.z * plen;
-        if (fdx * fdx + fdy * fdy + fdz * fdz > radius2) continue;
         const dx = px - cx, dy = py - cy, dz = pz - cz;
         const d2 = dx * dx + dy * dy + dz * dz;
         const ti = type[k];
-        if (d2 > maxDist2[ti]) continue;
-        // A lo lejos se aclara: sólo quedan los de "rank" bajo.
-        if (d2 > FULL_DENSITY_DISTANCE * FULL_DENSITY_DISTANCE) {
-          const keep = (FULL_DENSITY_DISTANCE * FULL_DENSITY_DISTANCE) / d2;
-          if (rank[k] > keep) continue;
+        let inSite = false;
+        for (const s of sites) {
+          const sx = px - s[0], sy = py - s[1], sz = pz - s[2];
+          if (sx * sx + sy * sy + sz * sz < site2) { inSite = true; break; }
+        }
+        if (!inSite) {
+          const plen = Math.sqrt(px * px + py * py + pz * pz);
+          const fdx = px - center.x * plen, fdy = py - center.y * plen, fdz = pz - center.z * plen;
+          if (fdx * fdx + fdy * fdy + fdz * fdz > radius2) continue;
+          if (d2 > maxDist2[ti]) continue;
+          // A lo lejos se aclara: sólo quedan los de "rank" bajo.
+          if (d2 > FULL_DENSITY_DISTANCE * FULL_DENSITY_DISTANCE) {
+            const keep = (FULL_DENSITY_DISTANCE * FULL_DENSITY_DISTANCE) / d2;
+            if (rank[k] > keep) continue;
+          }
         }
         let blocked = false;
         for (const z of zones) {

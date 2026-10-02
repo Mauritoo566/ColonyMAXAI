@@ -11,6 +11,7 @@ import { isChild, loveOptions, runLove, endLove, homeOf } from './sim/family.js'
 import { levelOf, STOCK_NAMES } from './sim/buildingTypes.js';
 import { DAY_LENGTH_SECONDS } from './daynight.js';
 import { specOf, spotCategory, WORK_TYPES, waitReason } from './sim/specialties.js';
+import { SPROUT_KEY } from './resourceGen.js';
 
 const DAY = DAY_LENGTH_SECONDS;
 
@@ -482,6 +483,10 @@ export function runTask(colony, c, task, dt, env) {
   return 'failed';
 }
 
+// Ramas caídas y piedrecitas sueltas que aparecen junto a un edificio que se quedó sin recursos
+// (ver spawnLitter): son recursos de verdad, pero rinden menos.
+const isLitter = (spot) => spot?.key === SPROUT_KEY && (spot.type === 'sticks' || spot.type === 'pebbles');
+
 function release(spot) {
   spot.taken = null;
   return 'failed';
@@ -555,15 +560,9 @@ function runWork(colony, c, task, dt, env) {
   if (task.phase === 'start') {
     task.spot = colony.nearestSpot(def.resource, b.x, b.z, def.range, env.gameTime);
     if (!task.spot && def.scavenge) {
-      // Sin árboles o piedras grandes cerca: junta lo que hay suelto por el suelo (rinde
-      // menos, pero no se queda sin hacer nada).
-      for (let k = 0; k < 6 && !task.spot; k++) {
-        const a = c.rand() * Math.PI * 2;
-        const r = 8 + c.rand() * 20;
-        const x = b.x + Math.cos(a) * r;
-        const z = b.z + Math.sin(a) * r;
-        if (colony.walkable(x, z, 0.8)) task.spot = { x, z, scavenge: true };
-      }
+      // Sin árboles o piedras grandes cerca: aparecen ramas caídas o piedrecitas junto al edificio (se
+      // ven y se consumen como cualquier recurso; rinden menos, pero no se queda sin hacer nada).
+      task.spot = colony.spawnLitter(def.resource, b);
       if (task.spot) b.status = def.scavenge.status;
     }
     if (!task.spot) {
@@ -583,21 +582,22 @@ function runWork(colony, c, task, dt, env) {
     c.working = true;
     colony.faceTowards(c, task.spot.x, task.spot.z, dt);
     const skill = c.skills[def.skill] / 10;
-    const scavenging = task.spot.scavenge;
-    if (!busy(task, dt, def.workTime * (1.4 - skill * 0.7) * (scavenging ? 1.5 : 1))) return 'running';
-    if (!scavenging) colony.consumeSpot(task.spot, env.gameTime);
+    if (task.spot.gone) return release(task.spot); // alguien se llevó lo último: no se cobra dos veces
+    if (!busy(task, dt, def.workTime * (1.4 - skill * 0.7) * (isLitter(task.spot) ? 1.5 : 1))) return 'running';
+    task.litter = isLitter(task.spot);
+    colony.consumeSpot(task.spot, env.gameTime);
     task.phase = 'returning';
   }
   if (task.phase === 'returning') {
     // Si en el almacén ya no cabe, lo lleva a la zona de acopio al aire libre.
     task.drop ??= colony.goesOutdoor(def.stock) && colony.zones.length ? colony.dropPoint(def.stock) : edgeOf(b, c);
     if (!go(colony, c, task, task.drop, dt, task.drop.r ? task.drop.r * 0.6 : 0.9)) return 'running';
-    const amount = task.spot.scavenge ? def.scavenge.yield : level.yield;
+    const amount = task.litter ? def.scavenge.yield : level.yield;
     const added = colony.produce(def.stock, amount);
     for (const [k, n] of Object.entries(def.extra || {})) colony.produce(k, n);
     task.delivered = true;
     b.produced += added;
-    if (!task.spot.scavenge) b.status = null;
+    if (!task.litter) b.status = null;
     return 'done';
   }
   return 'running';
@@ -665,8 +665,8 @@ export function endTask(colony, c, task) {
   if (task.type === 'harvest' && task.load && !task.delivered) {
     for (const [k, n] of Object.entries(task.load)) colony.produce(k, n);
     task.delivered = true;
-  } else if (task.type === 'work' && task.phase === 'returning' && !task.delivered && !task.spot?.scavenge && task.building?.def.stock) {
-    colony.produce(task.building.def.stock, levelOf(task.building).yield);
+  } else if (task.type === 'work' && task.phase === 'returning' && !task.delivered && task.building?.def.stock) {
+    colony.produce(task.building.def.stock, task.litter ? task.building.def.scavenge.yield : levelOf(task.building).yield);
     task.delivered = true;
   }
   if (task.type === 'sleep') c.sleeping = false;
@@ -722,7 +722,7 @@ export function taskActivity(colony, c, task) {
         if (levelOf(task.building).rainOnly) return walking ? 'Va al recolector de lluvia' : 'Vaciando las vasijas de lluvia';
         return walking ? 'Va al pozo' : 'Sacando agua del pozo';
       }
-      if (task.spot?.scavenge && task.phase !== 'returning') return def.scavenge.text;
+      if (isLitter(task.spot) && task.phase !== 'returning') return def.scavenge.text;
       if (task.phase === 'going') return def.goingText;
       if (task.phase === 'gathering') return def.workingText;
       if (task.drop?.r) return `Lleva ${STOCK_NAMES[def.stock]} a la zona al aire libre`;
