@@ -1,4 +1,5 @@
 import { logout, saveToken } from './auth.js';
+import { graphics, PRESETS, setQuality } from './graphics.js';
 
 // Configuración: datos de la cuenta, cerrar sesión y eliminar la cuenta (pide la contraseña y
 // borra el campamento y todo lo de la cuenta en el servidor).
@@ -49,6 +50,18 @@ export class SettingsUI {
       </div>
       <div class="age-body">
         <section class="cp-section">
+          <h3>Calidad gráfica</h3>
+          <p class="reason">Si el juego va a tirones, bajá la calidad: se sigue viendo todo igual de lejos, sólo cambia la nitidez. Además, la resolución baja y sube sola para sostener los 60 FPS.</p>
+          <label class="order-label">Calidad
+            <select data-quality>
+              ${[['auto', 'Auto (recomendada)'], ...Object.entries(PRESETS).map(([id, p]) => [id, p.label])]
+                .map(([id, label]) => `<option value="${id}"${graphics.choice === id ? ' selected' : ''}>${label}</option>`)
+                .join('')}
+            </select>
+          </label>
+          <p class="reason" data-quality-info>Ahora: <strong>${PRESETS[graphics.effective].label}</strong>. Cambiarla reinicia la pantalla del juego (tu aldea no se toca).</p>
+        </section>
+        <section class="cp-section">
           <h3>Sesión</h3>
           <p class="reason">Jugando como <strong>${this.playerName.replace(/[&<>"]/g, '')}</strong>. Tu aldea sigue en el servidor aunque cierres la sesión.</p>
           <button type="button" class="btn" data-logout>Cerrar sesión</button>
@@ -69,6 +82,7 @@ export class SettingsUI {
           <p class="order-msg" data-msg role="status"></p>
         </section>
       </div>`;
+    this.panel.querySelector('[data-quality]').addEventListener('change', (e) => setQuality(e.target.value));
     this.panel.querySelector('[data-delete-form]').addEventListener('submit', (e) => {
       e.preventDefault();
       const password = e.target.elements.password.value;

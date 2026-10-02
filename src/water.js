@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { graphics } from './graphics.js';
 
 // Material del terreno con un efecto de agua ligero. El mar es parte del propio terreno
 // (caras planas a nivel 0); cada vértice lleva un atributo "aWater":
@@ -21,11 +22,14 @@ export const waterUniforms = {
 };
 
 export function createTerrainMaterial() {
-  const material = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.95,
-    metalness: 0,
-  });
+  // Con calidad Media o Baja el terreno usa luz simple (sin brillo especular): mucho más liviano.
+  const material = graphics.simpleTerrain
+    ? new THREE.MeshLambertMaterial({ vertexColors: true })
+    : new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.95,
+        metalness: 0,
+      });
 
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, waterUniforms);

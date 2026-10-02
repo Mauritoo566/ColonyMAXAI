@@ -198,6 +198,10 @@ export class Terrain {
     // Ajustes de rendimiento que decide main.js:
     this.detailScale = 1; // >1 = menos detalle (calidad automática en equipos lentos)
     this.detailDistance = Infinity; // más allá (dentro de la bruma) no se detalla
+    // Precarga del destino de un vuelo: se generan de antemano los trozos que hará falta ver al llegar.
+    this.prefetch = null;
+    this.prefetchPos = new THREE.Vector3();
+    this.nowMs = 0;
 
     this.pool = new WorkerPool(
       (node, data) => this.receive(node, data),
@@ -236,9 +240,41 @@ export class Terrain {
       Math.sqrt(altitude * (2 * RADIUS + altitude)) + Math.sqrt(MAX_LAND_HEIGHT * (2 * RADIUS + MAX_LAND_HEIGHT));
 
     this.frame++;
+    this.nowMs = performance.now();
     this.installArrivals();
     for (const root of this.roots) this.updateNode(root);
+    if (this.prefetch && this.frame % 10 === 0) this.runPrefetch();
     this.processQueue();
+  }
+
+  // Pedir que se vaya generando el terreno alrededor de un punto, con el detalle que tendrá al
+  // mirarlo desde "clearance" metros. Se llama en cada fotograma de un vuelo: sin esto, al llegar
+  // sólo estaba hecho el trozo grueso del planeta (la cámara quedaba bajo él y se veía el cielo).
+  setPrefetch(dir, clearance) {
+    this.prefetch = { dir, clearance, until: performance.now() + 4000 };
+  }
+
+  runPrefetch() {
+    const p = this.prefetch;
+    if (this.nowMs > p.until) {
+      this.prefetch = null;
+      return;
+    }
+    const h = heightFromElevation(elevation(p.dir.x, p.dir.y, p.dir.z, 8));
+    this.prefetchPos.copy(p.dir).multiplyScalar(RADIUS + h + p.clearance);
+    const reach = Math.max(2_500, p.clearance * 80);
+    const pinUntil = this.nowMs + 4000;
+    const visit = (node) => {
+      node.pinUntil = pinUntil; // no se descarta ni se saca de la cola mientras tanto
+      node.wantedFrame = this.frame;
+      if (!node.mesh && !node.queued) this.enqueue(node);
+      if (node.level >= this.maxLevelFor(node)) return;
+      const distance = Math.max(1, this.prefetchPos.distanceTo(node.center) - node.worldSize * 0.7);
+      if (distance > reach || node.worldSize / distance <= SPLIT_THRESHOLD * this.detailScale) return;
+      if (!node.children) node.split();
+      for (const child of node.children) visit(child);
+    };
+    for (const root of this.roots) visit(root);
   }
 
   // Nivel máximo de detalle: más alto cerca de las zonas que lo piden (campamento).
@@ -301,8 +337,13 @@ export class Terrain {
     }
 
     if (node.children) {
-      for (const child of node.children) child.dispose();
-      node.children = null;
+      if (node.pinUntil > this.nowMs) {
+        // Precargado para un vuelo: se conservan (ocultos) para tenerlos listos al llegar.
+        for (const child of node.children) child.hideAll();
+      } else {
+        for (const child of node.children) child.dispose();
+        node.children = null;
+      }
     }
     return this.show(node);
   }
@@ -328,7 +369,7 @@ export class Terrain {
     // Fuera los trozos que ya no hacen falta (p. ej. zonas por las que la cámara sólo
     // pasó de camino). Si vuelven a hacer falta se vuelven a pedir.
     this.queue = this.queue.filter((n) => {
-      const keep = !n.disposed && n.wantedFrame === this.frame;
+      const keep = !n.disposed && (n.wantedFrame === this.frame || n.pinUntil > this.nowMs);
       if (!keep) n.queued = false;
       return keep;
     });

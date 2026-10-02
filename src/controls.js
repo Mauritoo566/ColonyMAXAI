@@ -263,19 +263,19 @@ export class PlanetControls {
     const altitude = f.base + Math.exp(f.line(e) + f.bump * Math.sin(Math.PI * e));
     // La ruta se calculó con pocas muestras del relieve y una montaña chica se le puede escapar:
     // se mira el terreno por donde viene la cámara y se le deja un margen (grande al principio, que
-    // se achica al acercarse al destino). Sube de golpe si hace falta y baja con suavidad.
+    // proporcional a la altura que ya llevaba la ruta, así se achica sola al acercarse al destino). Sube de golpe si hace falta y baja con suavidad.
     let peak = this.groundHeight;
     for (const ahead of FLIGHT_LOOKAHEAD) {
       f.partial.identity().slerp(f.rotation, Math.min(1, e + ahead));
       f.look.copy(f.start).applyQuaternion(f.partial);
       peak = Math.max(peak, surfaceHeight(f.look, 12));
     }
-    const margin = THREE.MathUtils.clamp((1 - e) * f.distance * 0.04, MIN_CLEARANCE, 4_000);
+    const margin = THREE.MathUtils.clamp((altitude - this.groundHeight) * 0.5, Math.max(MIN_CLEARANCE, f.clearance * 0.6), 4_000);
+    // Cerca del final sólo importa el suelo de abajo (el de adelante ya es el destino).
+    peak = this.groundHeight + (peak - this.groundHeight) * (1 - THREE.MathUtils.smoothstep(e, 0.9, 1));
     const floor = peak + margin;
-    f.floor = f.floor === undefined || floor > f.floor ? floor : f.floor + (floor - f.floor) * (1 - Math.exp(-delta * 2.5));
-    // Al final del vuelo el piso deja de mandar: la cámara llega a la altura pedida.
-    const safe = this.groundHeight + MIN_CLEARANCE;
-    this.altitude = Math.max(altitude, safe + (f.floor - safe) * (1 - THREE.MathUtils.smoothstep(e, 0.85, 1)));
+    f.floor = f.floor === undefined || floor > f.floor || e > 0.9 ? floor : f.floor + (floor - f.floor) * (1 - Math.exp(-delta * 4));
+    this.altitude = Math.max(altitude, f.floor, this.groundHeight + MIN_CLEARANCE);
     // La inclinación usa un suelo "de referencia" que pasa suavemente del de salida al
     // de llegada, para que la cámara no cabecee con cada colina.
     const reference = f.groundStart + (f.groundEnd - f.groundStart) * e;

@@ -9,6 +9,7 @@ import { CampSystem } from './camp.js';
 import { biomeAt } from './biomes.js';
 import { ResourceSystem } from './resources.js';
 import { createSky } from './sky.js';
+import { graphics } from './graphics.js';
 import { ColonySim } from './sim/colony.js';
 import { ColonyView } from './colonists.js';
 import { ColonyUI } from './colonyUI.js';
@@ -60,12 +61,12 @@ const netStatus = document.getElementById('net-status');
 // Con ?log en la dirección se vuelve al buffer logarítmico (para comparar).
 const flags = new URLSearchParams(location.search);
 const useLogDepth = flags.has('log');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: !flags.has('noaa'), logarithmicDepthBuffer: useLogDepth });
-renderer.setPixelRatio(flags.has('pr') ? Number(flags.get('pr')) : Math.min(window.devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: graphics.antialias, logarithmicDepthBuffer: useLogDepth });
+renderer.setPixelRatio(graphics.maxPixelRatio);
 renderer.autoClear = false; // se limpia a mano: pase del cielo y luego el del mundo
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = graphics.shadows;
 renderer.shadowMap.type = THREE.PCFShadowMap; // más barato que PCFSoft; el radio suaviza igual
 // Las sombras son de las nubes, que se mueven muy despacio: basta recalcularlas cada
 // pocos fotogramas (la sombra ya calculada sigue bien ubicada mientras tanto).
@@ -570,19 +571,43 @@ window.addEventListener('resize', () => {
 
 // Calidad automática: si los fotogramas tardan mucho se reduce el detalle del
 // terreno poco a poco, y si sobra tiempo se recupera.
-const quality = { frameTime: 1 / 60, timer: 0, scale: 1 };
+// Para sostener los 60 FPS primero baja la resolución (se ve algo menos nítido, pero se ve todo
+// igual de lejos) y sólo si ya está al mínimo reduce los triángulos del terreno. Cuando el equipo
+// va sobrado, sube todo de a poco; después de bajar espera un rato antes de volver a subir para
+// no oscilar.
+const quality = { frameTime: 1 / 60, timer: 0, scale: graphics.detailBias, pixelRatio: graphics.maxPixelRatio, calm: 0, holdUntil: 0 };
 function updateQuality(rawDelta) {
   quality.frameTime += (Math.min(rawDelta, 0.25) - quality.frameTime) * 0.05;
   quality.timer += rawDelta;
-  if (quality.timer < 1.5) return;
+  if (quality.timer < 1) return;
   quality.timer = 0;
-  if (quality.frameTime > 1 / 40) quality.scale = Math.min(2.2, quality.scale * 1.15);
-  else if (quality.frameTime < 1 / 55) quality.scale = Math.max(1, quality.scale / 1.1);
+  const now = performance.now();
+  const fixed = graphics.minPixelRatio === graphics.maxPixelRatio && flags.has('pr');
+  if (quality.frameTime > 1 / 56 && !fixed) {
+    // No llega a 60: bajar resolución; con la resolución al mínimo, bajar detalle del terreno.
+    quality.calm = 0;
+    quality.holdUntil = now + 15_000;
+    if (quality.pixelRatio > graphics.minPixelRatio + 0.01) setPixelRatio(Math.max(graphics.minPixelRatio, quality.pixelRatio * (quality.frameTime > 1 / 40 ? 0.8 : 0.92)));
+    else quality.scale = Math.min(graphics.detailBias * 2.2, quality.scale * 1.15);
+  } else if (quality.frameTime < 1 / 58.5 && now > quality.holdUntil && !fixed) {
+    // Sobra margen durante varios segundos seguidos: recuperar primero el terreno y después la resolución.
+    if (++quality.calm >= 6) {
+      quality.calm = 0;
+      if (quality.scale > graphics.detailBias + 0.01) quality.scale = Math.max(graphics.detailBias, quality.scale / 1.1);
+      else if (quality.pixelRatio < graphics.maxPixelRatio - 0.01) setPixelRatio(Math.min(graphics.maxPixelRatio, quality.pixelRatio * 1.06));
+    }
+  } else {
+    quality.calm = 0;
+  }
   planet.terrain.detailScale = quality.scale;
+}
+function setPixelRatio(value) {
+  quality.pixelRatio = value;
+  renderer.setPixelRatio(value);
 }
 
 // Diagnóstico: con ?debug en la dirección se expone lo principal para medir (consola del navegador).
-if (new URLSearchParams(location.search).has('debug')) window.__dbg = { renderer, scene, camera, quality, planet, resources, controls, colony, others, camps, THREE };
+if (new URLSearchParams(location.search).has('debug')) window.__dbg = { graphics, renderer, scene, camera, quality, planet, resources, controls, colony, others, camps, THREE };
 
 // ---- Mientras no estabas ------------------------------------------------------------
 // El servidor sigue simulando la colonia cuando el jugador no está (nadie baja de la salud
@@ -622,6 +647,7 @@ renderer.setAnimationLoop(() => {
   const delta = Math.min(rawDelta, 0.1);
   updateQuality(rawDelta);
   controls.update(delta);
+  if (controls.flight) planet.terrain.setPrefetch(controls.flight.pivot, controls.flight.clearance);
   lap('controls');
   dayNight.setElapsed(worldTime());
   waterUniforms.uTime.value += delta;

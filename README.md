@@ -164,6 +164,17 @@ Cada colono decide solo qué hacer (`src/ai.js`, "IA de utilidad"): cada ~1,5 s 
 
 > Para medir rendimiento, abre el juego con `?debug` en la dirección: expone `window.__dbg` (renderer, escena, cámara) y `__dbg.prof` con los milisegundos medios de cada parte del bucle. `?log` vuelve al buffer de profundidad logarítmico y `?noaa` apaga el antialiasing, por si hace falta comparar. El render usa un buffer de profundidad normal con `near/far` que siguen a la cámara (`updateCameraRange` en `src/main.js`) y un pase aparte para el Sol, la Luna y las estrellas: es el doble de rápido que el logarítmico sin perder alcance de vista.
 
+### Calidad gráfica y PCs viejas
+En ⚙ Configuración hay una opción **Calidad**: Auto (recomendada), Alta, Media o Baja (`src/graphics.js`). Cambia sólo el costo por píxel; lo lejos que se ve cada cosa es igual en todas.
+
+| Calidad | Suavizado de bordes | Luz del terreno | Resolución máxima | Sombras de nubes |
+|---|---|---|---|---|
+| Alta | sí | completa | la de la pantalla (hasta ×2) | sí |
+| Media | no | simple | hasta ×1,25 | sí |
+| Baja | no | simple | ×1 y menos detalle del terreno | no |
+
+«Auto» usa Media en equipos con 4 núcleos o menos (o 4 GB o menos de memoria) y Alta en el resto. En todas, la **resolución baja y sube sola** (`updateQuality` en `src/main.js`) para sostener los 60 FPS: primero baja los píxeles, y sólo si ya está al mínimo reduce los triángulos del terreno. Cambiar la opción recarga la página (el suavizado y el material del terreno se eligen al arrancar); la aldea no se toca.
+
 ### Semillas de árbol
 Al talar un árbol a veces cae una semilla, que va al almacén. **No se planta a mano:** los colonos libres la plantan solos en su tiempo libre (tarea `plant`, `src/ai.js`) en un lugar despejado cerca de la aldea (sin pisar edificios, caminos, la zona de acopio ni otros recursos). Nace el árbol propio del bioma y tarda tres cuartos de día en poder talarse.
 
