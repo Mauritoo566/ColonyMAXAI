@@ -244,14 +244,6 @@ export function chooseTask(colony, c, env) {
       const near = 1 / (1 + dist(c, marked) / 600);
       addWork(tierOf(spotCategory(marked, colony.age)), (job ? 0.5 : 0.56) * diligence * fine * near, { type: 'harvest', spot: marked, phase: 'going' });
     }
-    // Lo que alguien dejó tirado al cambiar de especialidad a mitad de camino: lo recoge
-    // cualquiera que tenga Recolección entre las suyas.
-    const gatherTier = tierOf('gathering');
-    const pile = gatherTier >= 0 ? colony.nearestDrop(c.x, c.z) : null;
-    if (pile) {
-      const near = 1 / (1 + dist(c, pile) / 600);
-      addWork(gatherTier, (job ? 0.52 : 0.58) * diligence * fine * near, { type: 'pickup', pile, phase: 'going' });
-    }
     if (work.length) {
       const best = Math.min(...work.map((w) => w.tier));
       for (const w of work) if (w.tier === best) add(w.score, w.task);
@@ -283,7 +275,7 @@ function nearestAwake(colony, c) {
 }
 
 export function taskKey(task) {
-  const target = task.spot ? `${task.spot.x.toFixed(0)},${task.spot.z.toFixed(0)}` : task.pile ? `${task.pile.x.toFixed(0)},${task.pile.z.toFixed(0)}` : task.building ? task.building.id : task.partner ? task.partner.id : '';
+  const target = task.spot ? `${task.spot.x.toFixed(0)},${task.spot.z.toFixed(0)}` : task.building ? task.building.id : task.partner ? task.partner.id : '';
   return `${task.type}:${task.source ?? ''}:${target}`;
 }
 
@@ -457,9 +449,6 @@ export function runTask(colony, c, task, dt, env) {
 
     case 'harvest':
       return runHarvest(colony, c, task, dt, env);
-
-    case 'pickup':
-      return runPickup(colony, c, task, dt, env);
 
     case 'wander': {
       if (!task.target) {
@@ -653,54 +642,15 @@ function runHarvest(colony, c, task, dt, env) {
   return 'running';
 }
 
-// Ir a buscar algo que quedó tirado en el suelo (alguien cambió de tarea a mitad de camino)
-// y llevarlo al almacén.
-function runPickup(colony, c, task, dt, env) {
-  const pile = task.pile;
-  if (task.phase === 'going') {
-    if (!colony.drops.includes(pile) || (pile.taken && pile.taken !== c)) return 'done';
-    pile.taken = c;
-    if (!go(colony, c, task, pile, dt, 1.4)) return task.failed ? releasePile(pile) : 'running';
-    task.phase = 'gathering';
-    task.timer = 0;
-  }
-  if (task.phase === 'gathering') {
-    c.working = true;
-    colony.faceTowards(c, pile.x, pile.z, dt);
-    if (!busy(task, dt, 4)) return 'running';
-    task.load = { [pile.kind]: pile.amount };
-    colony.collectDrop(pile);
-    task.phase = 'returning';
-  }
-  if (task.phase === 'returning') {
-    task.dest ??= colony.dropPoint(pile.kind);
-    if (!go(colony, c, task, task.dest, dt, task.dest.r ? task.dest.r * 0.6 : 1.6)) return 'running';
+// Al abandonar una tarea (por otra más urgente), liberar lo que tenía reservado.
+export function endTask(colony, c, task) {
+  if (task.spot && task.spot.taken === c) task.spot.taken = null;
+  // Lo que llevaba no se pierde ni se duplica: se entrega ahora en el almacén.
+  if (task.type === 'harvest' && task.load && !task.delivered) {
     for (const [k, n] of Object.entries(task.load)) colony.produce(k, n);
     task.delivered = true;
-    return 'done';
-  }
-  return 'running';
-}
-
-function releasePile(pile) {
-  pile.taken = null;
-  return 'failed';
-}
-
-// Al abandonar una tarea (por otra más urgente, o un cambio de prioridades), liberar lo que
-// tenía reservado. "drop": en vez de entregar lo que llevaba directo al almacén (como con
-// cualquier otra interrupción), lo deja tirado donde está, para que alguien de Recolección
-// lo junte después (cambio de especialidad a la fuerza: la carga no viaja sola).
-export function endTask(colony, c, task, drop = false) {
-  if (task.spot && task.spot.taken === c) task.spot.taken = null;
-  if (task.pile && task.pile.taken === c) task.pile.taken = null;
-  const give = (k, n) => (drop ? colony.dropGoods(c.x, c.z, k, n) : colony.produce(k, n));
-  // Lo que llevaba no se pierde ni se duplica: se entrega ahora (en el almacén, o en el suelo).
-  if ((task.type === 'harvest' || task.type === 'pickup') && task.load && !task.delivered) {
-    for (const [k, n] of Object.entries(task.load)) give(k, n);
-    task.delivered = true;
   } else if (task.type === 'work' && task.phase === 'returning' && !task.delivered && !task.spot?.scavenge && task.building?.def.stock) {
-    give(task.building.def.stock, levelOf(task.building).yield);
+    colony.produce(task.building.def.stock, levelOf(task.building).yield);
     task.delivered = true;
   }
   if (task.type === 'sleep') c.sleeping = false;
@@ -762,11 +712,6 @@ export function taskActivity(colony, c, task) {
       if (task.drop?.r) return `Lleva ${STOCK_NAMES[def.stock]} a la zona al aire libre`;
       return def.returningText;
     }
-    case 'pickup': {
-      if (task.phase === 'going') return `Va a recoger ${STOCK_NAMES[task.pile.kind]} del suelo`;
-      if (task.phase === 'gathering') return 'Juntando lo que quedó tirado';
-      return task.dest?.r ? `Lleva ${STOCK_NAMES[task.pile.kind]} a la zona al aire libre` : `Lleva ${STOCK_NAMES[task.pile.kind]} al almacén`;
-    }
     case 'wander':
       return walking ? 'Paseando' : 'Descansando un momento';
   }
@@ -794,8 +739,6 @@ export function taskLog(c, task) {
       return `Trabajó en: ${task.building.name}`;
     case 'harvest':
       return `Recolectó ${HARVEST[task.spot.kind].noun} en una zona marcada`;
-    case 'pickup':
-      return `Fue a juntar ${STOCK_NAMES[task.pile.kind]} que había quedado tirado`;
   }
   return null;
 }

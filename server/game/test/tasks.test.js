@@ -348,14 +348,16 @@ const site = (sim, id, x, z) => {
   assert.equal(chooseTask(sim, c, env).type, 'build');
   sim.cancelOrder(c);
   assert.notEqual(chooseTask(sim, c, env)?.type, 'build');
-  // 4) Cambiar especialidades: tres distintas, conserva niveles y corta ya la tarea en curso
-  //    (prioridades estrictas: no espera a un punto seguro, salvo que sea una orden directa).
+  // 4) Cambiar especialidades: tres distintas, conserva niveles y se aplica en un punto seguro.
   const lvl = { ...c.skills };
   assert.equal(sim.setSpec(c, ['farming', 'farming', 'mining']), false, 'sin duplicados');
   c.task = { type: 'build', building: site, score: 1 };
   assert.equal(sim.setSpec(c, ['building', 'mining', 'farming']), true);
-  assert.deepEqual(c.spec, ['building', 'mining', 'farming'], 'se aplica ya, no espera a un punto seguro');
-  assert.equal(c.task, null, 'corta la tarea en curso, que no era una orden');
+  assert.deepEqual(c.spec, ['farming', 'mining', 'woodcutting'], 'espera al punto seguro');
+  assert.ok(c.pendingSpec, 'hay un cambio pendiente');
+  c.task = null;
+  sim.step(c, 0.1, env);
+  assert.deepEqual(c.spec, ['building', 'mining', 'farming']);
   assert.deepEqual(c.skills, lvl, 'no se pierde experiencia');
   assert.equal(chooseTask(sim, c, env).type, 'build', 'ahora sí construye');
   // 5) Guardar y cargar conserva la organización; una aldea antigua recibe un reparto una sola vez.
@@ -391,17 +393,6 @@ const site = (sim, id, x, z) => {
     sq.update(0.5, { timeScale: 1, isNight: false, timeLabel: () => 'd' });
   }
   assert.ok(sq.stock.stone >= 6 && sq.stock.stone <= 24, `~2 piedras por minuto en 6 min (${sq.stock.stone})`);
-  // 8) Si llevaba algo encima al cambiar de especialidad a la fuerza, queda tirado donde estaba
-  // (no se pierde ni se entrega solo); alguien con Recolección en las suyas lo detecta.
-  c.spec = ['mining', 'farming', 'woodcutting'];
-  c.task = { type: 'harvest', spot: { x: 5, z: 5, kind: 'stone', marked: true, taken: c }, phase: 'returning', load: { stone: 3 } };
-  assert.equal(sim.setSpec(c, ['farming', 'woodcutting', 'mining']), true);
-  assert.equal(sim.drops.length, 1, 'quedó una pila tirada');
-  assert.deepEqual(sim.drops[0], { id: sim.drops[0].id, x: c.x, z: c.z, kind: 'stone', amount: 3, taken: null });
-  const gatherer = { ...c, id: 999, spec: ['gathering', 'building', 'hauling'], x: c.x + 2, z: c.z + 2, needs: { ...c.needs }, skills: c.skills, soldier: null, growth: 1 };
-  const pickupTask = chooseTask(sim, gatherer, env);
-  assert.equal(pickupTask.type, 'pickup', 'lo recoge alguien con Recolección');
-  assert.equal(pickupTask.pile, sim.drops[0]);
 }
 function site_(sim) {
   const b = sim.createBuilding(BUILDINGS.stockpile, 24, -12, 0, 0, 0);

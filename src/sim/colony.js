@@ -189,8 +189,6 @@ export class ColonySim {
     this.outdoor = {}; // lo guardado al aire libre (parte de stock)
     this.foodBatches = []; // comida al aire libre: [{ amount, expires }]
     this.spoiled = 0; // comida perdida por pudrirse
-    this.drops = []; // cosas dejadas en el suelo (lo que un colono soltó al cambiar de tarea)
-    this.nextDropId = 1;
     this.sproutTimer = 0;
     this.assignTimer = 0;
     this.clothesLeft = 0;
@@ -566,8 +564,6 @@ export class ColonySim {
     this.outdoor = {};
     this.foodBatches = [];
     this.spoiled = 0;
-    this.drops = [];
-    this.nextDropId = 1;
     this.gameTime = 0;
     this.removed = new Map();
     this.sprouts = [];
@@ -1132,17 +1128,7 @@ export class ColonySim {
       return true;
     }
     c.pendingSpec = [...list];
-    // Prioridades estrictas: corta ya la tarea de trabajo en curso (una orden directa del
-    // jugador no se corta sola). Lo que ya llevaba encima no se pierde: queda tirado en el
-    // suelo para que lo recoja quien tenga tarea de recolección.
-    if (c.task && WORK_TYPES.has(c.task.type) && !c.task.ordered) {
-      const hadLoad = (c.task.type === 'harvest' || c.task.type === 'pickup') && c.task.load && !c.task.delivered;
-      const carrying = c.task.type === 'work' && c.task.phase === 'returning' && !c.task.delivered && !c.task.spot?.scavenge && c.task.building?.def.stock;
-      endTask(this, c, c.task, true);
-      c.task = null;
-      if (hadLoad || carrying) this.emit('notice', `${c.name} dejó en el suelo lo que llevaba al cambiar de tarea`);
-    }
-    this.applySpec(c);
+    if (!c.task || !WORK_TYPES.has(c.task.type) || c.task.ordered) this.applySpec(c);
     this.emit('changed');
     return true;
   }
@@ -1687,39 +1673,6 @@ export class ColonySim {
       }
     }
     return best;
-  }
-
-  // ---- Lo que queda tirado en el suelo (un colono soltó su carga al cambiar de tarea) --------
-
-  // Suma a un montón ya tirado muy cerca (mismo tipo) o deja uno nuevo.
-  dropGoods(x, z, kind, amount) {
-    if (amount <= 0) return;
-    const near = this.drops.find((d) => d.kind === kind && !d.taken && Math.hypot(d.x - x, d.z - z) < 2.5);
-    if (near) near.amount += amount;
-    else this.drops.push({ id: this.nextDropId++, x, z, kind, amount, taken: null });
-    this.emit('resources');
-  }
-
-  // El montón libre más cercano (de un tipo, o de cualquiera si no se da).
-  nearestDrop(x, z, kind = null) {
-    let best = null;
-    let bestD = Infinity;
-    for (const d of this.drops) {
-      if (d.taken || (kind && d.kind !== kind)) continue;
-      const dist = Math.hypot(d.x - x, d.z - z);
-      if (dist < bestD) {
-        best = d;
-        bestD = dist;
-      }
-    }
-    return best;
-  }
-
-  // Recogido del todo: desaparece.
-  collectDrop(drop) {
-    const i = this.drops.indexOf(drop);
-    if (i >= 0) this.drops.splice(i, 1);
-    this.emit('resources');
   }
 
   blockedByBuilding(x, z) {
