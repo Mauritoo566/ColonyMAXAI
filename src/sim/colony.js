@@ -1768,7 +1768,10 @@ export class ColonySim {
       if (spot.key !== GROVE_KEY && spot.key !== SPROUT_KEY) this.staticsRevision++;
       // Al talar un árbol de verdad, a veces caen semillas: el jugador las guarda y las
       // planta donde quiera (no se planta solo).
-      if (spot.tree && Math.random() < SEED_CHANCE) this.produce('tree_seed', 1);
+      if (spot.tree && Math.random() < SEED_CHANCE) {
+        this.produce('tree_seed', 1);
+        this.emit('notice', 'Al talar cayeron semillas: tenés una semilla de árbol en el almacén para plantar donde quieras');
+      }
     }
   }
 

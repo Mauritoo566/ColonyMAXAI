@@ -241,6 +241,9 @@ function showNotice(text, isError = false) {
   clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => (notice.hidden = true), 4000);
 }
+// Nacimientos, muertes, tecnologías, incursiones, semillas que caen al talar... la
+// simulación ya los avisa con "notice" desde hace rato; faltaba mostrarlos en pantalla.
+colony.on('notice', (text) => showNotice(text));
 
 const colonyUI = new ColonyUI({
   colony,
