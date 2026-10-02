@@ -63,7 +63,7 @@ const place = (sim, id) => {
   assert.deepEqual(sim.stock, { food: 18, water: 12, wood: 40, stone: 14, fiber: 14 });
   assert.ok(sim.shelterInfo().unhoused >= 3, 'tres colonos duermen junto a la fogata');
   assert.ok(alertsOf(sim).some((a) => a.id === 'shelter'), 'la interfaz lo explica');
-  assert.equal(maxPopulation(sim), 10);
+  assert.equal(maxPopulation(sim), 2, 'sólo el refugio inicial (2 plazas): nada gratis del campamento');
   assert.match(immigrationBlocker(sim), /sólo crece con nacimientos/);
   console.log('✓ fundar: 5 colonos, refugio (2), recolector de lluvia y acopio inicial');
 }

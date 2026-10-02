@@ -75,7 +75,7 @@ export class VillageUI {
           <h3>Población y vivienda</h3>
           <div class="stat-line"><span>Colonos</span><strong>${p.total} / ${p.max}</strong></div>
           ${bar(p.total, p.max)}
-          <div class="stat-line"><span>Plazas en viviendas · campamento base</span><strong>${p.housing} · ${p.campBase}</strong></div>
+          <div class="stat-line"><span>Plazas en viviendas</span><strong>${p.housing}</strong></div>
           <div class="stat-line"><span>Adultos · niños · embarazos</span><strong>${p.adults} · ${p.children} · ${p.pregnant}</strong></div>
           <div class="stat-line"><span>Sin casa (duermen en tiendas)</span><strong>${p.homeless}</strong></div>
           <p class="reason" style="${p.growthBlocker ? 'color:var(--warn)' : ''}">${p.growthBlocker ? `No crece: ${p.growthBlocker}.` : 'Hay plazas, reservas y servicios para crecer.'}${!p.growthBlocker && p.immigrationBlocker ? ` Nadie llega: ${p.immigrationBlocker}.` : ''}</p>

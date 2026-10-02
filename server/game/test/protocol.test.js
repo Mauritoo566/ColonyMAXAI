@@ -119,8 +119,8 @@ try {
   assert.equal((await ana.wait((m) => m.t === 'colony' && m.flag === 'ar')).flag, 'ar');
   console.log('✓ bandera de la aldea (y rechazar una inválida)');
 
-  // Población: el campamento admite 10 y empiezan 5; las viviendas se pueden encargar.
-  assert.equal(colony.maxPopulation, 10);
+  // Población: al fundarse sólo hay 1 refugio (2 plazas) y empiezan 5; las viviendas se pueden encargar.
+  assert.equal(colony.maxPopulation, 2);
   // Un refugio no pide leñador: se puede encargar; fuera del territorio, no.
   ana.send({ t: 'cmd', name: 'build', args: ['house', 9999, -12] });
   assert.equal((await ana.wait('error')).message, 'No se pudo hacer eso ahora.');

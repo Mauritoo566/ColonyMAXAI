@@ -66,7 +66,6 @@ export const LIMITS = [
 ];
 
 export const EXPANSION_STEP = 12; // metros de radio por ampliación
-export const BASE_POPULATION = 10; // lo que admite el campamento solo
 
 export const limitsFor = (age) => LIMITS[Math.min(LIMITS.length, Math.max(1, age)) - 1];
 

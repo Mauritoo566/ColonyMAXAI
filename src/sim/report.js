@@ -4,7 +4,7 @@
 import { levelOf } from './buildingTypes.js';
 import { GOODS, BASE_GOODS } from './goods.js';
 import { limitsFor, radiusOf, expansionBlocker, expansionCost, expansionCap } from './progression.js';
-import { BASE_MAX_POPULATION, maxPopulation } from './family.js';
+import { maxPopulation } from './family.js';
 
 export function villageReport(colony) {
   const colonists = colony.colonists;
@@ -43,7 +43,6 @@ export function villageReport(colony) {
       total: colonists.length,
       max: maxPopulation(colony),
       cap: lim.popCap,
-      campBase: BASE_MAX_POPULATION,
       housing,
       adults: adults.length,
       children: colonists.length - adults.length,
