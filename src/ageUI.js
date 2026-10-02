@@ -154,7 +154,7 @@ export class AgeUI {
       req = `
         <div class="age-req">
           <h3>Para llegar a la ${status.next.name}</h3>
-          <p class="reason" style="margin:0">Cuando la aldea cumpla todo, la tribu celebra el cambio con una ofrenda de materiales (se gasta). Las reservas de comida y agua que se piden se conservan. Las viviendas evolucionan solas; el resto de edificios se mejora desde su ficha, pagando, y sólo hasta el nivel que permite la edad.</p>
+          <p class="reason" style="margin:0">Cuando la aldea cumpla todo, la tribu celebra el cambio con una ofrenda de materiales (se gasta). Las reservas de comida y agua que se piden se conservan. Las viviendas nuevas ya salen con el aspecto de la edad; todos los edificios, viviendas incluidas, se mejoran desde su ficha pagando y sólo hasta el nivel que permite la edad (cambiar de edad no mejora nada gratis).</p>
           ${checks}
           <button type="button" class="btn btn--primary" data-advance ${status.ready ? '' : 'disabled'}>Avanzar a la ${status.next.name}</button>
         </div>`;

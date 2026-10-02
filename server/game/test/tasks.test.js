@@ -101,8 +101,8 @@ const site = (sim, id, x, z) => {
   assert.equal(adult.order, null, 'la orden termina con la obra');
   assert.match(sim.orderColonist(adult, 'build', b), /terminada|existe/);
 }
-// Aldea guardada antes de la actualización: edad 4 con una choza de nivel 1. Al cargarla la casa
-// toma el aspecto de la edad, sin cobrar nada, y cargar otra vez no cambia nada más.
+// Aldea guardada con una choza de nivel 1 en la edad 4: al cargarla la casa se conserva tal cual (cambiar de edad
+// ya no mejora las viviendas gratis), sin cobrar nada, y cargar otra vez no cambia nada más.
 {
   const sim = colony();
   sim.age = 4;
@@ -113,7 +113,8 @@ const site = (sim, id, x, z) => {
   const again = colony();
   again.restore(saved);
   const h = again.buildings.find((b) => b.id === house.id);
-  assert.ok(h.level >= 3, `la casa evoluciona con la edad (nivel ${h.level})`);
+  assert.equal(h.level, 1, 'la casa conserva su nivel: se mejora pagando');
+  assert.doesNotMatch(again.upgradeProblem(h) ?? '', /Evoluciona sola/);
   const stock = JSON.stringify(again.stock);
   const lv = h.level;
   again.restore(saved);

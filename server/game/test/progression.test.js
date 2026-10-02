@@ -58,8 +58,20 @@ assert.equal(sim.age, 2);
 assert.equal(woodBefore - sim.stock.wood, 30, 'la ofrenda se cobra una vez');
 assert.equal(sim.advanceAge(), false, 'no se puede repetir (la edad siguiente aún no existe)');
 assert.equal(woodBefore - sim.stock.wood, 30);
-assert.ok(sim.buildings.filter((b) => b.def.id === 'house').every((b) => b.level === 2), 'las viviendas evolucionan solas');
+assert.ok(sim.buildings.filter((b) => b.def.id === 'house').every((b) => b.level === 1), 'las viviendas ya hechas conservan su nivel (se mejoran pagando)');
 assert.equal(maxPopulation(sim), 3 * 4);
+{
+  // Mejorar una vivienda es un gasto real y se hace como cualquier otra mejora.
+  const hut = sim.buildings.find((b) => b.def.id === 'house');
+  const next = hut.def.levels[1];
+  assert.ok(next.upgradeCost && Object.keys(next.upgradeCost).length, 'la mejora de una vivienda tiene coste');
+  assert.equal(sim.upgradeProblem(hut) === null || /Faltan/.test(sim.upgradeProblem(hut)), true, 'puede mejorarse (si alcanza el material)');
+  sim.stock = { ...sim.stock, wood: 999, stone: 999, fiber: 999 };
+  const before = sim.stock.wood;
+  assert.equal(sim.upgrade(hut), true);
+  assert.ok(before - sim.stock.wood > 0 || sim.stock.stone < 999, 'se pagó');
+  assert.equal(hut.upgrading, true);
+}
 assert.equal(sim.buildings.find((b) => b.def.id === 'stockpile').level, 1, 'lo demás no mejora gratis');
 console.log('✓ avanzar de edad cobra una vez, evoluciona las viviendas y no mejora lo demás');
 
@@ -77,7 +89,10 @@ assert.equal(sim.buildProblem(BUILDINGS.house, -4, 40), null);
 assert.deepEqual(sim.costOf(BUILDINGS.house), { wood: 24, stone: 8, fiber: 8 });
 const b = sim.build('house', -4, 40).building;
 assert.equal(b.level, 2, 'las viviendas nuevas nacen con el aspecto de la edad');
-assert.equal(sim.upgradeProblem(b), 'Evoluciona sola al avanzar de edad');
+assert.match(sim.upgradeProblem(b), /terminar la obra/, 'una obra no se mejora');
+b.progress = 1;
+b.finish?.(null);
+assert.match(sim.upgradeProblem(b) ?? '', /Edad del Bronce|Faltan|llegar a la/, 'una vivienda terminada se mejora como cualquier edificio, cuando la edad lo permite');
 console.log('✓ edad II: mejoras pagadas, vivienda nueva más cara y con el aspecto de la edad');
 
 // Un pozo (cuya "capacity" es un número) no rompe la capacidad del almacén.
@@ -137,8 +152,8 @@ const migrate = JSON.parse(JSON.stringify(save));
 migrate.buildings.filter((s) => s.type === 'house').forEach((s) => (s.level = 1));
 const loaded2 = colony();
 loaded2.restore(migrate);
-assert.ok(loaded2.buildings.filter((b) => b.def.id === 'house').every((b) => b.level === 2));
-console.log('✓ partidas anteriores: nada se pierde y las viviendas se ponen al día');
+assert.ok(loaded2.buildings.filter((b) => b.def.id === 'house').every((b) => b.level === 1), 'las viviendas se conservan tal cual (se mejoran pagando)');
+console.log('✓ partidas anteriores: nada se pierde ni se mejora gratis');
 
 // La tabla de desbloqueos cubre todas las edades jugables.
 const table = unlockTable();

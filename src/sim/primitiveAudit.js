@@ -113,7 +113,7 @@ export const AUDIT = [
     needs: text(AGES[1].requires.cost) + ' (se gastan)',
     origin: 'Recolección',
     requires: 'Refugio para todos, almacén, herramienta y reservas; sin población mínima',
-    result: 'Viviendas evolucionan solas; se desbloquea lo de Piedra',
+    result: 'Se desbloquea lo de Piedra; las chozas de ramas se mejoran pagando',
     explain: 'La ventana de edades lista cada requisito con su progreso',
     verify: () => {
       const req = AGES[1].requires;

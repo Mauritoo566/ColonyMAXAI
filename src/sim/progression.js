@@ -91,7 +91,8 @@ export function maxLevelFor(def, age) {
 // Edad mínima de un tipo para construirse.
 export const minAgeOf = (def) => def.levels[0].age;
 
-// Las viviendas se construyen ya con el aspecto de la edad actual (y evolucionan solas).
+// Las viviendas nuevas se construyen ya con el aspecto de la edad actual. Las que ya existen NO suben solas
+// de nivel al cambiar de edad: se mejoran pagando, como cualquier otro edificio.
 export const buildLevelFor = (def, age) => (def.autoLevel ? Math.max(1, maxLevelFor(def, age)) : 1);
 
 // Coste de construir un tipo en la edad dada (la vivienda de una edad avanzada cuesta más).
@@ -146,7 +147,6 @@ export function buildBlocker(colony, def) {
 // Por qué no se puede mejorar un edificio al nivel siguiente (sin contar el coste): texto o null.
 export function upgradeBlocker(colony, b) {
   const next = levelOf(b, 1);
-  if (b.def.autoLevel) return 'Evoluciona sola al avanzar de edad';
   if (!b.done) return b.upgrading ? 'Ya se está mejorando' : 'Primero hay que terminar la obra';
   if (!next) return 'Ya tiene el nivel más alto';
   if (!levelImplemented(b.def, next)) return 'Todavía no está disponible en el juego';
@@ -158,19 +158,18 @@ export function upgradeBlocker(colony, b) {
   return null;
 }
 
-// Evolución automática: las viviendas toman el nivel de la edad (sin pagar) y conservan su
-// sitio. Devuelve cuántas cambiaron.
-export function evolveHouses(colony) {
-  let n = 0;
-  for (const b of colony.buildings) {
-    if (!b.def.autoLevel) continue;
-    const target = maxLevelFor(b.def, colony.age);
-    if (b.level < target) {
-      b.level = target;
-      n++;
-    }
-  }
-  return n;
+// Antes las viviendas subían de nivel gratis al cambiar de edad. Ya no: lo que se ve en pantalla es el nivel que
+// el jugador pagó. Las partidas anteriores conservan el nivel que ya tenían sus viviendas (no se baja nada).
+// Se deja la función para no tocar a quien la llama; devuelve siempre 0.
+export function evolveHouses() {
+  return 0;
+}
+
+// Coste de mejorar una vivienda al nivel siguiente: poco más de la mitad de levantar una nueva de ese nivel.
+export function houseUpgradeCost(next) {
+  const cost = {};
+  for (const [k, n] of Object.entries(next.buildCost ?? {})) cost[k] = Math.max(1, Math.round(n * 0.55));
+  return cost;
 }
 
 // ---- Territorio -------------------------------------------------------------------------------

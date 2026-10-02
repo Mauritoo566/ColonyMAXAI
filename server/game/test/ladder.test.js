@@ -60,13 +60,14 @@ for (let n = 2; n <= MAX_AGE; n++) {
   assert.equal(status.ready, true, `la edad ${n} debería estar lista: ${JSON.stringify(status.checks.filter((c) => !c.ok))}`);
   const stockBefore = { ...sim.stock };
   const buildingsBefore = sim.buildings.length;
+  const levelsBefore = new Map(sim.buildings.map((b) => [b, b.level]));
   const colonistsBefore = sim.colonists.length;
   assert.equal(sim.advanceAge(), true);
   assert.equal(sim.age, n);
   for (const [k, v] of Object.entries(req.cost)) assert.equal(stockBefore[k] - sim.stock[k], v, `la ofrenda de ${k} se cobra una vez`);
   assert.equal(sim.buildings.length, buildingsBefore, 'no se pierde ningún edificio');
   assert.equal(sim.colonists.length, colonistsBefore, 'no se pierde ningún colono');
-  for (const b of sim.buildings) if (b.def.autoLevel) assert.equal(b.level, maxLevelFor(b.def, n), 'las viviendas evolucionan solas');
+  for (const b of sim.buildings) assert.equal(b.level, levelsBefore.get(b), 'cambiar de edad no mejora ningún edificio gratis (las viviendas tampoco)');
   console.log(`✓ edad ${n}: ${AGES[n - 1].name}`);
 }
 assert.equal(nextAgeStatus(sim).ready, false);

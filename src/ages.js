@@ -2,7 +2,7 @@
 // (población, edificios levantados, producción, tecnologías y una ofrenda): nunca algo que
 // sólo se consigue después de avanzar. Cada edad desbloquea edificios, mejoras, viviendas
 // y límites mayores (sim/progression.js); las mejoras hay que pagarlas edificio por edificio
-// y las viviendas evolucionan solas. Son etapas de juego, no una cronología histórica.
+// (las viviendas nuevas salen ya con el aspecto de la edad). Son etapas de juego, no una cronología histórica.
 
 export const AGES = [
   {
@@ -19,7 +19,7 @@ export const AGES = [
     name: 'Edad de Piedra',
     theme: 'Asentamiento estable',
     desc: 'Chozas de barro y paja, senderos, tótem y herramientas de piedra pulida.',
-    auto: 'Las chozas pasan a barro y paja; senderos de piedra alrededor del fuego y tótem de la tribu; ropa de pieles mejor cosida.',
+    auto: 'Senderos de piedra alrededor del fuego y tótem de la tribu; ropa de pieles mejor cosida. Las viviendas nuevas se hacen de barro y paja; las chozas de ramas se mejoran pagando.',
     // Todo se consigue en Primitiva: refugio para todos, reservas de comida y agua (se conservan),
     // el almacén primitivo, la primera herramienta de piedra y materiales (esto sí se gasta).
     requires: {
@@ -36,7 +36,7 @@ export const AGES = [
     name: 'Edad del Bronce',
     theme: 'Primeros talleres',
     desc: 'Adobe con vigas y techos de caña, minas, fundición y herramientas de bronce.',
-    auto: 'Casas de adobe con vigas y techo de caña; plaza empedrada y caminos marcados; tejidos teñidos y cintas de cuero.',
+    auto: 'Plaza empedrada y caminos marcados; tejidos teñidos y cintas de cuero. Las viviendas nuevas son de adobe con vigas y techo de caña; las anteriores se mejoran pagando.',
     requires: {
       population: 9,
       buildings: [
@@ -55,7 +55,7 @@ export const AGES = [
     name: 'Edad del Hierro',
     theme: 'Especialización',
     desc: 'Casas de madera y piedra, hierro, carbón vegetal y oficios especializados.',
-    auto: 'Casas de madera sobre zócalo de piedra; el centro gana un pozo de piedra y puestos de oficio; ropa de lana y delantales de herrero.',
+    auto: 'El centro gana un pozo de piedra y puestos de oficio; ropa de lana y delantales de herrero. Las viviendas nuevas son de madera sobre zócalo de piedra; las anteriores se mejoran pagando.',
     requires: {
       population: 12,
       buildings: [
@@ -76,7 +76,7 @@ export const AGES = [
     name: 'Edad Clásica',
     theme: 'Organización urbana',
     desc: 'Mampostería, plaza y edificios cívicos, agua canalizada y comercio de excedentes.',
-    auto: 'Casas de mampostería con tejas y barrios ordenados; plaza con fuente y calles empedradas; túnicas y mantos de tela.',
+    auto: 'Plaza con fuente y calles empedradas; túnicas y mantos de tela. Las viviendas nuevas son de mampostería con tejas y patio; las anteriores se mejoran pagando.',
     requires: {
       population: 16,
       buildings: [
@@ -96,7 +96,7 @@ export const AGES = [
     name: 'Edad Medieval',
     theme: 'Ciudad y oficios',
     desc: 'Entramado de madera y piedra, tablones, harina, pan, tejidos, murallas y caballería.',
-    auto: 'Casas de entramado con tejados elaborados; plaza urbana con calles diferenciadas; jubones, capas y gremios con colores propios.',
+    auto: 'Plaza urbana con calles diferenciadas; jubones, capas y gremios con colores propios. Las viviendas nuevas son de entramado con tejados elaborados; las anteriores se mejoran pagando.',
     requires: {
       population: 22,
       buildings: [
@@ -115,7 +115,7 @@ export const AGES = [
     name: 'Renacimiento',
     theme: 'Comercio y conocimiento',
     desc: 'Barrios densos, academia, manufacturas de precisión, rutas comerciales y artillería.',
-    auto: 'Casas urbanas de dos plantas y barrios más densos; plaza comercial con farolas y banderolas; ropa de corte con cuellos y sombreros.',
+    auto: 'Plaza comercial con farolas y banderolas; ropa de corte con cuellos y sombreros. Las viviendas nuevas son casas urbanas de dos plantas; las anteriores se mejoran pagando.',
     requires: {
       population: 30,
       buildings: [
@@ -135,7 +135,7 @@ export const AGES = [
     name: 'Edad Industrial',
     theme: 'Mecanización',
     desc: 'Ladrillo, acero, vapor, fábricas, estaciones y bloques de viviendas.',
-    auto: 'Casas de ladrillo con chimeneas y bloques residenciales; zonas residenciales e industriales reconocibles; monos de obrero y chalecos.',
+    auto: 'Zonas residenciales e industriales reconocibles; monos de obrero y chalecos. Las viviendas nuevas son de ladrillo con chimeneas y se pueden levantar bloques residenciales; las anteriores se mejoran pagando.',
     requires: {
       population: 40,
       buildings: [
@@ -154,7 +154,7 @@ export const AGES = [
     name: 'Edad Moderna',
     theme: 'Electrificación',
     desc: 'Hormigón, electricidad, agua distribuida, carreteras, hospitales y centros educativos.',
-    auto: 'Edificios de ladrillo y hormigón más altos; calles asfaltadas y farolas eléctricas; ropa moderna y batas.',
+    auto: 'Calles asfaltadas y farolas eléctricas; ropa moderna y batas. Las viviendas nuevas son de hormigón y ladrillo, más altas; las anteriores se mejoran pagando.',
     requires: {
       population: 52,
       buildings: [
@@ -176,7 +176,7 @@ export const AGES = [
     name: 'Edad Contemporánea',
     theme: 'Ciudad avanzada',
     desc: 'Barrios de alta capacidad, redes eficientes, electrónica y automatización.',
-    auto: 'Edificios modernos de vidrio y hormigón y torres residenciales; plaza peatonal con iluminación; ropa técnica y uniformes de especialista.',
+    auto: 'Plaza peatonal con iluminación; ropa técnica y uniformes de especialista. Las viviendas nuevas son de vidrio y hormigón y se pueden levantar torres residenciales; las anteriores se mejoran pagando.',
     requires: {
       population: 66,
       buildings: [

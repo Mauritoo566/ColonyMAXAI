@@ -91,7 +91,7 @@ export const GUIDES = {
         id: 'advance',
         kind: 'condition',
         title: 'Avanzar a la Edad de Piedra',
-        text: 'Comprueba los requisitos y avanza cuando estén todos. Las viviendas evolucionan solas.',
+        text: 'Comprueba los requisitos y avanza cuando estén todos. Las viviendas nuevas saldrán de barro y paja; las chozas de ramas se mejoran pagando.',
         check: (c) => ({ done: c.age >= 2, note: nextAgeStatus(c).ready ? '¡Todo listo!' : 'Aún faltan requisitos' }),
         action: 'Ver requisitos',
       },

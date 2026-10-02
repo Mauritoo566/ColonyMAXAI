@@ -4,7 +4,7 @@
 //
 // Un tipo tiene niveles. Cada nivel pertenece a una edad (`age`): el primero es el que se
 // construye y los siguientes se desbloquean al llegar a su edad (y se pagan uno a uno; las
-// viviendas, `autoLevel`, evolucionan solas). Campos de un nivel:
+// viviendas, `autoLevel`: las nuevas salen ya con el nivel de la edad y las viejas se mejoran pagando). Campos de un nivel:
 //   age, name, desc, model, upgradeCost     lo básico
 //   buildCost                               sólo viviendas: coste de una nueva de ese nivel
 //   requires: [{ id, level? }]              edificios terminados que hacen falta para llegar a él
@@ -233,7 +233,7 @@ add({
 });
 
 // ---------------------------------------------------------------------------------------
-// Viviendas: se construyen ya con el aspecto de la edad y evolucionan solas
+// Viviendas: se construyen ya con el aspecto de la edad; las que ya están se mejoran pagando
 // ---------------------------------------------------------------------------------------
 
 add({
@@ -246,7 +246,7 @@ add({
   autoLevel: true,
   levels: [
     L(1, 'Choza de ramas', 'Ramas, pieles y hojas sobre un armazón: un techo propio para la familia.', 'houseModel1', { housing: 4 }),
-    L(2, 'Choza de barro', 'Paredes de barro y techo de paja, más abrigada. Las chozas evolucionan solas a esta casa al llegar a la Edad de Piedra; las nuevas cuestan más.', 'houseModel2', { housing: 4, buildCost: { wood: 24, stone: 8, fiber: 8 } }),
+    L(2, 'Choza de barro', 'Paredes de barro y techo de paja, más abrigada. Las chozas de ramas se mejoran a esta casa pagando; las nuevas cuestan más.', 'houseModel2', { housing: 4, buildCost: { wood: 24, stone: 8, fiber: 8 } }),
     L(3, 'Casa de adobe', 'Adobe con vigas vistas y techo de caña: más espacio y más abrigo.', 'gen:house:3', { housing: 4, buildCost: { wood: 20, clay: 12, fiber: 10 } }),
     L(4, 'Casa de madera y piedra', 'Zócalo de piedra y paredes de madera, más firmes ante el viento.', 'gen:house:4', { housing: 4, buildCost: { wood: 28, stone: 18, pottery: 3 } }),
     L(5, 'Casa de mampostería', 'Sillares, tejas y un patio: barrios más ordenados.', 'gen:house:5', { housing: 4, buildCost: { cut_stone: 14, wood: 20, pottery: 6 } }),
@@ -273,6 +273,16 @@ add({
     L(10, 'Torre residencial', 'Torre alta con redes de agua y energía propias.', 'gen:block:10', { housing: 26, buildCost: { concrete: 60, steel: 24, electronics: 4 }, energy: 3 }),
   ],
 });
+
+// Mejorar una vivienda cuesta poco más de la mitad de una nueva de ese nivel (antes subían de nivel gratis).
+for (const id of ['house', 'apartment']) {
+  const def = BUILDING_TYPES.find((d) => d.id === id);
+  def.levels.forEach((lv, i) => {
+    if (i === 0 || lv.upgradeCost) return;
+    lv.upgradeCost = {};
+    for (const [k, n] of Object.entries(lv.buildCost ?? {})) lv.upgradeCost[k] = Math.max(1, Math.round(n * 0.55));
+  });
+}
 
 // ---------------------------------------------------------------------------------------
 // Procesado: talleres con entradas, salidas, trabajadores y (a veces) energía
@@ -849,6 +859,13 @@ defense({
 // Utilidades de consulta
 // ---------------------------------------------------------------------------------------
 
+// Rango de ampliación visible por nivel (índice = nivel-1) de los edificios cuyo estilo no cambia entre edades.
+const GROW = {
+  coal_mine: [0, 1, 2], clay_pit: [0, 1], pottery: [0, 1], charcoal_kiln: [0, 1], bloomery: [0, 1], boiler: [0, 1], tool_workshop: [0, 1], bakery: [0, 1], blacksmith: [0, 1], powder_mill: [0, 1], water_works: [0, 1],
+  station: [0, 1], market: [0, 0, 1], admin: [0, 1], academy: [0, 0, 1], school: [0, 1], barracks: [0, 1, 2], armory: [0, 1, 2],
+  archery: [0, 1], siege_shop: [0, 1], motor_pool: [0, 1], wall: [0, 0, 0, 0, 0, 1], gate: [0, 1], fort: [0, 0, 1],
+};
+
 // Primera edad del primer nivel y datos derivados.
 for (const def of BUILDING_TYPES) {
   def.name ??= def.levels[0].name;
@@ -856,6 +873,9 @@ for (const def of BUILDING_TYPES) {
   def.minAge = def.levels[0].age;
   // Los modelos generados llevan el tipo al final (gen:estilo:edad:tipo) para añadir lo propio de cada edificio.
   for (const lv of def.levels) if (lv.model.startsWith('gen:') && lv.model.split(':').length === 3) lv.model += `:${def.id}`;
+  // Niveles cuyo estilo no cambia con la edad (el audit de modelos los marca): llevan una ampliación visible (rango 1, 2).
+  const kit = GROW[def.id];
+  if (kit) def.levels.forEach((lv, i) => { if (kit[i] && lv.model.startsWith('gen:')) lv.model += `:${kit[i]}`; });
   def.workers ??= def.skill ? 1 : 0;
 }
 

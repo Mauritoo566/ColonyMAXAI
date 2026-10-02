@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { Parts, mat, stick, v } from './modelKit.js';
 import { BUILDINGS } from './sim/buildingTypes.js';
 import { generate } from './buildingModelsGen.js';
+import { modelVariant } from './modelParts.js';
+
+export { modelVariant };
 
 // Modelos 3D de los edificios (metros, suelo en y = 0). Cada nivel de sim/buildingTypes.js
 // nombra su modelo con un texto; aquí está el dibujo de cada uno.
@@ -269,21 +272,46 @@ export function buildMesh(fn, ...args) {
 
 const MODELS = { gathererModel2, woodcutterModel2, quarryModel2, wellModel2, gathererModel1, woodcutterModel1, quarryModel1, wellModel1, stockpileModel1, stockpileModel2, houseModel1, houseModel2 };
 
-// Malla del modelo de un nivel (por su nombre en sim/buildingTypes.js).
-export function levelModel(name) {
-  if (name.startsWith('gen:')) return buildMesh((p) => generate(p, name));
-  return buildMesh(MODELS[name]);
+// Los modelos se arman una sola vez por nombre y variante y se comparten: dibujar cien casas iguales reutiliza la
+// misma geometría (y el mismo material). Por eso no se libera la geometría de un modelo al quitarlo: releaseModel.
+const geometryCache = new Map();
+
+function cached(key, make) {
+  let geometry = geometryCache.get(key);
+  if (!geometry) {
+    geometry = make().geometry;
+    geometry.userData.shared = true;
+    geometryCache.set(key, geometry);
+  }
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+// Malla del modelo de un nivel (por su nombre en sim/buildingTypes.js). variant: ver modelVariant (0 = la base).
+export function levelModel(name, variant = 0) {
+  if (name.startsWith('gen:')) return cached(`${name}|${variant}`, () => buildMesh((p) => generate(p, name, variant)));
+  return cached(name, () => buildMesh(MODELS[name]));
 }
 
 export function frameMesh(footprint) {
-  return buildMesh(frameModel, footprint);
+  return cached(`frame|${footprint}`, () => buildMesh(frameModel, footprint));
+}
+
+// Quitar un modelo de la escena: su geometría es compartida, no se libera (sólo la de mallas que no lo sean).
+export function releaseModel(object) {
+  object.traverse((o) => {
+    if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
+  });
 }
 
 // Modelo de un edificio de otro jugador (mundo compartido): el del nivel que tenga o, si
 // está en obra, sólo los andamios.
-export function buildingModel(type, level = 1, done = true) {
+export function buildingModel(type, level = 1, done = true, x = 0, z = 0) {
   const def = BUILDINGS[type];
   if (!def) return null;
-  const lv = def.levels[Math.min(def.levels.length, Math.max(1, level)) - 1];
-  return done ? levelModel(lv.model) : frameMesh(def.footprint);
+  const lvl = Math.min(def.levels.length, Math.max(1, level));
+  const lv = def.levels[lvl - 1];
+  return done ? levelModel(lv.model, modelVariant(x, z, type, lvl)) : frameMesh(def.footprint);
 }

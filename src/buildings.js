@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RADIUS } from './elevation.js';
 import { pickSurface } from './camp.js';
-import { levelModel, frameMesh, material } from './buildingModels.js';
+import { levelModel, frameMesh, material, modelVariant, releaseModel } from './buildingModels.js';
 import { BUILDINGS, levelOf } from './sim/buildingTypes.js';
 import { buildLevelFor } from './sim/progression.js';
 import { DEPOSIT_COLORS } from './sim/economy.js';
@@ -438,8 +438,8 @@ export class BuildingSystem {
         // La mejora cambia el nivel, el nombre y el modelo.
         e.level = b.level;
         e.object.remove(e.model);
-        e.model.geometry.dispose();
-        e.model = levelModel(b.gate ? `gen:gate:${levelOf(b).age}` : levelOf(b).model);
+        releaseModel(e.model);
+        e.model = levelModel(b.gate ? `gen:gate:${levelOf(b).age}` : levelOf(b).model, modelVariant(b.x, b.z, b.def.id, b.level));
         e.object.add(e.model);
         e.label.querySelector('.building-label-name').textContent = b.name;
       }
@@ -456,7 +456,7 @@ export class BuildingSystem {
     const object = new THREE.Group();
     object.position.copy(b.dir).multiplyScalar(RADIUS + b.height);
     object.quaternion.copy(this.sim.camp.quaternion).multiply(this.tmpQuat.setFromAxisAngle(Y_AXIS, b.yaw));
-    const model = levelModel(levelOf(b).model);
+    const model = levelModel(levelOf(b).model, modelVariant(b.x, b.z, b.def.id, b.level));
     const frame = frameMesh(b.def.footprint);
     object.add(model, frame);
     this.scene.add(object);
@@ -476,7 +476,7 @@ export class BuildingSystem {
 
   removeEntry(e) {
     this.scene.remove(e.object);
-    e.object.traverse((o) => o.geometry?.dispose());
+    releaseModel(e.object);
     e.label.remove();
     this.terrain.invalidateZone(e.b.zone);
     this.entries.delete(e.b.id);

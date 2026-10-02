@@ -122,7 +122,9 @@ const place = (sim, id) => {
   assert.equal(sim.age, 2);
   assert.equal(sim.stock.food, foodKept, 'la comida de reserva no se gasta al avanzar');
   assert.equal(sim.stock.water, waterKept, 'el agua de reserva no se gasta al avanzar');
-  assert.ok(sim.buildings.filter((b) => b.def.autoLevel).every((b) => b.level === 2), 'las viviendas evolucionan solas');
+  assert.ok(sim.buildings.filter((b) => b.def.autoLevel).every((b) => b.level === 1), 'las viviendas ya hechas no se modernizan gratis: se mejoran pagando');
+  const hut = sim.buildings.find((b) => b.def.id === 'house' && b.done);
+  if (hut) assert.doesNotMatch(sim.upgradeProblem(hut) ?? '', /Evoluciona sola/, 'la mejora de una vivienda es una acción normal y se paga');
   assert.equal(sim.buildings.find((b) => b.def.id === 'stockpile').level, 1, 'lo productivo conserva su nivel');
   assert.equal(sim.advanceAge(), false, 'no se repite');
   const used = Object.keys(stoneAge.cost);

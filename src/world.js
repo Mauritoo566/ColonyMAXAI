@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RADIUS, surfaceHeight, naturalSurfaceHeight, removeTerrainZone } from './elevation.js';
 import { buildCamp, applyFlag } from './camp.js';
 import { buildingModel } from './buildings.js';
+import { releaseModel } from './buildingModels.js';
 import { ageInfo } from './ages.js';
 import { ColonySim } from './sim/colony.js';
 import { ColonyView } from './colonists.js';
@@ -158,14 +159,14 @@ export class OtherCamps {
     const group = entry.buildings;
     for (const child of [...group.children]) {
       group.remove(child);
-      child.geometry?.dispose();
+      releaseModel(child);
     }
     const object = entry.object;
     object.updateMatrixWorld(true);
     for (const b of list) {
       // 300 m: cubre el territorio máximo (200 m + 6 ampliaciones de 12 m = 272 m) con margen.
       if (![b.x, b.z].every(Number.isFinite) || Math.hypot(b.x, b.z) > 300) continue;
-      const mesh = buildingModel(b.t, b.l, b.d !== false);
+      const mesh = buildingModel(b.t, b.l, b.d !== false, b.x, b.z);
       if (!mesh) continue;
       // Altura del terreno en ese punto, relativa al campamento.
       const world = this.tmp.set(b.x, 0, b.z).applyMatrix4(object.matrixWorld).normalize();
@@ -184,7 +185,7 @@ export class OtherCamps {
       this.resources?.removed.delete(k);
     }
     this.scene.remove(entry.object);
-    entry.object.traverse((o) => o.geometry?.dispose());
+    releaseModel(entry.object);
     removeTerrainZone(entry.zone);
     this.terrain.invalidateZone(entry.zone);
     entry.label.remove();

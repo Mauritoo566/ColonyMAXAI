@@ -3,59 +3,14 @@
 // edad los materiales y la riqueza de detalles, y el tipo añade lo propio de cada edificio
 // (bandera, cruz del hospital, silos...). Metros, suelo en y = 0, la puerta mira a +z y todo
 // cabe en el radio de la huella del tipo, para que al evolucionar no se solape con nada.
-import * as THREE from 'three';
-import { mat, stick, v, triangle } from './modelKit.js';
-
-// Materiales por edad: muros, techo, adornos, y qué se usa para los marcos.
-const PAL = [
-  null,
-  { wall: '#8a6a3c', roof: '#5f7a3a', trim: '#6b4a2e', base: '#7a7468' },
-  { wall: '#b78a5e', roof: '#c9a45a', trim: '#8a643c', base: '#8f8a82' },
-  { wall: '#c9a878', roof: '#d4b96a', trim: '#7a5230', base: '#8f8a82' },
-  { wall: '#a07a4a', roof: '#8a643c', trim: '#5a3a22', base: '#8a8478' },
-  { wall: '#cfc6b4', roof: '#b4553a', trim: '#8f8a82', base: '#9a958c' },
-  { wall: '#e8dcc0', roof: '#a8452d', trim: '#5a3a22', base: '#8f8a82' },
-  { wall: '#d9c9a8', roof: '#9a4a35', trim: '#6a4a30', base: '#8f8a82' },
-  { wall: '#b85a3e', roof: '#4a4a52', trim: '#3a3a40', base: '#6a6660' },
-  { wall: '#a8a8a2', roof: '#6a6a70', trim: '#3a3a44', base: '#7a7a76' },
-  { wall: '#d8e4ea', roof: '#9fb0b8', trim: '#4a5a64', base: '#8a9298' },
-];
-const pal = (tier) => PAL[Math.min(10, Math.max(1, tier))];
-const DARK = '#2a1c10';
-const GLASS = '#5a7f9a';
-
-const box = (p, w, h, d, color, x, y, z, ry = 0, rx = 0, rz = 0) => p.add(new THREE.BoxGeometry(w, h, d), color, mat(x, y, z, rx, ry, rz));
-const cyl = (p, rt, rb, h, color, x, y, z, seg = 10) => p.add(new THREE.CylinderGeometry(rt, rb, h, seg), color, mat(x, y, z));
-const cone = (p, r, h, color, x, y, z, seg = 10) => p.add(new THREE.ConeGeometry(r, h, seg), color, mat(x, y, z));
-
-// Tejado a dos aguas con la cumbrera a lo largo de z: w = ancho, d = largo, h = altura de la cumbrera.
-function gable(p, w, d, h, color, y, wallColor, ox = 0, oz = 0) {
-  const s = Math.hypot(w / 2, h) + 0.2;
-  const a = Math.atan2(h, w / 2);
-  box(p, s, 0.16, d + 0.35, color, ox + w / 4, y + h / 2, oz, 0, 0, -a);
-  box(p, s, 0.16, d + 0.35, color, ox - w / 4, y + h / 2, oz, 0, 0, a);
-  if (wallColor) {
-    for (const z of [d / 2, -d / 2]) p.add(triangle(v(ox - w / 2, y, oz + z), v(ox + w / 2, y, oz + z), v(ox, y + h, oz + z)), wallColor);
-  }
-}
-
-const door = (p, x, y, z, w = 0.8, h = 1.5) => box(p, w, h, 0.12, DARK, x, y + h / 2, z);
-const window_ = (p, x, y, z, c = DARK, w = 0.5, h = 0.5) => box(p, w, h, 0.1, c, x, y, z);
-
-// Chimenea con su boca oscura.
-function chimney(p, x, y, z, h, color = '#8a8478', w = 0.45) {
-  box(p, w, h, w, color, x, y + h / 2, z);
-  box(p, w * 1.2, 0.08, w * 1.2, '#3a3a3a', x, y + h, z);
-}
-
-// Hileras de vigas vistas sobre un muro (entramado).
-function frameBeams(p, w, h, d, y, color) {
-  for (const z of [d / 2 + 0.03, -d / 2 - 0.03]) {
-    for (let i = -2; i <= 2; i++) box(p, 0.1, h, 0.08, color, (i * w) / 4.6, y + h / 2, z);
-    box(p, w, 0.1, 0.08, color, 0, y + 0.05, z);
-    box(p, w, 0.1, 0.08, color, 0, y + h - 0.05, z);
-  }
-}
+import {
+  THREE, mat, stick, v, triangle, box, cyl, cone, dome, gable, door, window_, chimney, frameBeams, pal, flag, pick, setVariant, DARK, GLASS,
+  pot, barrel, sack, crate,
+} from './modelParts.js';
+import {
+  quarryPit, clayPit, shaftMine, pottery, bakery, charcoalKiln, brickKiln, smelterMark, bloomeryMark, workshopMark, sawmill, millMark, powderMill,
+  factoryMark, barracksMark, upgradeKit, waterWorks, farmMark, stockpileMark, gathererMark, woodcutterMark,
+} from './buildingModelsSig.js';
 
 // ---- Viviendas ------------------------------------------------------------------------------
 
@@ -74,14 +29,16 @@ function house(p, tier) {
     gable(p, w + 0.5, d + 0.3, 1.2, c.roof, 0.3 + fh, c.wall);
     door(p, 0, 0.3, d / 2 - 0.05);
     window_(p, 1.1, 1.5, d / 2 - 0.05);
+    houseExtras(p, tier, w, d, 1.5);
   } else if (tier === 4) {
     box(p, w, 0.9, d, c.base, 0, 0.45, 0); // zócalo de piedra
     box(p, w - 0.1, fh - 0.5, d - 0.1, c.wall, 0, 0.9 + (fh - 0.5) / 2, 0);
     frameBeams(p, w, fh - 0.5, d - 0.1, 0.9, c.trim);
     gable(p, w + 0.5, d + 0.3, 1.5, c.roof, 0.4 + fh, c.wall);
-    chimney(p, 1.2, 0.4 + fh, -0.6, 1.6, c.base);
+    chimney(p, flag(5) ? -1.2 : 1.2, 0.4 + fh, -0.6, 1.6, c.base);
     door(p, 0, 0.9, d / 2 - 0.02, 0.8, 1.4);
     window_(p, 1.1, 1.7, d / 2 - 0.02);
+    houseExtras(p, tier, w, d, 1.7);
   } else if (tier === 5) {
     box(p, w, fh + 0.3, d, c.wall, 0, (fh + 0.3) / 2, 0);
     gable(p, w + 0.5, d + 0.4, 1.6, c.roof, fh + 0.3, c.wall);
@@ -89,8 +46,9 @@ function house(p, tier) {
     door(p, 0, 0, d / 2 + 0.02, 0.9, 1.6);
     window_(p, -1.1, 1.3, d / 2 + 0.02, GLASS);
     window_(p, 1.1, 1.3, d / 2 + 0.02, GLASS);
-    chimney(p, -1.2, fh + 0.4, 0, 1.2, c.trim);
+    chimney(p, flag(5) ? 1.2 : -1.2, fh + 0.4, 0, 1.2, c.trim);
     box(p, w + 0.9, 0.3, 0.12, c.trim, 0, 0.15, d / 2 + 0.75); // muro bajo del patio
+    houseExtras(p, tier, w, d, 1.3);
   } else if (tier === 6) {
     // Entramado con piso superior volado.
     box(p, w, 1.6, d, c.wall, 0, 0.8, 0);
@@ -101,7 +59,8 @@ function house(p, tier) {
     door(p, 0, 0, d / 2 + 0.02, 0.8, 1.4);
     window_(p, -1.1, 2.2, d / 2 + 0.2, GLASS, 0.55, 0.55);
     window_(p, 1.1, 2.2, d / 2 + 0.2, GLASS, 0.55, 0.55);
-    chimney(p, 1.2, 3.0, -0.7, 1.4, c.base);
+    chimney(p, flag(5) ? -1.2 : 1.2, 3.0, -0.7, 1.4, c.base);
+    houseExtras(p, tier, w, d, 2.2);
   } else if (tier === 7) {
     box(p, w + 0.2, fh * 2 + 0.3, d, c.wall, 0, (fh * 2 + 0.3) / 2, 0);
     gable(p, w + 0.6, d + 0.4, 1.7, c.roof, fh * 2 + 0.3, c.wall);
@@ -112,7 +71,8 @@ function house(p, tier) {
       window_(p, x, 1.1, d / 2 + 0.02, GLASS);
       window_(p, x, fh + 1.0, d / 2 + 0.02, GLASS, 0.5, 0.8);
     }
-    chimney(p, -1.3, fh * 2 + 0.5, -0.5, 1.4, c.base);
+    chimney(p, flag(5) ? 1.3 : -1.3, fh * 2 + 0.5, -0.5, 1.4, c.base);
+    houseExtras(p, tier, w, d, 1.1);
   } else if (tier === 8) {
     box(p, w + 0.2, fh * 2 + 0.3, d, c.wall, 0, (fh * 2 + 0.3) / 2, 0);
     for (let i = 0; i < 8; i++) box(p, w + 0.24, 0.05, d + 0.04, '#9a4a35', 0, 0.4 + i * 0.5, 0); // juntas de ladrillo
@@ -121,6 +81,7 @@ function house(p, tier) {
     for (const x of [-1.2, 1.2]) for (const y of [1.2, fh + 1.1]) window_(p, x, y, d / 2 + 0.02, '#e6d9a8', 0.5, 0.8);
     chimney(p, -1.3, fh * 2 + 0.5, 0, 1.8, '#9a4a35');
     chimney(p, 1.3, fh * 2 + 0.5, 0, 1.6, '#9a4a35');
+    houseExtras(p, tier, w, d, 1.2);
   } else if (tier === 9) {
     box(p, w, fh * 2 + 0.4, d, c.wall, 0, (fh * 2 + 0.4) / 2, 0);
     box(p, w + 0.3, 0.25, d + 0.3, c.roof, 0, fh * 2 + 0.55, 0);
@@ -136,6 +97,23 @@ function house(p, tier) {
     door(p, 0, 0, d / 2 + 0.02, 1.0, 1.8);
     box(p, 1.6, 0.2, 0.9, c.trim, 0, 2.0, d / 2 + 0.45);
   }
+}
+
+// Detalles que varían de una casa a otra del mismo nivel (postigos, maceteros, plantas, barril): no tocan la puerta
+// ni la huella y dependen sólo de la variante (modelVariant), así que son iguales para todos los jugadores.
+function houseExtras(p, tier, w, d, h) {
+  const z = d / 2 + 0.06;
+  if (tier >= 3 && flag(1)) {
+    // Postigos a los lados de la ventana.
+    for (const s of [-1, 1]) box(p, 0.16, 0.55, 0.05, tier >= 6 ? '#3a5a8a' : '#6b4a2e', 1.1 + s * 0.42, h, z);
+  }
+  if (tier >= 4 && tier <= 8 && flag(2)) {
+    // Macetero bajo la ventana.
+    box(p, 0.7, 0.12, 0.2, '#7a5230', 1.1, h - 0.4, z + 0.1);
+    for (const dx of [-0.22, 0, 0.22]) p.add(new THREE.SphereGeometry(0.1, 5, 4), dx ? '#c8423a' : '#e0c25a', mat(1.1 + dx, h - 0.28, z + 0.1));
+  }
+  if (flag(3)) pot(p, -w / 2 + 0.1, 0, d / 2 + 0.35, '#b0603a', 0.9);
+  if (flag(4) && tier <= 9) barrel(p, w / 2 + 0.25, 0, 0.1, '#7a5230', 0.9);
 }
 
 // Bloque residencial (ladrillo, hormigón, torre).
@@ -210,7 +188,13 @@ function hall(p, tier, id) {
   switch (id) {
     case 'stockpile':
       for (const [x, z] of [[2.7, 0.9], [2.9, -0.4], [-2.8, 1.0]]) box(p, 0.7, 0.7, 0.7, '#c49a5a', x, 0.35, z, x);
-      if (tier >= 8) box(p, 1.2, 0.2, 0.9, c.trim, 0, 0.5, d / 2 + 0.7); // muelle de carga
+      stockpileMark(p, tier);
+      break;
+    case 'gatherer':
+      gathererMark(p);
+      break;
+    case 'woodcutter':
+      woodcutterMark(p);
       break;
     case 'admin':
       stick(p, v(-w / 2 + 0.3, 0.3 + h, 0), v(-w / 2 + 0.3, 0.3 + h + 2.4, 0), 0.06, '#8f8a82', 5);
@@ -283,31 +267,11 @@ function hospital(p, tier) {
 
 // ---- Producción y talleres -----------------------------------------------------------------------
 
-function mine(p, tier) {
-  const c = pal(Math.min(tier, 6));
-  // Montículo de roca con la boca de la galería.
-  p.add(new THREE.DodecahedronGeometry(2.2, 0), tier >= 8 ? '#6a6660' : '#8a857b', mat(0, 1.0, -0.4, 0, 0.4, 0, 1.3, 0.8, 1));
-  box(p, 1.8, 1.8, 0.4, '#1a1410', 0, 0.9, 1.15);
-  for (const x of [-0.95, 0.95]) stick(p, v(x, 0, 1.3), v(x, 1.9, 1.3), 0.11, c.trim, 5);
-  box(p, 2.2, 0.2, 0.3, c.trim, 0, 1.95, 1.3);
-  if (tier >= 5) {
-    // Vagoneta con mineral y raíles.
-    box(p, 0.1, 0.06, 3.0, '#5a5a60', -0.35, 0.05, 2.7);
-    box(p, 0.1, 0.06, 3.0, '#5a5a60', 0.35, 0.05, 2.7);
-    box(p, 0.9, 0.5, 0.7, '#6a5a4a', 0, 0.45, 2.8);
-    p.add(new THREE.DodecahedronGeometry(0.25, 0), '#9a6a3a', mat(0, 0.8, 2.8));
-  }
-  if (tier >= 6 && tier < 8) {
-    stick(p, v(-1.5, 0, 0.2), v(-0.6, 3.2, 0.2), 0.1, c.trim, 5);
-    stick(p, v(0.3, 0, 0.2), v(-0.6, 3.2, 0.2), 0.1, c.trim, 5);
-  }
-  if (tier >= 8) {
-    // Castillete con rueda de poleas, tolva y chimenea.
-    box(p, 0.9, 4.2, 0.9, '#5a5a62', -1.7, 2.1, -1.0);
-    cyl(p, 0.7, 0.7, 0.15, '#3a3a40', -1.7, 4.3, -0.55, 14);
-    box(p, 1.4, 0.8, 1.2, '#4a4a52', 1.9, 0.4, -1.2);
-    chimney(p, 2.2, 0.8, -1.2, 2.2, '#4a4a52', 0.5);
-  }
+// Cantera, pozo de arcilla y minas de cada mena: cada una con su propio aspecto (ver buildingModelsSig.js).
+function mine(p, tier, id) {
+  if (id === 'quarry') return quarryPit(p, tier);
+  if (id === 'clay_pit') return clayPit(p, tier);
+  return shaftMine(p, tier, id);
 }
 
 function farm(p, tier) {
@@ -329,6 +293,7 @@ function farm(p, tier) {
     box(p, 1.1, 0.8, 0.7, '#c8423a', 2.9, 0.7, -1.0); // tractor
     cyl(p, 0.35, 0.35, 0.2, '#2a2a2e', 3.3, 0.35, -1.0, 8);
   }
+  farmMark(p, tier);
   if (tier >= 10) {
     // Brazo de riego y cúpulas de invernadero.
     box(p, 4.4, 0.08, 0.08, '#b4bcc4', 0, 1.4, 0);
@@ -336,7 +301,8 @@ function farm(p, tier) {
   }
 }
 
-function well(p, tier) {
+function well(p, tier, id) {
+  if (id === 'water_works') return waterWorks(p, tier);
   const c = pal(Math.min(tier, 6));
   if (tier >= 9) {
     // Depósito elevado y caseta de bombeo.
@@ -362,7 +328,11 @@ function well(p, tier) {
   }
 }
 
-function kiln(p, tier) {
+// Alfarería, panadería, carbonera y horno de ladrillos: cuatro hornos distintos (ver buildingModelsSig.js).
+function kiln(p, tier, id) {
+  if (id === 'bakery') return bakery(p, tier);
+  if (id === 'charcoal_kiln') return charcoalKiln(p, tier);
+  if (id === 'brick_kiln') return brickKiln(p, tier);
   const c = pal(Math.min(tier, 8));
   const brick = tier >= 8 ? '#b85a3e' : tier >= 6 ? '#b4846a' : '#b0795a';
   p.add(new THREE.SphereGeometry(1.5, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), brick, mat(0, 0.3, 0, 0, 0, 0, 1, 0.9, 1));
@@ -370,17 +340,20 @@ function kiln(p, tier) {
   box(p, 0.9, 0.7, 0.3, '#1a1410', 0, 0.65, 1.38);
   chimney(p, -0.9, 0.3, -0.6, tier >= 8 ? 4.2 : 2.4, brick, 0.5);
   if (tier >= 6) box(p, 1.4, 1.2, 1.0, c.wall, 1.8, 0.6, -0.6);
-  // Leña apilada.
-  for (let i = 0; i < 3; i++) stick(p, v(-2.0, 0.25 + i * 0.4, 1.0 - i * 0.1), v(-1.0, 0.25 + i * 0.4, 1.0 - i * 0.1), 0.2, '#7a5230', 6);
+  pottery(p, tier);
 }
 
-function smelter(p, tier) {
+function smelter(p, tier, id) {
   const c = pal(Math.min(tier, 8));
-  const clay = tier >= 8 ? '#9a4a35' : '#b0795a';
+  const low = id === 'bloomery'; // el horno de hierro es bajo y ancho; la fundición, alto
+  const clay = low ? (tier >= 8 ? '#8a4a3a' : '#a5694a') : tier >= 8 ? '#9a4a35' : '#b0795a';
+  const height = low ? (tier >= 8 ? 3.0 : 1.7) : tier >= 8 ? 4.6 : 2.4;
   box(p, 3.4, 0.3, 3.0, c.base, 0, 0.15, 0);
-  cyl(p, 0.8, 1.2, tier >= 8 ? 4.6 : 2.4, clay, 0, tier >= 8 ? 2.6 : 1.5, 0, 10);
+  cyl(p, low ? 0.7 : 0.8, low ? 1.4 : 1.2, height, clay, 0, 0.3 + height / 2 - 0.15, 0, 10);
   box(p, 0.8, 0.7, 0.3, '#1a1410', 0, 0.7, 1.15);
-  cone(p, 0.9, 0.5, '#3a3a3a', 0, tier >= 8 ? 5.15 : 2.95, 0, 10);
+  cone(p, 0.9, 0.5, '#3a3a3a', 0, 0.3 + height + 0.1, 0, 10);
+  if (low) bloomeryMark(p, tier);
+  else smelterMark(p, tier);
   // Fuelles y crisol.
   box(p, 1.0, 0.5, 0.6, '#6b4a2e', -1.6, 0.55, 0.8, 0.4);
   cyl(p, 0.3, 0.25, 0.4, '#5a5a60', 1.5, 0.5, 0.9, 8);
@@ -408,12 +381,14 @@ function workshop(p, tier, id) {
   // Yunque y mesa de trabajo delante.
   box(p, 0.8, 0.5, 0.5, '#4a4a52', -1.6, 0.5, 2.0);
   box(p, 1.2, 0.1, 0.7, c.trim, 1.5, 0.75, 2.1);
-  if (id === 'armory') box(p, 0.1, 1.0, 0.6, '#b4bcc4', 2.3, 1.2, 1.0); // espada colgada
-  if (id === 'textile') box(p, 1.4, 1.1, 0.15, '#c8b48a', -2.0, 1.0, 1.9);
+  workshopMark(p, tier, id);
 }
 
-function mill(p, tier) {
+function mill(p, tier, id) {
+  if (id === 'sawmill') return sawmill(p, tier);
+  if (id === 'powder_mill') return powderMill(p, tier);
   const c = pal(Math.min(tier, 8));
+  millMark(p, tier);
   if (tier >= 8) {
     box(p, 3.6, 3.0, 2.8, '#b85a3e', 0, 1.5, 0);
     box(p, 3.9, 0.25, 3.1, '#4a4a52', 0, 3.1, 0);
@@ -432,21 +407,27 @@ function mill(p, tier) {
   cyl(p, 0.15, 0.15, 0.4, c.trim, 0, 3.2, 1.4, 6);
 }
 
-function factory(p, tier) {
+function factory(p, tier, id) {
   const c = pal(Math.min(tier, 10));
-  const brick = tier >= 10 ? '#cfd8de' : tier >= 9 ? '#a8a8a2' : '#b85a3e';
+  const clean = id === 'electronics_factory';
+  const brick = clean ? '#e8ecef' : tier >= 10 ? '#cfd8de' : tier >= 9 ? '#a8a8a2' : '#b85a3e';
   box(p, 5.0, 3.0, 3.6, brick, 0, 1.5, 0);
   for (let i = -2; i <= 2; i++) box(p, 0.9, 1.2, 0.08, GLASS, i * 0.95, 1.9, 1.83);
   for (let i = -1; i <= 1; i++) box(p, 1.6, 0.14, 3.7, c.roof, i * 1.7, 3.3, 0, 0, 0, -0.3);
   door(p, 0, 0, 1.85, 1.6, 2.0);
-  if (tier <= 9) {
-    chimney(p, -2.0, 3.0, -1.0, 3.4, brick, 0.7);
-    chimney(p, -1.0, 3.0, -1.0, 2.6, brick, 0.6);
-  } else {
-    for (const x of [-1.5, 0, 1.5]) box(p, 1.0, 0.06, 1.8, '#2a4a7a', x, 3.55, -0.4, 0, 0, 0); // paneles
-    cyl(p, 0.6, 0.6, 1.6, '#b4bcc4', 2.6, 0.8, -1.2, 10);
+  if (id === 'steel_mill' || id === 'factory' || id === 'armory') {
+    if (tier <= 9) {
+      chimney(p, -2.0, 3.0, -1.0, 3.4, brick, 0.7);
+      chimney(p, -1.0, 3.0, -1.0, 2.6, brick, 0.6);
+    } else {
+      for (const x of [-1.5, 0, 1.5]) box(p, 1.0, 0.06, 1.8, '#2a4a7a', x, 3.55, -0.4, 0, 0, 0); // paneles
+      cyl(p, 0.6, 0.6, 1.6, '#b4bcc4', 2.6, 0.8, -1.2, 10);
+    }
+  } else if (!clean && id !== 'motor_pool') {
+    chimney(p, -2.0, 3.0, -1.0, tier <= 9 ? 2.6 : 1.6, brick, 0.6);
   }
-  box(p, 1.0, 1.0, 1.0, '#6a6a70', 2.6, 0.5, 1.4); // contenedor
+  if (id === 'factory') box(p, 1.0, 1.0, 1.0, '#6a6a70', 2.6, 0.5, 1.4); // contenedor
+  factoryMark(p, tier, id);
 }
 
 function boiler(p, tier) {
@@ -526,6 +507,13 @@ function barracks(p, tier) {
     p.add(new THREE.SphereGeometry(0.6, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), '#c8ccd0', mat(2.0, 5.0, -1.2, Math.PI, 0, 0));
     door(p, 0, 0, 1.33, 1.4, 1.8);
   }
+}
+
+// Cada cuartel añade lo suyo (muñecos, dianas, establos); ver barracksMark.
+const barracksBase = barracks;
+function barracksWithMark(p, tier, id) {
+  barracksBase(p, tier, id);
+  barracksMark(p, tier, id);
 }
 
 function tower(p, tier) {
@@ -631,14 +619,20 @@ function fort(p, tier) {
   box(p, 1.0, 1.4, 0.14, DARK, 0, 0.7, 2.5);
 }
 
-const STYLES = { house, block, hut, cabin, hall, market, hospital, mine, farm, well, kiln, smelter, workshop, mill, factory, boiler, plant, pole, station, barracks, tower, wall, gate, fort };
+const STYLES = { house, block, hut, cabin, hall, market, hospital, mine, farm, well, kiln, smelter, workshop, mill, factory, boiler, plant, pole, station, barracks: barracksWithMark, tower, wall, gate, fort };
 
 // Dibuja un modelo «gen:estilo:edad:tipo». Devuelve false si el estilo no existe.
-export function generate(p, name) {
-  const [, style, tier, id] = name.split(':');
+// Medio lado aproximado de cada estilo, para colocar la ampliación de los niveles que repiten edad.
+const styleSize = (style) => (/^(hut|cabin|mine|well|boiler|pole|wall|gate|tower)$/.test(style) ? 1.7 : 2.4);
+
+export function generate(p, name, variant = 0) {
+  const [, style, tier, id, rank] = name.split(':');
   const fn = STYLES[style];
   if (!fn) return false;
+  setVariant(variant);
   fn(p, Number(tier) || 1, id);
+  if (rank) upgradeKit(p, Number(tier) || 1, Number(rank), styleSize(style));
+  setVariant(0);
   return true;
 }
 

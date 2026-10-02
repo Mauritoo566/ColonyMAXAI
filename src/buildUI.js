@@ -474,7 +474,7 @@ export class BuildUI {
         <p class="reason">${residents.length ? residents.map((c) => escapeHtml(c.name)).join(', ') : 'Aún no vive nadie aquí: se mudarán quienes duerman en las tiendas.'}</p>
         <div class="stat-line"><span>Población máxima de la colonia</span><strong>${this.colony.colonists.length} / ${this.colony.maxPopulation}</strong></div>
         <p class="reason">Es la suma de las plazas de todas las casas terminadas de la colonia (${villageReport(this.colony).population.housing} entre todas ahora mismo), no sólo de ésta.</p>
-        ${next ? `<p class="reason">Al llegar a la ${ageInfo(b.level + 1).name} evoluciona sola a ${next.name} (caben ${next.housing}), en el mismo sitio y sin coste.</p>` : ''}
+        ${next ? `<p class="reason">Se puede mejorar a ${next.name} (caben ${next.housing}) pagando, en el mismo sitio, cuando llegue la ${ageInfo(next.age).name}.</p>` : ''}
       </section>`;
   }
 
@@ -636,9 +636,7 @@ export class BuildUI {
     const serviceHtml = b.done && !b.upgrading ? (def.id === 'market' ? this.marketHtml(b) : def.id === 'academy' ? this.researchHtml() : this.serviceNote(b, level)) : '';
     const levels = def.levels;
     const nextBenefits = next ? levelBenefits(def, level, next) : [];
-    const upgradeHtml = def.autoLevel
-      ? ''
-      : `<section class="cp-section">
+    const upgradeHtml = `<section class="cp-section">
           <h3>Mejora</h3>
           <ol class="level-track" aria-label="Niveles">
             ${levels.map((lv, i) => `<li class="${i + 1 < b.level ? 'is-past' : i + 1 === b.level ? 'is-now' : ''}" title="${lv.name} (${ageInfo(lv.age).name})">${ageInfo(lv.age).numeral}</li>`).join('')}
