@@ -143,7 +143,7 @@ export function alertsOf(colony) {
   if (hungry) out.push({ id: 'hunger', level: 'bad', text: `${hungry} colono${hungry > 1 ? 's' : ''} con mucha hambre`, hint: 'Hace falta comida en el acopio o bayas cerca.' });
   if (thirsty) out.push({ id: 'thirst', level: 'bad', text: `${thirsty} colono${thirsty > 1 ? 's' : ''} con mucha sed`, hint: 'Hace falta agua en el recolector de lluvia o el acopio.' });
   const s = shelterInfo(colony);
-  if (s.unhoused > 0) out.push({ id: 'shelter', level: 'warn', text: `${s.unhoused} colono${s.unhoused > 1 ? 's duermen' : ' duerme'} junto a la fogata`, hint: 'Descansan peor. Construye refugios (cada uno aloja a 2).' });
+  if (s.unhoused > 0) out.push({ id: 'shelter', level: 'warn', text: `${s.unhoused} colono${s.unhoused > 1 ? 's duermen' : ' duerme'} junto a la fogata`, hint: 'Descansan peor. Construye refugios (cada uno aloja a 4).' });
   for (const kind of ['food', 'wood', 'stone']) {
     const r = remainingOf(colony, kind);
     if (r.left <= 4 && colony.age === 1) out.push({ id: `deplete-${kind}`, level: r.left === 0 ? 'bad' : 'warn', text: `Quedan pocos sitios de ${NATURAL[kind].name.toLowerCase()} cerca`, hint: 'Explora y marca otra zona; el terreno no se renueva sin límite.' });

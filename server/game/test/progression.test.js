@@ -40,7 +40,7 @@ assert.match(sim.buildProblem(BUILDINGS.woodcutter, -24, 12), /Límite de la Eda
 for (let k = 0; k < LIMITS[0].houses; k++) place(sim, 'house', 2 + k);
 assert.match(sim.buildProblem(BUILDINGS.house, 30, 0), /Límite de la Edad Primitiva: 3/);
 assert.match(sim.buildProblem(BUILDINGS.quarry, 80, 0), /Fuera del territorio/);
-assert.equal(maxPopulation(sim), 6, '3 viviendas de 2 plazas = 6 (bien por debajo del tope de 10 de la edad I)');
+assert.equal(maxPopulation(sim), 10, '3 viviendas de 4 plazas = 12, pero la edad I admite 10');
 console.log('✓ límites de edificios y territorio de la edad I; población según la vivienda');
 
 // Avanzar de edad: requisitos (no sólo materiales), cobra una vez y evoluciona las viviendas.
@@ -59,7 +59,7 @@ assert.equal(woodBefore - sim.stock.wood, 30, 'la ofrenda se cobra una vez');
 assert.equal(sim.advanceAge(), false, 'no se puede repetir (la edad siguiente aún no existe)');
 assert.equal(woodBefore - sim.stock.wood, 30);
 assert.ok(sim.buildings.filter((b) => b.def.id === 'house').every((b) => b.level === 2), 'las viviendas evolucionan solas');
-assert.equal(maxPopulation(sim), 3 * 3);
+assert.equal(maxPopulation(sim), 3 * 4);
 assert.equal(sim.buildings.find((b) => b.def.id === 'stockpile').level, 1, 'lo demás no mejora gratis');
 console.log('✓ avanzar de edad cobra una vez, evoluciona las viviendas y no mejora lo demás');
 

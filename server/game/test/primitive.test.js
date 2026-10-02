@@ -46,7 +46,7 @@ const place = (sim, id) => {
   return null;
 };
 
-// 1. Fundar: cinco colonos, refugio de la menor calidad (capacidad 2), recolector de lluvia ya
+// 1. Fundar: cinco colonos, refugio de la menor calidad (capacidad 4), recolector de lluvia ya
 //    funcionando con agua, acopio inicial pequeño; nada de calidad superior.
 {
   const sim = fresh();
@@ -55,17 +55,17 @@ const place = (sim, id) => {
   const well = sim.buildings.find((b) => b.def.id === 'well');
   assert.ok(house.done && well.done);
   assert.equal(house.level, 1);
-  assert.equal(levelOf(house).housing, 2);
+  assert.equal(levelOf(house).housing, 4);
   assert.equal(levelOf(well).rainOnly, true);
   assert.ok(well.store > 0 && well.store < levelOf(well).capacity);
   assert.equal(sim.buildings.length, 2, 'sólo refugio y recolector');
   assert.equal(sim.age, 1);
   assert.deepEqual(sim.stock, { food: 18, water: 12, wood: 40, stone: 14, fiber: 14 });
-  assert.ok(sim.shelterInfo().unhoused >= 3, 'tres colonos duermen junto a la fogata');
+  assert.equal(sim.shelterInfo().unhoused, 1, 'un colono duerme junto a la fogata');
   assert.ok(alertsOf(sim).some((a) => a.id === 'shelter'), 'la interfaz lo explica');
-  assert.equal(maxPopulation(sim), 2, 'sólo el refugio inicial (2 plazas): nada gratis del campamento');
+  assert.equal(maxPopulation(sim), 4, 'sólo el refugio inicial (4 plazas): nada gratis del campamento');
   assert.match(immigrationBlocker(sim), /sólo crece con nacimientos/);
-  console.log('✓ fundar: 5 colonos, refugio (2), recolector de lluvia y acopio inicial');
+  console.log('✓ fundar: 5 colonos, refugio (4), recolector de lluvia y acopio inicial');
 }
 
 // 2. Recursos primitivos: existen cerca y no hace falta ninguna herramienta para recogerlos.
@@ -286,7 +286,7 @@ const place = (sim, id) => {
   assert.deepEqual(a.stock, old.stock, 'no se regalan recursos');
   assert.deepEqual(a.produced, old.produced, 'se conserva el progreso');
   assert.ok(a.buildings.find((b) => b.def.id === 'woodcutter').id === woodcutter.id, 'se conservan los edificios');
-  assert.ok(a.shelterInfo().slots === 2, 'sólo una plaza de refugio, no el paquete completo');
+  assert.ok(a.shelterInfo().slots === 4, 'sólo un refugio, no el paquete completo');
   assert.ok(a.buildings.find((b) => b.def.id === 'well').store <= 4, 'el recolector llega con la mitad de lo que tiene uno nuevo');
   // Cargar de nuevo la copia ya migrada (guardar y volver a cargar) no duplica nada.
   const again = new ColonySim();

@@ -119,8 +119,8 @@ try {
   assert.equal((await ana.wait((m) => m.t === 'colony' && m.flag === 'ar')).flag, 'ar');
   console.log('✓ bandera de la aldea (y rechazar una inválida)');
 
-  // Población: al fundarse sólo hay 1 refugio (2 plazas) y empiezan 5; las viviendas se pueden encargar.
-  assert.equal(colony.maxPopulation, 2);
+  // Población: al fundarse sólo hay 1 refugio (4 plazas) y empiezan 5; las viviendas se pueden encargar.
+  assert.equal(colony.maxPopulation, 4);
   // Un refugio no pide leñador: se puede encargar; fuera del territorio, no.
   ana.send({ t: 'cmd', name: 'build', args: ['house', 9999, -12] });
   assert.equal((await ana.wait('error')).message, 'No se pudo hacer eso ahora.');
@@ -132,7 +132,7 @@ try {
   assert.equal((await ana.wait('error')).message, 'No se pudo hacer eso ahora.');
   ana.send({ t: 'cmd', name: 'expandTerritory', args: [] });
   assert.equal((await ana.wait('error')).message, 'No se pudo hacer eso ahora.');
-  console.log('✓ población 5/10; el servidor rechaza vivienda sin leñador, mejora y edad sin requisitos');
+  console.log('✓ población 5/4; el servidor rechaza vivienda sin leñador, mejora y edad sin requisitos');
 
   // Posiciones varias veces por segundo.
   const f1 = await ana.wait('fast');

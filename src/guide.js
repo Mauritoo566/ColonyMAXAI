@@ -18,7 +18,7 @@ export const GUIDES = {
         id: 'tour',
         kind: 'learned',
         title: 'Conocer el campamento',
-        text: 'Mira a tus colonos y sus necesidades, el refugio de ramas (aloja a 2), el acopio y el recolector de lluvia. Quien no tiene plaza duerme junto a la fogata y descansa peor.',
+        text: 'Mira a tus colonos y sus necesidades, el refugio de ramas (aloja a 4), el acopio y el recolector de lluvia. Quien no tiene plaza duerme junto a la fogata y descansa peor.',
         check: (c) => ({ done: c.learned.has('tour') }),
         action: 'Ver mi campamento',
       },
@@ -50,7 +50,7 @@ export const GUIDES = {
         id: 'shelter',
         kind: 'condition',
         title: 'Dar refugio a todos',
-        text: 'Cada refugio de ramas aloja a 2 adultos (los niños viven con su madre). Construye los que falten con ramas y fibras.',
+        text: 'Cada refugio de ramas aloja a 4 adultos (los niños viven con su madre). Construye los que falten con ramas y fibras.',
         check: (c) => {
           const s = c.shelterInfo();
           return { done: s.ok, note: `${s.housed}/${s.adults} adultos con refugio` };

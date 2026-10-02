@@ -73,9 +73,9 @@ export const AUDIT = [
     needs: text(costOf('house')) + ' cada una',
     origin: 'Acopio inicial + lo recolectado',
     requires: 'Colonos adultos que construyan; hasta 3 refugios; sin edificio previo',
-    result: '+2 plazas por refugio; los niños viven con su madre',
+    result: '+4 plazas por refugio; los niños viven con su madre',
     explain: 'Quien no tiene plaza duerme junto a la fogata y descansa peor',
-    verify: (s) => noPrereq('house') && BUILDINGS.house.levels[0].housing === 2 && affordable(s, costOf('house')) && minAgeOf(BUILDINGS.house) === 1,
+    verify: (s) => noPrereq('house') && BUILDINGS.house.levels[0].housing === 4 && affordable(s, costOf('house')) && minAgeOf(BUILDINGS.house) === 1,
   },
   {
     step: '7. Almacén primitivo',
