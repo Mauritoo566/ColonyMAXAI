@@ -611,7 +611,7 @@ function setPixelRatio(value) {
 }
 
 // Diagnóstico: con ?debug en la dirección se expone lo principal para medir (consola del navegador).
-if (new URLSearchParams(location.search).has('debug')) window.__dbg = { graphics, renderer, buildings, harvest, colonyView, scene, camera, quality, planet, resources, controls, colony, others, camps, THREE };
+if (new URLSearchParams(location.search).has('debug')) window.__dbg = { graphics, renderer, buildings, harvest, colonyView, roads, scene, camera, quality, planet, resources, controls, colony, others, camps, THREE };
 
 // ---- Mientras no estabas ------------------------------------------------------------
 // El servidor sigue simulando la colonia cuando el jugador no está (nadie baja de la salud

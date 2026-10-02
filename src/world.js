@@ -6,7 +6,8 @@ import { ageInfo } from './ages.js';
 import { ColonySim } from './sim/colony.js';
 import { ColonyView } from './colonists.js';
 import { WeatherState } from './sim/weather.js';
-import { roadMaterials, buildRoadGeometry } from './roadMesh.js';
+import { roadMaterials, buildRoadGeometry, roadTerminals } from './roadMesh.js';
+import { BUILDINGS } from './sim/buildingTypes.js';
 import { ROAD_LEVELS } from './sim/economy.js';
 import { generateCampGrove, tileFromItems } from './resourceGen.js';
 import { biomeAt } from './biomes.js';
@@ -98,6 +99,8 @@ export class OtherCamps {
     if (buildingsKey !== entry.buildingsKey) {
       entry.buildingsKey = buildingsKey;
       this.buildBuildings(entry, list);
+      entry.terminals = roadTerminals(list.filter((b) => BUILDINGS[b.t]).map((b) => ({ def: BUILDINGS[b.t], x: b.x, z: b.z, yaw: b.yaw })));
+      entry.roadsDirty = true;
     }
   }
 
@@ -206,7 +209,7 @@ export class OtherCamps {
           entry.roadsDirty = false;
           entry.roadMeshes.forEach((mesh, k) => {
             mesh.geometry.dispose();
-            mesh.geometry = buildRoadGeometry(entry.sim.roads, k + 1, (x, z) => entry.sim.heightAt(x, z) - entry.height);
+            mesh.geometry = buildRoadGeometry(entry.sim.roads, k + 1, (x, z) => entry.sim.heightAt(x, z) - entry.height, entry.terminals);
           });
         }
       } else entry.view.hideLabels();

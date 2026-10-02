@@ -400,15 +400,18 @@ export function autoRoadPath(colony, b, off = new Set()) {
   const R = Math.ceil(radiusOf(colony) / ROAD_CELL);
   const free = (ix, iz) => Math.abs(ix) <= R && Math.abs(iz) <= R && !off.has(roadKey(ix, iz)) && !roadCellProblem(colony, ix, iz);
   const isTarget = (ix, iz) => colony.roads.has(roadKey(ix, iz)) || Math.hypot(ix * ROAD_CELL, iz * ROAD_CELL) <= 12;
-  const [bx, bz] = roadCellOf(b.x, b.z);
-  const reach = Math.ceil((b.def.footprint + 4) / ROAD_CELL);
+  // El camino sale de la puerta: sólo las casillas de la franja de acceso del edificio son punto de partida (muros,
+  // postes y demás sin entrada no reciben camino). Así no rodea el edificio ni cruza por detrás.
+  if (!b.entrance) return [];
   const prev = new Map();
   const queue = [];
-  for (let dx = -reach; dx <= reach; dx++) {
-    for (let dz = -reach; dz <= reach; dz++) {
-      const ix = bx + dx;
-      const iz = bz + dz;
-      if (!free(ix, iz) || Math.hypot(ix * ROAD_CELL - b.x, iz * ROAD_CELL - b.z) > b.def.footprint + 5.5) continue;
+  const zone = b.entrance.zone;
+  for (let ix = Math.floor(zone.x0 / ROAD_CELL - 0.5); ix <= Math.ceil(zone.x1 / ROAD_CELL + 0.5); ix++) {
+    for (let iz = Math.floor(zone.z0 / ROAD_CELL - 0.5); iz <= Math.ceil(zone.z1 / ROAD_CELL + 0.5); iz++) {
+      const x = ix * ROAD_CELL;
+      const z = iz * ROAD_CELL;
+      const overlaps = x + ROAD_CELL / 2 > zone.x0 + 1e-6 && x - ROAD_CELL / 2 < zone.x1 - 1e-6 && z + ROAD_CELL / 2 > zone.z0 + 1e-6 && z - ROAD_CELL / 2 < zone.z1 - 1e-6;
+      if (!overlaps || !free(ix, iz)) continue;
       prev.set(roadKey(ix, iz), null);
       queue.push([ix, iz]);
     }

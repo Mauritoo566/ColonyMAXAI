@@ -1,15 +1,16 @@
 import * as THREE from 'three';
 import { ROAD_CELL } from './sim/economy.js';
+import { entranceOf, footprintRect, rectsOverlap, rect } from './sim/access.js';
 
 // Dibujo de los caminos: el trazado de casillas se convierte en curvas suaves (se unen las casillas
 // vecinas en cadenas y se redondean las esquinas), y cada tramo es una cinta que sigue el terreno
 // con una textura propia de su nivel (tierra con huellas, empedrado, adoquín, asfalto) y bordes
 // que se funden con el suelo.
 
-const WIDTH = 3.4; // metros de ancho de la cinta
-const STEP = 1.2; // separación de los puntos a lo largo
-const TAPER = 2.2; // los extremos libres se afinan en esta distancia
-const LIFT = 0.3;
+const WIDTH = 3.4; // metros de ancho de la cinta (igual en todos los niveles)
+const STEP = 0.9; // separación de los puntos a lo largo
+const CAP = WIDTH / 2; // los extremos libres terminan en media luna de este radio
+const LIFT = 0.26;
 
 const key = (ix, iz) => `${ix},${iz}`;
 
@@ -20,7 +21,7 @@ function rng(seed) {
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
-function paint(level, plain = false) {
+function paint(level) {
   const W = 128;
   const H = 128;
   const c = document.createElement('canvas');
@@ -28,22 +29,22 @@ function paint(level, plain = false) {
   c.height = H;
   const g = c.getContext('2d');
   const r = rng(level * 7919);
-  const speck = (n, colors, size) => {
+  const speck = (n, colors, size, x0 = 10, x1 = W - 10) => {
     for (let i = 0; i < n; i++) {
       g.fillStyle = colors[Math.floor(r() * colors.length)];
       g.globalAlpha = 0.35 + r() * 0.45;
-      const x = 10 + r() * (W - 20);
-      g.fillRect(x, r() * H, 1 + r() * size, 1 + r() * size);
+      g.fillRect(x0 + r() * (x1 - x0), r() * H, 1 + r() * size, 1 + r() * size);
     }
     g.globalAlpha = 1;
   };
+  // Cuánto se difumina el borde (fracción del ancho) y cuánta irregularidad tiene.
+  let fade = 0.22;
+  let wobble = 0.06;
   if (level === 1) {
-    // Tierra apisonada: dos huellas de ruedas y piedrecitas.
+    // Tierra apisonada: suelo compactado de color cálido, desgaste suave en el centro y bordes que se funden.
     g.fillStyle = '#b8935f';
     g.fillRect(0, 0, W, H);
-    speck(500, ['#a07c4c', '#c9a672', '#8f6d40'], 3);
-    g.fillStyle = 'rgba(90, 62, 34, 0.38)';
-    // Sin huellas marcadas: en los cruces se cortarían. Un desgaste suave en el centro basta.
+    speck(520, ['#a07c4c', '#c9a672', '#8f6d40'], 3);
     const wear = g.createLinearGradient(W * 0.3, 0, W * 0.7, 0);
     wear.addColorStop(0, 'rgba(110, 80, 46, 0)');
     wear.addColorStop(0.5, 'rgba(110, 80, 46, 0.22)');
@@ -51,61 +52,85 @@ function paint(level, plain = false) {
     g.fillStyle = wear;
     g.fillRect(W * 0.3, 0, W * 0.4, H);
     speck(40, ['#8c8a84', '#6e6a62'], 4);
+    // Hierba rala en los bordes.
+    speck(60, ['#6f7f3a', '#5d6e32'], 2, 4, 22);
+    speck(60, ['#6f7f3a', '#5d6e32'], 2, W - 22, W - 4);
   } else if (level === 2) {
-    // Empedrado irregular: piedras redondeadas con juntas oscuras.
-    g.fillStyle = '#4e4a44';
+    // Empedrado: piedras redondeadas y desiguales con juntas oscuras; el borde es una hilera de piedras mayores
+    // y más oscuras, con un contorno irregular.
+    fade = 0.1;
+    wobble = 0.1;
+    g.fillStyle = '#4a463f';
     g.fillRect(0, 0, W, H);
-    for (let i = 0; i < 90; i++) {
-      const x = 8 + r() * (W - 16);
+    for (let i = 0; i < 80; i++) {
+      const x = 14 + r() * (W - 28);
       const y = r() * H;
       const rx = 6 + r() * 5;
       const ry = 5 + r() * 4;
-      const tone = 118 + Math.floor(r() * 50);
-      g.fillStyle = `rgb(${tone}, ${tone - 4}, ${tone - 10})`;
+      const tone = 128 + Math.floor(r() * 46);
+      g.fillStyle = `rgb(${tone}, ${tone - 4}, ${tone - 11})`;
       for (const dy of [0, y < 12 ? H : y > H - 12 ? -H : 0]) {
         g.beginPath();
         g.ellipse(x, y + dy, rx, ry, r() * 3, 0, Math.PI * 2);
         g.fill();
       }
     }
+    for (const side of [0, 1]) {
+      for (let y = -4; y < H; y += 17) {
+        const x = side ? W - 11 : 11;
+        const tone = 96 + Math.floor(r() * 26);
+        g.fillStyle = `rgb(${tone}, ${tone - 4}, ${tone - 10})`;
+        g.beginPath();
+        g.ellipse(x, y + 8 + r() * 3, 9 + r() * 2.5, 8 + r() * 2.5, r() * 3, 0, Math.PI * 2);
+        g.fill();
+      }
+    }
   } else if (level === 3) {
-    // Adoquines rectangulares en hiladas alternadas.
-    g.fillStyle = '#403c38';
+    // Adoquinado: adoquines rectangulares en hiladas alternadas, con bordillos claros de piedra a cada lado
+    // y un borde limpio y recto.
+    fade = 0.03;
+    wobble = 0.01;
+    g.fillStyle = '#3d3a36';
     g.fillRect(0, 0, W, H);
     const bw = 20;
     const bh = 12;
     for (let row = 0; row * bh < H; row++) {
       for (let col = -1; col * bw < W + bw; col++) {
-        const tone = 112 + Math.floor(r() * 36);
+        const tone = 114 + Math.floor(r() * 34);
         g.fillStyle = `rgb(${tone}, ${tone - 6}, ${tone - 12})`;
         g.fillRect(col * bw + (row % 2) * (bw / 2) + 1.5, row * bh + 1.5, bw - 3, bh - 3);
       }
     }
+    for (const x0 of [W * 0.035, W * 0.895]) {
+      g.fillStyle = '#7c7870';
+      g.fillRect(x0, 0, W * 0.07, H);
+      g.fillStyle = '#cfcabe';
+      g.fillRect(x0 + W * 0.012, 0, W * 0.046, H);
+      g.fillStyle = '#5c5850';
+      for (let y = 0; y < H; y += 21) g.fillRect(x0, y, W * 0.07, 1.5);
+    }
   } else {
-    // Asfalto con rayas y línea central discontinua.
-    g.fillStyle = '#3a3a40';
+    // Asfalto: gris oscuro con grano, líneas continuas blancas en los bordes y una línea central discontinua.
+    fade = 0.03;
+    wobble = 0.01;
+    g.fillStyle = '#383840';
     g.fillRect(0, 0, W, H);
     speck(900, ['#2e2e34', '#46464c', '#505058'], 2);
-    if (!plain) {
-      g.fillStyle = '#d8d4c4';
-      g.fillRect(W / 2 - 2, 8, 4, H * 0.42);
-    }
+    g.fillStyle = '#e8e4d4';
+    g.fillRect(W * 0.085, 0, 3, H);
+    g.fillRect(W * 0.915 - 3, 0, 3, H);
+    g.fillRect(W / 2 - 2, 8, 4, H * 0.42);
+    g.fillStyle = '#2a2a30';
+    g.fillRect(0, 0, W * 0.05, H);
+    g.fillRect(W * 0.95, 0, W * 0.05, H);
   }
-  // Bordes que se funden con el suelo (transparencia a los lados, con algo de irregularidad).
-  if (plain) {
-    const tex = new THREE.CanvasTexture(c);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.colorSpace = THREE.SRGBColorSpace;
-    tex.anisotropy = 4;
-    return tex;
-  }
+  // El borde se funde con el suelo (o queda nítido) según el nivel.
   const out = g.getImageData(0, 0, W, H);
-  const fade = level === 4 ? 0.1 : 0.22;
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const u = x / (W - 1);
       const edge = Math.min(u, 1 - u) / fade;
-      const wob = (Math.sin(y * 0.37 + x * 0.11) + Math.sin(y * 0.91 - x * 0.07)) * 0.06;
+      const wob = (Math.sin(y * 0.37 + x * 0.11) + Math.sin(y * 0.91 - x * 0.07)) * wobble;
       const a = Math.max(0, Math.min(1, edge + wob));
       out.data[(y * W + x) * 4 + 3] = Math.round(255 * a * a * (3 - 2 * a));
     }
@@ -119,11 +144,10 @@ function paint(level, plain = false) {
   return tex;
 }
 
-// plain: la variante lisa (sin huellas ni rayas) para los cruces, con el borde difuminado por vértice.
-export function roadMaterials(levelCount, plain = false) {
+// Un material por nivel. Se comparten entre mallas: no se crean por tramo.
+export function roadMaterials(levelCount) {
   return Array.from({ length: levelCount }, (_, i) => new THREE.MeshStandardMaterial({
-    map: paint(i + 1, plain),
-    vertexColors: plain,
+    map: paint(i + 1),
     roughness: 1,
     transparent: true,
     depthWrite: false,
@@ -138,22 +162,43 @@ export function roadMaterials(levelCount, plain = false) {
 
 const DIRS = [[1, 0], [0, 1], [1, 1], [1, -1]];
 
-// Aristas entre casillas vecinas (en diagonal sólo si no hay ya un camino por los lados).
-function edgesOf(roads) {
+// Dónde termina el camino de un edificio: las casillas por las que se llega a su puerta. Devuelve un mapa
+// "ix,iz" -> punto de la puerta { x, z } (en metros del campamento). buildings: [{ def, x, z, yaw }].
+export function roadTerminals(buildings) {
+  const out = new Map();
+  for (const b of buildings) {
+    const e = entranceOf(b.def, b.x, b.z, b.yaw ?? 0);
+    if (!e) continue;
+    const z = e.zone;
+    for (let ix = Math.floor(z.x0 / ROAD_CELL - 0.5); ix <= Math.ceil(z.x1 / ROAD_CELL + 0.5); ix++) {
+      for (let iz = Math.floor(z.z0 / ROAD_CELL - 0.5); iz <= Math.ceil(z.z1 / ROAD_CELL + 0.5); iz++) {
+        const cell = rect(ix * ROAD_CELL - ROAD_CELL / 2, ix * ROAD_CELL + ROAD_CELL / 2, iz * ROAD_CELL - ROAD_CELL / 2, iz * ROAD_CELL + ROAD_CELL / 2);
+        if (rectsOverlap(cell, z)) out.set(key(ix, iz), { x: e.door.x, z: e.door.z });
+      }
+    }
+  }
+  return out;
+}
+
+// Aristas entre casillas vecinas (en diagonal sólo si no hay ya un camino por los lados). Las casillas que dan a una
+// puerta tienen además una arista a un nodo "virtual" sobre la puerta: así el camino llega hasta el edificio.
+function edgesOf(roads, terminals = new Map()) {
   const edges = new Map(); // "a|b" -> { a, b, level }
-  const add = (ia, ja, ib, jb) => {
+  const add = (ia, ja, ib, jb, level) => {
     const ka = key(ia, ja);
     const kb = key(ib, jb);
     const id = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
-    edges.set(id, { a: [ia, ja], b: [ib, jb], level: Math.min(roads.get(ka), roads.get(kb)) });
+    edges.set(id, { a: [ia, ja], b: [ib, jb], level });
   };
   for (const k of roads.keys()) {
     const [ix, iz] = k.split(',').map(Number);
     for (const [dx, dz] of DIRS) {
       if (!roads.has(key(ix + dx, iz + dz))) continue;
       if (dx && dz && (roads.has(key(ix + dx, iz)) || roads.has(key(ix, iz + dz)))) continue;
-      add(ix, iz, ix + dx, iz + dz);
+      add(ix, iz, ix + dx, iz + dz, Math.min(roads.get(k), roads.get(key(ix + dx, iz + dz))));
     }
+    const door = terminals.get(k);
+    if (door) add(ix, iz, door.x / ROAD_CELL, door.z / ROAD_CELL, roads.get(k));
   }
   return edges;
 }
@@ -175,7 +220,7 @@ function smooth(points, rounds = 3) {
 }
 
 // Cadenas de casillas de un nivel: [{ cells: [[ix, iz], ...], free: [bool, bool] }].
-function chainsOf(roads, edges, level) {
+function chainsOf(roads, edges, level, virtual = new Set()) {
   const mine = [...edges.values()].filter((e) => e.level === level);
   const adj = new Map();
   const link = (p, q, e) => {
@@ -209,7 +254,7 @@ function chainsOf(roads, edges, level) {
       cur = next.to;
       cells.push(cur);
     }
-    chains.push({ cells, free: [degree.get(key(...cells[0])) === 1, degree.get(key(...cur)) === 1] });
+    chains.push({ cells, free: [degree.get(key(...cells[0])) === 1 && !virtual.has(key(...cells[0])), degree.get(key(...cur)) === 1 && !virtual.has(key(...cur))] });
   };
   // Primero desde extremos y cruces; luego lo que quede (anillos).
   for (const [k, list] of adj) {
@@ -251,13 +296,18 @@ function resample(points) {
   return out;
 }
 
-// Construye la geometría de un nivel. heightAt(x, z) da la altura del suelo en el campamento.
-export function buildRoadGeometry(roads, level, heightAt) {
-  const edges = edgesOf(roads);
+// Construye la geometría de un nivel. heightAt(x, z) da la altura del suelo en el campamento; terminals (opcional)
+// son las casillas que dan a una puerta (ver roadTerminals), para que el camino llegue hasta ella.
+export function buildRoadGeometry(roads, level, heightAt, terminals = new Map()) {
+  const edges = edgesOf(roads, terminals);
+  const virtual = new Set();
+  for (const e of edges.values()) {
+    for (const p of [e.a, e.b]) if (!Number.isInteger(p[0]) || !Number.isInteger(p[1])) virtual.add(key(...p));
+  }
   const pos = [];
   const uv = [];
   const idx = [];
-  for (const chain of chainsOf(roads, edges, level)) {
+  for (const chain of chainsOf(roads, edges, level, virtual)) {
     const pts = resample(smooth(chain.cells.map(([ix, iz]) => [ix * ROAD_CELL, iz * ROAD_CELL])));
     if (pts.length < 2) continue;
     let s = 0;
@@ -273,19 +323,21 @@ export function buildRoadGeometry(roads, level, heightAt) {
       const tl = Math.hypot(tx, tz) || 1;
       tx /= tl;
       tz /= tl;
-      // Afinar los extremos libres (punta redondeada).
+      // Los extremos libres terminan en media luna; los que llegan a una puerta o a otro camino, rectos.
       let w = 1;
-      if (chain.free[0] && s < TAPER) w = Math.min(w, Math.sqrt(Math.max(0, 1 - ((TAPER - s) / TAPER) ** 2)) * 0.95 + 0.05);
-      if (chain.free[1] && total - s < TAPER) w = Math.min(w, Math.sqrt(Math.max(0, 1 - ((TAPER - (total - s)) / TAPER) ** 2)) * 0.95 + 0.05);
+      const cap = (d) => Math.sqrt(Math.max(0, 1 - ((CAP - d) / CAP) ** 2)) * 0.97 + 0.03;
+      if (chain.free[0] && s < CAP) w = Math.min(w, cap(s));
+      if (chain.free[1] && total - s < CAP) w = Math.min(w, cap(total - s));
       const half = (WIDTH / 2) * w;
       const lx = x - tz * half;
       const lz = z + tx * half;
       const rx = x + tz * half;
       const rz = z - tx * half;
       const base = pos.length / 3;
-      pos.push(lx, heightAt(lx, lz) + LIFT, lz, rx, heightAt(rx, rz) + LIFT, rz);
-      uv.push(0, s / WIDTH, 1, s / WIDTH);
-      if (prev !== null) idx.push(prev, base, prev + 1, prev + 1, base, base + 1);
+      // Tres filas (borde, eje, borde): la cinta sigue las lomas y hondonadas del terreno.
+      pos.push(lx, heightAt(lx, lz) + LIFT, lz, x, heightAt(x, z) + LIFT, z, rx, heightAt(rx, rz) + LIFT, rz);
+      uv.push(0, s / WIDTH, 0.5, s / WIDTH, 1, s / WIDTH);
+      if (prev !== null) idx.push(prev, base, prev + 1, prev + 1, base, base + 1, prev + 1, base + 1, prev + 2, prev + 2, base + 1, base + 2);
       prev = base;
     }
   }
@@ -296,4 +348,3 @@ export function buildRoadGeometry(roads, level, heightAt) {
   g.setIndex(idx);
   return g;
 }
-
