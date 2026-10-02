@@ -2,6 +2,49 @@
 
 Juego multijugador para navegador con un planeta Tierra de estilo *medium poly*, hecho con [Three.js](https://threejs.org/). Todos los jugadores comparten el mismo planeta: cada uno funda su campamento y ve en tiempo real los de los demás, con sus edificios y sus colonos.
 
+## Visión general y arquitectura
+
+ColonyMAXAI es un juego de **colonias / estrategia de supervivencia multijugador persistente** sobre un planeta del tamaño de la Tierra. Cada jugador funda una aldea con 5 colonos autónomos (necesidades, genes, familia, IA de utilidad) y la hace crecer a lo largo de 10 edades, de la Primitiva a la Contemporánea. El mundo vive en el servidor las 24 h, aunque los jugadores no estén conectados.
+
+**Stack:** JavaScript puro (ES modules, sin bundler ni framework), [Three.js](https://threejs.org/) 0.170 en el navegador, Node ≥ 22 en el servidor con `ws` (WebSocket) y SQLite nativo (`node:sqlite`). Sólo dos dependencias: `three` y `ws`.
+
+**Principio clave: el servidor manda.** La simulación (`src/sim/`) es código compartido: el servidor la ejecuta de verdad y el navegador sólo tiene una copia que se actualiza con los *snapshots* que llegan, además de dibujar y mandar las órdenes del jugador, que el servidor valida.
+
+```
+Navegador (src/)  ──WebSocket──►  Servidor (server/game/)  ──►  SQLite (data/game.db)
+ render Three.js, UI,             cuentas, mundo compartido,      partidas, cuentas,
+ copia de la colonia              simulación de todas las         copias de seguridad
+                                  colonias, validación
+```
+
+### Estructura de carpetas
+
+| Ruta | Qué contiene |
+|---|---|
+| `index.html`, `style.css` | Página única del juego y todos sus estilos |
+| `src/` | Cliente: `main.js` (arranque), `terrain.js`/`chunkBuilder.js` (planeta en quadtree), `sky.js`, `clouds.js`, `water.js`, `weather.js`, `resources.js`, `camp.js`, `colonists.js`, `buildings.js`, `ai.js` y todas las interfaces `*UI.js` |
+| `src/sim/` | Simulación compartida cliente/servidor: `colony.js` (núcleo de la colonia), `progression.js` y `buildingTypes.js` (edades, edificios, niveles), `economy.js`, `goods.js`, `family.js`, `military.js`, `primitive.js`, `weather.js`, `mobs.js` |
+| `server/game/` | Servidor: `index.js` (HTTP + WebSocket, sirve la página), `world.js` (mundo compartido y tick), `accounts.js` (cuentas y sesiones), `store.js` (SQLite), `backup.js`, `admin.js` (herramienta de administrador), `test/` (pruebas) |
+| `server/tunnel/` | Bot que levanta el túnel de Cloudflare y avisa la dirección por Telegram |
+| `docs/` | Documentación generada y de diseño: `PROGRESION.md` (tablas por edad), `PRIMITIVA.md`, `MOBS.md` |
+| `tools/` | Generadores de los documentos de `docs/` (`gen-progression-doc.mjs`, `gen-primitive-doc.mjs`) |
+
+### Comandos útiles
+
+| Comando | Para qué |
+|---|---|
+| `npm install` | Instala `three` y `ws` |
+| `npm start` | Arranca el servidor del juego en el puerto 3100 |
+| `npm test` | Corre las pruebas del servidor (catálogo, progresión, economía, militar, protocolo, tareas, cuentas, edad primitiva) |
+| `node server/game/admin.js jugadores` | Lista los jugadores |
+| `node server/game/admin.js contraseña <jugador> <nueva>` | Restablece la contraseña de un jugador |
+| `node tools/gen-progression-doc.mjs` | Regenera `docs/PROGRESION.md` |
+| `server/game/actualizar.sh` | En el servidor de producción: `git pull`, `npm ci` y reinicio del servicio |
+
+### Despliegue
+
+En producción el juego corre como servicio de systemd (`colonymaxai-game.service`) con copia de seguridad diaria (`colonymaxai-backup.timer`) y se publica por un túnel de Cloudflare (`server/tunnel/`). Para actualizar el servidor basta con subir los cambios a GitHub y ejecutar `actualizar.sh` allá. Detalles en `server/game/INSTALAR.md` y `server/tunnel/INSTALAR.md`.
+
 ## Cómo ejecutarlo
 
 El juego necesita su servidor (`server/game/`): simula todas las colonias, guarda las cuentas y las partidas y entrega la página. Hace falta Node 22 o más nuevo.
