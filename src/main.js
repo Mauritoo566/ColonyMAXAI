@@ -155,8 +155,10 @@ const buildings = new BuildingSystem({
 const harvest = new HarvestTool({ scene, camera, canvas, colony, controls, campObject });
 const plant = new PlantTool({ scene, camera, canvas, colony });
 // Recursos del mundo: lo talado desaparece y lo que brota con la lluvia aparece.
+// mergeRemoved (no restoreRemoved): lo propio nunca se "destala", así que sumar es seguro
+// y no pisa lo que ya se sumó de una aldea visitada (restoreRemoved lo reemplazaba entero).
 colony.on('resources', () => {
-  resources.restoreRemoved(colony.serializeRemoved());
+  resources.mergeRemoved(colony.serializeRemoved());
   resources.setExtraTile(GROVE_KEY, colony.groveTile);
   resources.setExtraTile(SPROUT_KEY, colony.sproutTile);
 });

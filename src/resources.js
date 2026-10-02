@@ -371,11 +371,6 @@ export class ResourceSystem {
     return [...this.removed].map(([key, set]) => [key, [...set]]);
   }
 
-  restoreRemoved(list) {
-    this.removed = new Map((list || []).map(([key, idx]) => [key, new Set(idx)]));
-    this.dirty = true;
-  }
-
   // Suma (sin pisar) lo talado/picado de otra colonia (la de un visitante): así tampoco se
   // ven sus árboles o piedras ya quitados. Nunca baldosas de campamento (arboleda, brotes):
   // esa clave se reutiliza por cada campamento y mezclarla rompería la propia.
