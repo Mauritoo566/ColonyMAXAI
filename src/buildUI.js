@@ -472,6 +472,7 @@ export class BuildUI {
         <h3>Vecinos (${adults.length}/${level.housing} plazas${children.length ? ` · +${children.length} ${children.length > 1 ? 'niños' : 'niño'} con su familia` : ''})</h3>
         <p class="reason">${residents.length ? residents.map((c) => escapeHtml(c.name)).join(', ') : 'Aún no vive nadie aquí: se mudarán quienes duerman en las tiendas.'}</p>
         <div class="stat-line"><span>Población máxima de la colonia</span><strong>${this.colony.colonists.length} / ${this.colony.maxPopulation}</strong></div>
+        <p class="reason">Esas plazas no son sólo de las casas: el campamento ya admite ${this.colony.populationInfo().campBase} él solo, y cada casa suma las suyas encima (${this.colony.populationInfo().housing} entre todas ahora mismo).</p>
         ${next ? `<p class="reason">Al llegar a la ${ageInfo(b.level + 1).name} evoluciona sola a ${next.name} (caben ${next.housing}), en el mismo sitio y sin coste.</p>` : ''}
       </section>`;
   }
