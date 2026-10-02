@@ -252,7 +252,9 @@ export class BuildingSystem {
     const gz = this.grid ? this.grid.snap(local.z) : local.z;
     this.groundPoint = { x: gx, z: gz };
     // Los muros no se giran: conservan su orientación (o van a lo largo del eje X).
-    const yaw = ((this.moving ?? this.placing).def ?? this.placing).line ? (this.moving ? this.moving.yaw : 0) : Math.atan2(-gx, -gz) + this.turn * (Math.PI / 2);
+    // Los demás siempre miran al norte de entrada; "turn" sólo suma giros de 90° exactos
+    // (nunca en diagonal, sin importar dónde esté el edificio respecto a la fogata).
+    const yaw = ((this.moving ?? this.placing).def ?? this.placing).line ? (this.moving ? this.moving.yaw : 0) : this.turn * (Math.PI / 2);
     let cx = gx, cz = gz, cyaw = yaw;
     const def = (this.moving ?? this.placing).def ?? this.placing;
     if (def.line) {
@@ -319,8 +321,8 @@ export class BuildingSystem {
   startMoving(b) {
     this.startPlacing(b.def.id);
     this.moving = b;
-    // Al mover parte de su orientación actual (R la gira).
-    this.turn = Math.round((b.yaw - Math.atan2(-b.x, -b.z)) / (Math.PI / 2));
+    // Al mover parte de su orientación actual (R la gira), redondeada al cuarto de vuelta más cercano.
+    this.turn = Math.round(b.yaw / (Math.PI / 2));
     this.turn = ((this.turn % 4) + 4) % 4;
     this.ghost.remove(...this.ghost.children.filter((o) => o !== this.ghostRing));
     const model = levelModel(levelOf(b).model);
