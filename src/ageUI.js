@@ -169,7 +169,7 @@ export class AgeUI {
     const pages = {
       resumen: `
         <p class="reason"><strong>${here.theme}</strong> · ${here.desc}</p>
-        <p class="reason age-limits">Ahora puedes: territorio de <strong>${colony.territoryRadius} m</strong> (hasta ${lim.expansions} ampliaciones), hasta <strong>${lim.houses}</strong> viviendas, <strong>${lim.perType}</strong> edificios de cada tipo y <strong>${lim.popCap}</strong> habitantes.</p>
+        <p class="reason age-limits">Ahora puedes: territorio de <strong>${colony.territoryRadius} m</strong> (hasta ${lim.expansions} ampliaciones), hasta <strong>${lim.houses}</strong> viviendas, <strong>${lim.perType}</strong> edificios de cada tipo y hasta <strong>${lim.popCap}</strong> habitantes (si construís bastante vivienda: cada casa da sus propias plazas).</p>
         <h3 class="age-sub">Disponible en esta edad</h3>
         <ul class="age-rows">${nowRows.map((r) => `<li><strong>${r.name}</strong><span>${r.text}</span></li>`).join('') || '<li><span>Todo lo básico.</span></li>'}</ul>
         ${status.next && !status.soon ? `<p class="reason">Siguiente: <strong>${status.next.name}</strong> · ${doneCount}/${status.checks.length} requisitos${status.ready ? ' · ¡lista!' : ''}. Mira la pestaña «Siguiente edad».</p>` : ''}`,

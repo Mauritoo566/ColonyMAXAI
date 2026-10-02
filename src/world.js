@@ -6,6 +6,8 @@ import { ageInfo } from './ages.js';
 import { ColonySim } from './sim/colony.js';
 import { ColonyView } from './colonists.js';
 import { WeatherState } from './sim/weather.js';
+import { roadMaterials, buildRoadGeometry } from './roadMesh.js';
+import { ROAD_LEVELS } from './sim/economy.js';
 
 // Los demás jugadores del mundo: sus campamentos, sus edificios y sus colonos, en vivo.
 // El servidor manda la lista de jugadores (con campamento, edad, población y edificios) y,
@@ -71,8 +73,13 @@ export class OtherCamps {
       const sim = new ColonySim();
       const view = new ColonyView({ scene: this.scene, camera: this.camera, canvas: this.canvas, labelsRoot: this.labelsRoot, sim, campObject: () => object, selectable: false });
       sim.setCamp(camp);
-      entry = { key, object, zone, dir: camp.dir, height: camp.height, label, buildingsKey: '', buildings: new THREE.Group(), sim, view, weather: new WeatherState(1) };
+      const roadMeshes = roadMaterials(ROAD_LEVELS.length).map((m) => new THREE.Mesh(new THREE.BufferGeometry(), m));
+      const roadsGroup = new THREE.Group();
+      for (const m of roadMeshes) roadsGroup.add(m);
+      entry = { key, object, zone, dir: camp.dir, height: camp.height, label, buildingsKey: '', buildings: new THREE.Group(), sim, view, weather: new WeatherState(1), roadMeshes, roadsDirty: true };
       object.add(entry.buildings);
+      object.add(roadsGroup);
+      sim.on('roads', () => (entry.roadsDirty = true));
       this.camps.set(p.id, entry);
     }
     if (entry.flag !== p.flag) {
@@ -155,8 +162,16 @@ export class OtherCamps {
       const near = dist < MODEL_MAX_DISTANCE;
       entry.buildings.visible = near;
       entry.view.group.visible = near;
-      if (near) entry.view.update(delta, delta);
-      else entry.view.hideLabels();
+      if (near) {
+        entry.view.update(delta, delta);
+        if (entry.roadsDirty) {
+          entry.roadsDirty = false;
+          entry.roadMeshes.forEach((mesh, k) => {
+            mesh.geometry.dispose();
+            mesh.geometry = buildRoadGeometry(entry.sim.roads, k + 1, (x, z) => entry.sim.heightAt(x, z) - entry.height);
+          });
+        }
+      } else entry.view.hideLabels();
       const horizon = Math.acos(Math.min(1, RADIUS / camR)) + Math.acos(Math.min(1, RADIUS / markerR));
       const behind = cam.clone().divideScalar(camR).angleTo(entry.dir) > horizon;
       pos.project(this.camera);

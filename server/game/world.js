@@ -16,7 +16,7 @@ import { awaySnapshot, awaySummary, AWAY_MAX_SECONDS, AWAY_MIN_SECONDS } from '.
 const TICK_MS = 100; // la simulación avanza 10 veces por segundo
 const FAST_EVERY = 2; // posiciones de la colonia propia: cada 2 pasos (5 por segundo)
 const FULL_EVERY = 10; // colonia entera: cada segundo
-const OTHERS_EVERY = 5; // colonos de colonias ajenas cercanas: 2 por segundo
+const OTHERS_EVERY = 2; // colonos de colonias ajenas cercanas: 5 por segundo (antes 2: se veían a saltos)
 const PLAYERS_EVERY = 20; // lista de jugadores (si cambió): cada 2 segundos
 const TIME_EVERY = 100; // hora del mundo: cada 10 segundos (el navegador la extrapola)
 const SAVE_EVERY_MS = 30_000;
@@ -237,6 +237,7 @@ export class World {
       return cache.get(key);
     };
     const pendingStatics = [];
+    const pendingOtherStatics = [];
     for (const client of this.clients) {
       const own = this.colonies.get(client.player.id);
       if (own && full) {
@@ -251,12 +252,20 @@ export class World {
       if (others && client.view) {
         for (const colony of this.colonies.values()) {
           if (colony === own || colony.dir.angleTo(client.view) * RADIUS > NEAR_OTHERS) continue;
-          client.sendRaw(once(`other:${colony.playerId}`, () => ({ t: 'other', id: colony.playerId, w: colony.sim.weather?.brief(), ...colony.sim.snapshot('fast') })));
+          // A los visitantes también hay que mandarles, de vez en cuando, los nacidos
+          // (colonos que no vienen de la semilla) y los caminos: "fast" normalmente no los trae.
+          const statics = colony.otherStaticsSent !== colony.sim.staticsRevision;
+          client.sendRaw(once(`other:${colony.playerId}`, () => ({ t: 'other', id: colony.playerId, w: colony.sim.weather?.brief(), ...colony.sim.snapshot('fast', { statics }) })));
+          if (statics && !cache.has(`otherSent:${colony.playerId}`)) {
+            cache.set(`otherSent:${colony.playerId}`, true);
+            pendingOtherStatics.push(colony);
+          }
         }
       }
       if (t % TIME_EVERY === 0) client.sendRaw(once('time', () => ({ t: 'time', elapsed: this.elapsed })));
     }
     for (const colony of pendingStatics) colony.staticsSent = colony.sim.staticsRevision;
+    for (const colony of pendingOtherStatics) colony.otherStaticsSent = colony.sim.staticsRevision;
     if (t % PLAYERS_EVERY === 0) this.sendPlayers();
   }
 

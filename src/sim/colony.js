@@ -19,7 +19,7 @@ import { updateFamily, updateImmigration, immigrationBlocker, assignHomes, maxPo
 import { buildBlocker, upgradeBlocker, evolveHouses, buildCostOf, buildLevelFor, limitsFor, radiusOf, expansionBlocker, expansionCost, EXPANSION_STEP } from './progression.js';
 import { GOOD_NAMES } from './goods.js';
 import { centerProps } from './centerLayout.js';
-import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, roadCap, ROAD_LEVELS, autoRoadPath } from './economy.js';
+import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, ROAD_LEVELS, autoRoadPath } from './economy.js';
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
@@ -2474,7 +2474,6 @@ export class ColonySim {
     for (const b of only ? [only] : this.buildings) {
       if (!b.done || b.removed) continue;
       for (const [ix, iz] of autoRoadPath(this, b, this.roadsOff)) {
-        if (this.roads.size >= roadCap(this.age)) break;
         const key = roadKey(ix, iz);
         this.roads.set(key, level);
         this.autoRoadKeys.add(key);
@@ -2610,7 +2609,7 @@ export class ColonySim {
   }
 
   get roadInfo() {
-    return { level: roadLevelFor(this.age), cap: roadCap(this.age), count: this.roads.size, levels: ROAD_LEVELS, auto: this.autoRoads };
+    return { level: roadLevelFor(this.age), count: this.roads.size, levels: ROAD_LEVELS, auto: this.autoRoads };
   }
 
   refreshObstacles() {
@@ -2892,7 +2891,16 @@ export class ColonySim {
     const r2 = (v) => Math.round(v * 100) / 100;
     const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0);
     const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state]);
-    if (part === 'fast') return { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]), mobs: mobsRows() };
+    if (part === 'fast') {
+      const out = { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]), mobs: mobsRows() };
+      // De vez en cuando (statics=true) se agregan también los nacidos (para quien sólo ve
+      // "fast", como los visitantes de otra colonia) y los caminos.
+      if (statics) {
+        out.born = this.colonists.filter((c) => c.id >= START_COLONISTS).map((c) => ({ ...this.staticOf(c), x: r2(c.x), z: r2(c.z) }));
+        out.roads = [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]);
+      }
+      return out;
+    }
     const camp = this.camp;
     return {
       camp: camp && { dir: { x: camp.dir.x, y: camp.dir.y, z: camp.dir.z }, height: camp.height, yaw: camp.yaw, seed: camp.seed },
@@ -2996,8 +3004,8 @@ export class ColonySim {
       arrived = true;
     }
     if (arrived) this.emit('colonists');
-    // Colonos que murieron: ya no vienen en el estado completo.
-    if (part === 'full' && Array.isArray(s.colonists)) {
+    // Colonos que murieron: ya no vienen en la lista (en "fast" también viene completa).
+    if (Array.isArray(s.colonists)) {
       const ids = new Set(s.colonists.map((r) => (Array.isArray(r) ? r[0] : r.id)));
       if (this.colonists.some((c) => !ids.has(c.id))) {
         this.colonists = this.colonists.filter((c) => ids.has(c.id));
@@ -3043,6 +3051,12 @@ export class ColonySim {
       if (row.age != null) c.age = row.age;
     }
     if (s.mobs) this.applyMobs(s.mobs);
+    // Caminos: pueden venir con un "fast" (visitantes de otra colonia, de vez en cuando) o
+    // con el estado completo propio.
+    if (s.roads) {
+      this.roads = new Map(s.roads.map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
+      this.emit('roads');
+    }
     if (part === 'fast') return;
 
     this.gameTime = s.gameTime;
@@ -3073,10 +3087,6 @@ export class ColonySim {
     if (JSON.stringify(s.defeat ?? null) !== JSON.stringify(this.defeat)) {
       this.defeat = s.defeat ?? null;
       if (this.defeat) this.emit('defeat', this.defeat);
-    }
-    if (s.roads) {
-      this.roads = new Map(s.roads.map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
-      this.emit('roads');
     }
     this.growthBlockerView = s.growthBlocker ?? null;
     this.immigrationBlockerView = s.immigrationBlocker ?? null;

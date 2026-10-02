@@ -353,8 +353,6 @@ export function roadLevelFor(age) {
   return n;
 }
 
-export const roadCap = (age) => (age < 2 ? 0 : Math.max(40, (age - 2) * 80));
-
 export function roadSpeed(colony, x, z) {
   if (!colony.roads.size) return 1;
   const lv = colony.roads.get(roadKey(...roadCellOf(x, z)));
@@ -377,8 +375,6 @@ export function roadsProblem(colony, cells) {
   const lvl = roadLevelFor(colony.age);
   if (lvl <= 0) return 'Todavía no se pueden hacer caminos';
   if (!Array.isArray(cells) || !cells.length || cells.length > 80) return 'Camino no válido';
-  const fresh = cells.filter(([ix, iz]) => !colony.roads.has(roadKey(ix, iz)));
-  if (colony.roads.size + fresh.length > roadCap(colony.age)) return `Límite de caminos de la edad: ${roadCap(colony.age)} casillas`;
   const cost = roadCost(lvl, cells.length);
   const lacking = Object.entries(cost).filter(([k, n]) => (colony.stock[k] ?? 0) < n);
   if (lacking.length) return `Faltan ${lacking.map(([k, n]) => `${Math.ceil(n - (colony.stock[k] ?? 0))} de ${name(k)}`).join(' y ')}`;
