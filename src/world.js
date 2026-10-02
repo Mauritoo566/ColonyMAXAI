@@ -119,7 +119,8 @@ export class OtherCamps {
     const object = entry.object;
     object.updateMatrixWorld(true);
     for (const b of list) {
-      if (![b.x, b.z].every(Number.isFinite) || Math.hypot(b.x, b.z) > 200) continue;
+      // 300 m: cubre el territorio máximo (200 m + 6 ampliaciones de 12 m = 272 m) con margen.
+      if (![b.x, b.z].every(Number.isFinite) || Math.hypot(b.x, b.z) > 300) continue;
       const mesh = buildingModel(b.t, b.l, b.d !== false);
       if (!mesh) continue;
       // Altura del terreno en ese punto, relativa al campamento.

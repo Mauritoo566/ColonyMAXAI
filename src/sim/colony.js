@@ -1699,6 +1699,9 @@ export class ColonySim {
     let changed = 0;
     for (const s of this.spots) {
       if (s.gone || !this.usable(s) || !insideRect(rect, s.x, s.z) || (kinds && !kinds.includes(s.kind))) continue;
+      // Si está pegado a un edificio nunca se va a poder recolectar (nearestMarked lo salta):
+      // no lo marques, para no dejar un "marcado" que nunca se cumple.
+      if (marked && this.blockedByBuilding(s.x, s.z)) continue;
       if (!!s.marked !== marked) {
         s.marked = marked;
         changed++;
@@ -1715,6 +1718,7 @@ export class ColonySim {
     let changed = 0;
     for (const s of this.spots) {
       if (s.gone || !this.usable(s) || Math.hypot(s.x - x, s.z - z) > radius || (kinds && !kinds.includes(s.kind))) continue;
+      if (marked && this.blockedByBuilding(s.x, s.z)) continue;
       if (!!s.marked !== marked) {
         s.marked = marked;
         changed++;
