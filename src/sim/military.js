@@ -9,7 +9,7 @@ import { DAY_LENGTH_SECONDS } from '../daynight.js';
 import { levelOf } from './buildingTypes.js';
 import { GOOD_NAMES } from './goods.js';
 import { UNITS, UNITS_BY_ID, upgradeOf, matchup } from './units.js';
-import { addLog } from '../needs.js';
+import { addLog, addMoodEvent } from '../needs.js';
 
 const DAY = DAY_LENGTH_SECONDS;
 const name = (k) => GOOD_NAMES[k] ?? k;
@@ -198,7 +198,7 @@ export function dailyRaid(colony, day) {
         lost.push(`${n} de ${name(k)}`);
       }
     }
-    for (const c of colony.colonists) c.needs.mood = Math.max(0, c.needs.mood - 8);
+    for (const c of colony.colonists) addMoodEvent(c, 'raid', -8, colony.gameTime);
     colony.emit('notice', `Una banda de ${label} (fuerza ${strength}) saqueó la aldea: ${lost.join(', ') || 'se llevaron poco'}. Refuerza el ejército y las defensas`);
   }
   colony.emit('changed');

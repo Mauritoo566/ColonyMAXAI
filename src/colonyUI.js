@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { preserveScroll, keepScroll, scrollParent } from './keepScroll.js';
+import { diagnose, mainProblem, BANDS } from './sim/wellbeing.js';
 import { NEEDS, SKILLS, wellbeing, needStatus, completeSkill } from './needs.js';
 import { GENES, gene, genomeCode, lifeExpectancy } from './genes.js';
 import { SPEC_NAMES } from './sim/specialties.js';
@@ -42,6 +44,11 @@ function escapeHtml(text) {
   return String(text).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
 }
 
+// Texto del botón de una acción sugerida: sólo lleva a verlo, nunca gasta ni construye nada.
+function actionLabel(a) {
+  return a.kind === 'build' ? 'Ver en construcción' : a.kind === 'storage' ? 'Ir al almacén' : a.kind === 'housing' || a.kind === 'building' ? 'Ver la vivienda' : 'Ver';
+}
+
 export class ColonyUI {
   // colony: la simulación (sim/colony.js); view: la vista de los colonos (colonists.js),
   // que sabe cuál está elegido y dónde se dibuja cada uno.
@@ -68,6 +75,7 @@ export class ColonyUI {
     this.needSummary = $('need-summary');
     this.roster = $('roster');
     this.panel = $('colonist-panel');
+    preserveScroll(this.panel);
 
     // Resumen de necesidades (fijo: cinco casillas).
     this.needSummary.innerHTML = NEEDS.map(
@@ -167,6 +175,8 @@ export class ColonyUI {
     this.rosterFor = this.colony.colonists;
     this.rosterCount = this.colony.colonists.length;
     this.rosterGroups = groups;
+    const scroller = scrollParent(this.roster);
+    const scrollTop = scroller?.scrollTop ?? 0;
     this.roster.innerHTML = '';
     this.rows = new Map();
     // Agrupados por oficio (con muchos colonos se sigue entendiendo quién hace qué).
@@ -201,6 +211,7 @@ export class ColonyUI {
       this.roster.appendChild(li);
       this.rows.set(c, li);
     }
+    if (scroller) scroller.scrollTop = scrollTop;
   }
 
   updateRoster() {
@@ -214,7 +225,14 @@ export class ColonyUI {
       // Si algo le urge, se muestra con su ícono en lugar de la actividad.
       const worst = NEEDS.reduce((a, b) => (c.needs[b.id] < c.needs[a.id] ? b : a));
       const activity = li.querySelector('.roster-activity');
-      const html = c.needs[worst.id] < 30 ? `${icon(worst.id)}${escapeHtml(worst.low)}` : `${c.order ? '<b class="order-tag">Orden</b> ' : ''}${escapeHtml(c.activity)}`;
+      // El estado dice qué le pasa de verdad (sim/wellbeing.js): "Desanimado: sin cama", no sólo "desanimado".
+      const problem = mainProblem(this.colony, c);
+      const bandText = BANDS[c.moodBand ?? 2]?.text ?? '';
+      const html = problem && (c.moodBand ?? 2) <= 1
+        ? `${icon(problem.need ?? 'mood')}${escapeHtml(bandText)}: ${escapeHtml(problem.short)}`
+        : c.needs[worst.id] < 30 && worst.id !== 'mood'
+          ? `${icon(worst.id)}${escapeHtml(worst.low)}`
+          : `${c.order ? '<b class="order-tag">Orden</b> ' : ''}${escapeHtml(c.activity)}`;
       if (activity.dataset.html !== html) {
         activity.innerHTML = html;
         activity.dataset.html = html;
@@ -271,6 +289,13 @@ export class ColonyUI {
             <div class="bar"><i></i></div>
           </div>
         </div>
+        <section class="cp-section mood-section" data-mood>
+          <h3>Ánimo</h3>
+          <div class="meter-row"><span class="meter-label" data-mood-band></span><strong class="meter-value" data-mood-value></strong></div>
+          <div class="bar"><i data-mood-bar></i></div>
+          <p class="mood-trend" data-mood-trend></p>
+          <div data-mood-detail></div>
+        </section>
         <section class="cp-section">
           <h3>Necesidades</h3>
           <ul class="need-list">
@@ -441,6 +466,7 @@ export class ColonyUI {
         : 'Sin ropa (sólo un taparrabos) y no queda ropa en el campamento.';
     if (clothes.textContent !== clothesText) clothes.textContent = clothesText;
 
+    this.refreshMood(c);
     const health = this.panel.querySelector('[data-health]');
     health.querySelector('[data-value]').textContent = `${Math.round(c.health)}%`;
     setBar(health.querySelector('i'), c.health);
@@ -469,6 +495,47 @@ export class ColonyUI {
     }
   }
 
+  // Ánimo explicado (sim/wellbeing.js): qué le pasa, qué intenta, qué se lo impide y qué se puede hacer.
+  // Sólo se redibuja si cambia el contenido (así no pierde el scroll ni parpadea).
+  refreshMood(c) {
+    if ((c.growth ?? 1) < 1) {
+      this.panel.querySelector('[data-mood]').hidden = true;
+      return;
+    }
+    const sec = this.panel.querySelector('[data-mood]');
+    sec.hidden = false;
+    const d = diagnose(this.colony, c);
+    const bandEl = sec.querySelector('[data-mood-band]');
+    if (bandEl.textContent !== d.band.text) bandEl.textContent = d.band.text;
+    sec.querySelector('[data-mood-value]').textContent = `${d.mood}/100`;
+    setBar(sec.querySelector('[data-mood-bar]'), d.mood);
+    setTone(sec.querySelector('.meter-row'), d.mood);
+    const arrow = d.trend > 0 ? '▲' : d.trend < 0 ? '▼' : '■';
+    const trendText = `${arrow} ${d.trendText[0].toUpperCase()}${d.trendText.slice(1)}${d.trend !== 0 ? ` (tiende a ${d.target})` : ''}`;
+    const trendEl = sec.querySelector('[data-mood-trend]');
+    if (trendEl.textContent !== trendText) trendEl.textContent = trendText;
+    const li = (text, cls = '') => `<li class="${cls}">${text}</li>`;
+    const impact = (n) => (n > 0 ? `+${n}` : `${n}`);
+    const causes = d.causes.map((x) => {
+      const adv = x.advice.map((a) => `<span class="mood-advice">${escapeHtml(a.text)}${a.action ? ` <button type="button" class="seg" data-mood-act='${escapeHtml(JSON.stringify(a.action))}'>${actionLabel(a.action)}</button>` : ''}</span>`).join('');
+      const block = x.blocker ? `<span class="mood-block">Impedimento: ${escapeHtml(x.blocker)}</span>` : '';
+      const trying = x.working ? `<span class="mood-trying">Está en ello: ${escapeHtml(c.activity)}</span>` : '';
+      return li(`<strong>${escapeHtml(x.text)}</strong> <em>${impact(x.impact)}${x.source === 'event' ? ' ahora' : ' al objetivo'}</em>${trying}${block}${adv}`, `mood-cause mood-cause--${x.sev}`);
+    });
+    const goods = d.positives.map((x) => li(`${escapeHtml(x.text)} <em>${impact(x.impact)}</em>`, 'mood-pos'));
+    const notes = [];
+    if (!d.causes.length) notes.push(li('Nada lo está afectando ahora.', 'mood-pos'));
+    if (d.recovery) notes.push(li(`Ya no tiene necesidades urgentes, pero su ánimo se recupera despacio hacia ${d.recovery.to} (~${Math.max(1, Math.round(d.recovery.seconds / 60))} min a velocidad ×1).`, 'mood-note'));
+    if (d.busyWith && d.causes.some((x) => x.source === 'need')) notes.push(li(`Ahora está ocupado con otra cosa: ${escapeHtml(d.busyWith)}.`, 'mood-note'));
+    const html = `<h4 class="mood-sub">Qué le pasa</h4><ul class="mood-list">${causes.join('')}${notes.join('')}</ul>${goods.length ? `<h4 class="mood-sub">Qué lo ayuda</h4><ul class="mood-list">${goods.join('')}</ul>` : ''}`;
+    const box = sec.querySelector('[data-mood-detail]');
+    if (box.dataset.html !== html) {
+      box.dataset.html = html;
+      box.innerHTML = html;
+      for (const b of box.querySelectorAll('[data-mood-act]')) b.addEventListener('click', () => document.dispatchEvent(new CustomEvent('colony:action', { detail: { ...JSON.parse(b.dataset.moodAct), colonist: c.id } })));
+    }
+  }
+
   // Opciones del selector "Asignar tarea": obras en curso, edificios con puesto y recolección.
   refreshOrderOptions(c) {
     const sites = this.colony.buildings.filter((b) => !b.done && !b.paused);
@@ -480,10 +547,10 @@ export class ColonyUI {
     const list = this.panel.querySelector('[data-order-list]');
     const row = (v, title, sub = '') => `<button type="button" class="task-row" data-task="${v}"><span>${escapeHtml(title)}</span>${sub ? `<small>${escapeHtml(sub)}</small>` : ''}</button>`;
     const group = (name, rows) => (rows.length ? `<p class="task-group">${name}</p>${rows.join('')}` : '');
-    list.innerHTML =
+    keepScroll(list, () => (list.innerHTML =
       group('Construir', sites.map((b) => row(`build:${b.id}`, `${b.upgrading ? 'Mejorar' : 'Construir'}: ${b.name}`))) +
       group('Recolectar', hasMarks ? [row('harvest:', 'Recolectar lo marcado')] : []) +
-      group('Puesto de trabajo', posts.map((b) => row(`work:${b.id}`, b.name, `${b.def.job} · ${b.workers.length}/${this.colony.crewNeeded(b)}`)));
+      group('Puesto de trabajo', posts.map((b) => row(`work:${b.id}`, b.name, `${b.def.job} · ${b.workers.length}/${this.colony.crewNeeded(b)}`)))));
     if (!list.innerHTML) list.innerHTML = '<p class="reason">No hay obras ni puestos disponibles.</p>';
   }
 
@@ -527,7 +594,7 @@ export class ColonyUI {
       </div>`;
     if (this.mobShown !== html) {
       this.mobShown = html;
-      this.panel.innerHTML = html;
+      keepScroll(this.panel, () => (this.panel.innerHTML = html));
       this.panel.querySelector('[data-close]').addEventListener('click', () => this.view.selectMob(null));
     }
   }

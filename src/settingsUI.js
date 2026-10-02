@@ -1,15 +1,19 @@
 import { logout, saveToken } from './auth.js';
+import { preserveScroll } from './keepScroll.js';
+import { cleanVillageName } from './sim/villageName.js';
 import { graphics, PRESETS, setQuality } from './graphics.js';
 
 // Configuración: datos de la cuenta, cerrar sesión y eliminar la cuenta (pide la contraseña y
 // borra el campamento y todo lo de la cuenta en el servidor).
 
 export class SettingsUI {
-  constructor({ net, playerName }) {
+  constructor({ net, playerName, colony }) {
     this.net = net;
+    this.colony = colony;
     this.playerName = playerName;
     this.modal = document.getElementById('settings-modal');
     this.panel = document.getElementById('settings-panel');
+    preserveScroll(this.panel);
     document.getElementById('settings-toggle').addEventListener('click', () => this.toggle());
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !this.modal.hidden) this.toggle(false);
@@ -24,6 +28,23 @@ export class SettingsUI {
     });
     net.on('error', (m) => {
       if (m.about === 'deleteAccount') this.say(m.message, true);
+    });
+  }
+
+  // El nombre de la aldea sólo se puede poner si ya fundaste tu campamento.
+  setupVillage() {
+    const box = this.panel.querySelector('[data-village]');
+    if (!box || !this.colony?.camp) return;
+    box.hidden = false;
+    const input = box.querySelector('[data-village-input]');
+    const msg = box.querySelector('[data-village-msg]');
+    input.value = this.colony.villageName || '';
+    box.querySelector('[data-village-form]').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const wanted = cleanVillageName(input.value);
+      this.colony.setVillageName(wanted);
+      input.value = wanted;
+      msg.textContent = wanted ? `Tu aldea se llama «${wanted}».` : 'Sin nombre propio: se muestra tu nombre de jugador.';
     });
   }
 
@@ -61,6 +82,15 @@ export class SettingsUI {
           </label>
           <p class="reason" data-quality-info>Ahora: <strong>${PRESETS[graphics.effective].label}</strong>. Cambiarla reinicia la pantalla del juego (tu aldea no se toca).</p>
         </section>
+        <section class="cp-section" data-village hidden>
+          <h3>Mi aldea</h3>
+          <p class="reason">El nombre de tu aldea lo ven todos los jugadores sobre tu campamento y en la lista del mundo (junto a tu nombre de jugador). Hasta 28 letras; vacío para volver a usar tu nombre.</p>
+          <form class="village-form" data-village-form>
+            <input class="order-input" type="text" maxlength="28" data-village-input placeholder="Nombre de tu aldea" autocomplete="off" />
+            <button type="submit" class="btn">Guardar nombre</button>
+          </form>
+          <p class="reason" data-village-msg role="status"></p>
+        </section>
         <section class="cp-section">
           <h3>Sesión</h3>
           <p class="reason">Jugando como <strong>${this.playerName.replace(/[&<>"]/g, '')}</strong>. Tu aldea sigue en el servidor aunque cierres la sesión.</p>
@@ -90,6 +120,7 @@ export class SettingsUI {
       this.say('Comprobando…');
       if (!this.net.send({ t: 'deleteAccount', password })) this.say('No hay conexión con el servidor.', true);
     });
+    this.setupVillage();
   }
 
   onClick(e) {

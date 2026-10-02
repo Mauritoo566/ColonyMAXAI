@@ -71,11 +71,12 @@ add({
   goingText: 'Va a por leña',
   workingText: 'Juntando leña',
   returningText: 'Lleva madera al almacén',
-  noResourceText: 'No quedan palos caídos cerca',
+  noResourceText: 'No quedan árboles ni ramas cerca (los brotes plantados todavía están creciendo)',
   scavenge: { yield: 1, text: 'Juntando ramas caídas', status: 'No quedan árboles cerca: junta ramas caídas (rinde menos)' },
+  replantFrom: 2, // desde el nivel 2 el leñador replanta lo que tala (el brote tarda en crecer)
   levels: [
-    L(1, 'Zona de leña', 'Un tocón y un montón de leña. Un colono junta palos y ramas caídos del suelo (en la Edad Primitiva no se talan árboles).', 'woodcutterModel1', { yield: 2 }),
-    L(2, 'Cabaña del leñador', 'Cabaña de troncos con hachas de piedra pulida (salen de la cantera): ahora sí se talan árboles y cada uno da más madera. Al talar, a veces caen semillas y nace un árbol nuevo cerca.', 'woodcutterModel2', { yield: 6, upgradeCost: { wood: 25, stone: 5, fiber: 6 }, requires: [{ id: 'quarry' }] }),
+    L(1, 'Zona de leña', 'Un tocón y un montón de leña. Un colono junta palos y ramas caídos del suelo (en la Edad Primitiva no se talan árboles).', 'woodcutterModel1', { yield: 2, noResourceText: 'No quedan palos caídos cerca. Al llegar a la Edad de Piedra, mejorá la zona de leña: se talan árboles y el leñador los replanta solo' }),
+    L(2, 'Cabaña del leñador', 'Cabaña de troncos con hachas de piedra pulida (salen de la cantera): ahora sí se talan árboles y cada uno da más madera. El leñador replanta lo que tala: el brote nace en el mismo lugar y tarda un rato en crecer (hasta entonces no se puede talar). Al talar, a veces caen semillas.', 'woodcutterModel2', { yield: 6, upgradeCost: { wood: 25, stone: 5, fiber: 6 }, requires: [{ id: 'quarry' }] }),
     L(4, 'Campamento maderero', 'Hachas de hierro y un tiro de bueyes para arrastrar troncos.', 'gen:cabin:4', { yield: 8, upgradeCost: { wood: 35, stone: 10, iron_tools: 2 } }),
     L(7, 'Gran maderería', 'Sierras de mano, rampas y almacén de troncos: la tala se organiza como una industria.', 'gen:hall:7', { yield: 11, upgradeCost: { wood: 40, planks: 20, iron_tools: 4 } }),
   ],

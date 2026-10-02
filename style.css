@@ -2729,3 +2729,22 @@ canvas.is-harvesting {
 .work-table select option { color: #111; }
 .link-btn { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; font-weight: 700; padding: 0; text-align: left; }
 .work-gaps { margin: 4px 0; padding-left: 18px; color: var(--warn, #e6b450); font-size: 12px; }
+
+/* Ánimo explicado en la ficha del colono */
+.mood-trend { margin: 4px 0 8px; font-size: 12px; opacity: 0.85; }
+.mood-sub { margin: 8px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.7; }
+.mood-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.mood-list li { display: grid; gap: 2px; padding: 6px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.05); font-size: 13px; }
+.mood-list li em { font-style: normal; opacity: 0.75; font-size: 12px; }
+.mood-cause--3 { border-left: 3px solid #e5604a; }
+.mood-cause--2 { border-left: 3px solid #e0a24a; }
+.mood-cause--1 { border-left: 3px solid #d8c75a; }
+.mood-cause--0 { border-left: 3px solid #8a8f98; }
+.mood-pos { border-left: 3px solid #5fb878; }
+.mood-note { opacity: 0.85; }
+.mood-block { color: #f0a090; }
+.mood-trying { color: #9fd3a8; }
+.mood-advice { opacity: 0.9; }
+.mood-advice .seg { margin-left: 6px; }
+.guide-alert.is-clickable { cursor: pointer; }
+.guide-alert.is-clickable:hover { filter: brightness(1.15); }

@@ -50,7 +50,7 @@ export class OtherCamps {
       if (typeof p?.name !== 'string') continue;
       const camp = parseCamp(p.camp);
       const isMe = p.id === this.myId;
-      this.players.push({ id: p.id, name: p.name.slice(0, 20), online: !!p.online, camp, age: p.age | 0 || 1, population: p.population | 0, weather: typeof p.w === 'string' ? p.w : null, flag: typeof p.flag === 'string' ? p.flag : null, isMe });
+      this.players.push({ id: p.id, name: p.name.slice(0, 20), village: typeof p.village === 'string' ? p.village.slice(0, 28) : null, online: !!p.online, camp, age: p.age | 0 || 1, population: p.population | 0, weather: typeof p.w === 'string' ? p.w : null, flag: typeof p.flag === 'string' ? p.flag : null, isMe });
       if (isMe || !camp) continue;
       seen.add(p.id);
       this.upsert(p, camp);
@@ -92,8 +92,10 @@ export class OtherCamps {
       applyFlag(entry.object, p.flag);
     }
     entry.name = p.name.slice(0, 20);
-    entry.label.querySelector('strong').textContent = entry.name;
-    entry.label.querySelector('small').textContent = ` · ${ageInfo(p.age | 0 || 1).name} · ${p.population | 0} colonos${p.online ? '' : ' · desconectado'}`;
+    entry.village = typeof p.village === 'string' && p.village ? p.village.slice(0, 28) : null;
+    // Lo que se ve sobre la aldea es su nombre; el del jugador va aparte (si no tiene nombre de aldea, el del jugador).
+    entry.label.querySelector('strong').textContent = entry.village ?? entry.name;
+    entry.label.querySelector('small').textContent = ` · ${entry.village ? `de ${entry.name} · ` : ''}${ageInfo(p.age | 0 || 1).name} · ${p.population | 0} colonos${p.online ? '' : ' · desconectado'}`;
     // Edificios (en coordenadas de su campamento).
     const list = Array.isArray(p.buildings) ? p.buildings.slice(0, 80) : [];
     const buildingsKey = JSON.stringify(list);
@@ -150,7 +152,7 @@ export class OtherCamps {
     let best = null;
     for (const entry of this.camps.values()) {
       const distance = entry.dir.angleTo(dir) * RADIUS;
-      if (!best || distance < best.distance) best = { weather: entry.weather, distance, name: entry.name };
+      if (!best || distance < best.distance) best = { weather: entry.weather, distance, name: entry.name, village: entry.village };
     }
     return best;
   }

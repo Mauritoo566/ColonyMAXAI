@@ -1,4 +1,5 @@
 import { guideState } from './guide.js';
+import { preserveScroll } from './keepScroll.js';
 import { storageKey } from './storage.js';
 
 // Tarjeta de la guía: el objetivo actual con su explicación, el progreso, la acción para hacerlo y
@@ -16,6 +17,14 @@ export class GuideUI {
     this.actions = actions;
     this.onNotice = onNotice;
     this.card = document.getElementById('guide-card');
+    preserveScroll(this.card);
+    const open = (e) => {
+      const li = e.target.closest?.('[data-alert-ids]');
+      if (!li || (e.type === 'keydown' && e.key !== 'Enter')) return;
+      document.dispatchEvent(new CustomEvent('colony:focus-colonists', { detail: { id: li.dataset.alertKey, ids: li.dataset.alertIds.split(',').map(Number) } }));
+    };
+    this.card.addEventListener('click', open);
+    this.card.addEventListener('keydown', open);
     this.timer = 0;
     this.key = '';
     this.folded = false;
@@ -63,7 +72,7 @@ export class GuideUI {
     // La estructura sólo se rehace si cambia algo importante; los números y notas se actualizan en el sitio
     // (así un clic en un botón nunca se pierde porque la tarjeta se redibujó a mitad).
     const discoveryOn = !!colony.discovery;
-    const key = JSON.stringify([this.folded, this.showAll, state.steps.map((s) => [s.id, s.done, !!s.note]), alerts.map((a) => [a.id, a.level]), discoveryOn, state.current?.id]);
+    const key = JSON.stringify([this.folded, this.showAll, state.steps.map((s) => [s.id, s.done, !!s.note]), alerts.map((a) => [a.id, a.level, a.ids?.join(',')]), discoveryOn, state.current?.id]);
     if (key === this.key) {
       for (const s of state.steps) for (const el of this.card.querySelectorAll(`[data-note="${s.id}"]`)) if (el.textContent !== (s.note ?? '')) el.textContent = s.note ?? '';
       const bar = this.card.querySelector('[data-disc-bar]');
@@ -75,7 +84,7 @@ export class GuideUI {
     const { guide, steps, current, done } = state;
     const cur = current;
     const alertHtml = alerts.length
-      ? `<ul class="guide-alerts">${alerts.slice(0, 4).map((a) => `<li class="guide-alert guide-alert--${a.level}"><strong data-alert="${a.id}">${esc(a.text)}</strong><span>${esc(a.hint)}</span></li>`).join('')}</ul>`
+      ? `<ul class="guide-alerts">${alerts.slice(0, 4).map((a) => `<li class="guide-alert guide-alert--${a.level}${a.ids ? ' is-clickable' : ''}" ${a.ids ? `data-alert-ids="${a.ids.join(',')}" data-alert-key="${a.id}" title="Tocá para ir a los afectados (${a.ids.length})" tabindex="0"` : ''}><strong data-alert="${a.id}">${esc(a.text)}</strong><span>${esc(a.hint)}</span></li>`).join('')}</ul>`
       : '';
     const discovery = colony.discovery;
     const problem = cur?.id === 'discovery' && !colony.milestones.has('stone_tool') && !discovery ? colony.discoveryProblem() : null;

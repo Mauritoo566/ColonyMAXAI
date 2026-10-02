@@ -4,12 +4,14 @@ import { DAY_LENGTH_SECONDS } from '../daynight.js';
 import { AGES, ageInfo, nextAgeStatus } from '../ages.js';
 import { insideRect, rectDistance, upgradeRect } from '../rect.js';
 import { temperature, biomeAt, BIOMES } from '../biomes.js';
-import { createProfile, updateNeeds, hasTrait, wellbeing, addLog, SKILLS, TRAITS, completeSkill, completeSkills } from '../needs.js';
+import { nextBand, nextTrend, collectiveAlerts } from './wellbeing.js';
+import { cleanVillageName } from './villageName.js';
+import { createProfile, updateNeeds, addMoodEvent, hasTrait, wellbeing, addLog, SKILLS, TRAITS, completeSkill, completeSkills } from '../needs.js';
 import { appearanceFromGenes, gene } from '../genes.js';
 import { RESOURCE_TYPES } from '../resourceTypes.js';
 import { SEASON_AMBIENT_AMP, effectiveTemperature, growthFactor, seasonAt, snowCover } from './calendar.js';
 import { TILE_ANGLE, generateTile, generateCampGrove, GROVE_KEY, SPROUT_KEY, GROVE_TREES, sproutItem, tileFromItems } from '../resourceGen.js';
-import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, taskKey, siteStatus, orderProblem, PRIORITY } from '../ai.js';
+import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, taskKey, siteStatus, orderProblem, PRIORITY, NEED_OF_TASK, failReason } from '../ai.js';
 import { campLayout, campObstacles, campZone } from './campLayout.js';
 import { BUILDINGS, levelOf } from './buildingTypes.js';
 const STOCK_NAMES = GOOD_NAMES;
@@ -75,6 +77,10 @@ const WANDER = [6, 70]; // pasean por el claro y sus alrededores (metros desde l
 const HEIGHT_CELL = 2; // metros por celda de la caché de alturas
 const MAX_STEP = 0.1; // segundos por paso de simulación
 const FIRE_WARMTH_RADIUS = 7; // metros: la fogata calienta a quien esté más cerca
+const CROWD_CELL = 6; // metros: tamaño de celda del índice de colonos cercanos
+const QUEUE_REACH = 3; // metros: cerca del destino se hace cola si el sitio está ocupado
+const QUEUE_SLOT = 1.7; // metros de más que se aceptan para tomar un puesto libre cerca del objetivo
+const QUEUE_PATIENCE = 25; // segundos esperando turno antes de buscar otra cosa
 const COMPANY_RADIUS = 5; // metros: a esta distancia se hacen compañía
 const MAX_STEPS_PER_UPDATE = 80; // tope de pasos de simulación por llamada (a ×60)
 const SPOT_RADIUS = 230; // metros: recursos que los colonos conocen alrededor del campamento
@@ -82,8 +88,9 @@ const CAMP_CLEAR = 45; // alrededor del campamento no hay recursos naturales (re
 const REGROW_SECONDS = 1.5 * DAY_LENGTH_SECONDS; // las bayas y setas vuelven a crecer en día y medio
 const SAPLING_GROW_SECONDS = 0.75 * DAY_LENGTH_SECONDS; // un árbol plantado tarda en crecer
 const SEED_CHANCE = 0.45; // al talar un árbol, probabilidad de que caigan semillas y nazca uno nuevo
-const MAX_SPROUTS = 50; // vegetación nueva viva a la vez (lluvia, semillas plantadas, ramas y piedras del suelo)
-const SPROUT_ARRAY_MAX = 160; // al llegar aquí se limpian del arreglo los brotes ya consumidos
+const MAX_SPROUTS = 50; // vegetación espontánea viva a la vez (lluvia, ramas y piedras del suelo)
+const MAX_PLANTED = 100; // árboles plantados (por colonos o replantados por el leñador) vivos a la vez; no gastan el cupo de lo espontáneo
+const SPROUT_ARRAY_MAX = 260; // al llegar aquí se limpian del arreglo los brotes ya consumidos
 const SPROUT_EVERY = 25; // segundos de juego entre brotes con lluvia fuerte
 const ASSIGN_EVERY = 1; // segundos entre repasos de trabajadores libres
 
@@ -221,6 +228,7 @@ export class ColonySim {
     this.expansions = 0; // ampliaciones de territorio compradas
     this.ageChangedAt = 0; // hora de juego del último cambio de edad (transición suave)
     this.flag = DEFAULT_FLAG; // bandera del mástil (flags.js)
+    this.villageName = ''; // nombre de la aldea que ven todos los jugadores (vacío = se muestra el del jugador)
     this.nextColonistId = START_COLONISTS;
     this.staticsRevision = 0; // sube con cada nacimiento (el servidor manda entonces los datos fijos)
     this.birthRand = seededRandom(1);
@@ -304,6 +312,7 @@ export class ColonySim {
       simTime -= dt;
       this.gameTime += dt;
       env.gameTime = this.gameTime;
+      this.buildCrowd();
       const dying = [];
       for (const c of this.colonists) {
         c.companion = c.sleeping || c.inside ? null : this.nearestColonist(c, COMPANY_RADIUS);
@@ -318,9 +327,12 @@ export class ColonySim {
           companion: c.companion,
           walking: c.walking,
           time,
+          gameTime: this.gameTime,
           absent,
           homeless: c.home == null && (c.growth ?? 1) >= 1 ? homeless : 0,
         });
+        c.moodBand = nextBand(c.moodBand, c.needs.mood);
+        c.moodTrend = nextTrend(c.moodTrend, c.needs.mood, c.moodTarget ?? c.needs.mood);
         this.step(c, dt, env);
         if (!absent && c.health <= 0.01) dying.push(c);
       }
@@ -538,7 +550,7 @@ export class ColonySim {
     this.alertTimer = (this.alertTimer ?? 0) - gameDt;
     if (this.alertTimer > 0) return;
     this.alertTimer = 5;
-    const list = alertsOf(this);
+    const list = [...alertsOf(this), ...collectiveAlerts(this)];
     this.alertsView = list;
     const keys = new Set(list.map((a) => `${a.id}:${a.level}`));
     if (!absent) for (const a of list) if (!this.alertKeys.has(`${a.id}:${a.level}`)) this.emit('notice', `${a.text}. ${a.hint}`);
@@ -604,6 +616,7 @@ export class ColonySim {
     this.expansions = 0;
     this.ageChangedAt = 0;
     this.flag = DEFAULT_FLAG;
+    this.villageName = '';
     this.nextColonistId = START_COLONISTS;
     this.staticsRevision = 0;
     this.refreshObstacles();
@@ -736,6 +749,7 @@ export class ColonySim {
       health: dyn.health ?? 100,
       log: dyn.log ?? [],
       flags: dyn.flags ?? {},
+      moodEvents: dyn.moodEvents?.length ? dyn.moodEvents.map((e) => ({ ...e })).slice(0, 4) : undefined,
       chatCooldown: 0,
       x,
       z,
@@ -804,14 +818,13 @@ export class ColonySim {
   nearestColonist(c, radius) {
     let best = null;
     let bestD = radius;
-    for (const o of this.colonists) {
-      if (o === c) continue;
-      const d = Math.hypot(o.x - c.x, o.z - c.z);
+    this.eachNear(c, Math.min(radius, CROWD_CELL), (o, d) => {
       if (d < bestD) {
         best = o;
         bestD = d;
       }
-    }
+      return false;
+    });
     return best;
   }
 
@@ -924,8 +937,60 @@ export class ColonySim {
     return true;
   }
 
+  // ---- Colonos entre colonos ------------------------------------------------------------
+  // Índice espacial de quién está a la vista (se rehace en cada paso de simulación): evita comparar a todos con todos.
+  buildCrowd() {
+    const g = (this.crowd ??= { cell: CROWD_CELL, map: new Map() });
+    g.map.clear();
+    for (const o of this.colonists) {
+      if (o.sleeping || o.inside) continue;
+      const key = Math.floor(o.x / g.cell) * 100003 + Math.floor(o.z / g.cell);
+      const list = g.map.get(key);
+      if (list) list.push(o);
+      else g.map.set(key, [o]);
+    }
+  }
+
+  // Recorre los colonos a menos de "radius" (≤ el tamaño de celda) de c; fn(o, distancia) devuelve true para cortar.
+  eachNear(c, radius, fn) {
+    const g = this.crowd;
+    if (!g) return;
+    const ix = Math.floor(c.x / g.cell);
+    const iz = Math.floor(c.z / g.cell);
+    for (let i = ix - 1; i <= ix + 1; i++) {
+      for (let j = iz - 1; j <= iz + 1; j++) {
+        const list = g.map.get(i * 100003 + j);
+        if (!list) continue;
+        for (const o of list) {
+          if (o === c) continue;
+          const d = Math.hypot(o.x - c.x, o.z - c.z);
+          if (d < radius && fn(o, d)) return;
+        }
+      }
+    }
+  }
+
+  // Un lugar libre cerca de c, hacia donde va (para apartarse de un atasco): sin obstáculos, agua ni colonos encima.
+  detourPoint(c, gx, gz) {
+    const base = Math.atan2(gz - c.z, gx - c.x);
+    for (let r = 1.6; r <= 4.2; r += 0.8) {
+      for (const turn of [-1.2, 1.2, -0.7, 0.7, -1.9, 1.9, 0]) {
+        const a = base + turn;
+        const px = c.x + Math.cos(a) * r;
+        const pz = c.z + Math.sin(a) * r;
+        if (!this.walkable(px, pz, COLONIST_RADIUS + 0.2)) continue;
+        let busy = false;
+        this.eachNear({ x: px, z: pz }, COLONIST_RADIUS * 2.4, (o) => (busy = o !== c));
+        if (!busy) return { x: px, z: pz };
+      }
+    }
+    return null;
+  }
+
   // Camina hacia (tx, tz) esquivando obstáculos y a los demás colonos.
-  // Devuelve 'arrived', 'moving' o 'stuck'.
+  // Devuelve 'arrived', 'moving' o 'stuck'. Un colono es un obstáculo móvil: se rodea, se le cede el paso por una regla
+  // estable (quien tiene el número menor pasa; el otro se aparta a su derecha y afloja) y, si algo lo frena de verdad, se
+  // prueba apartarse, buscar un hueco, recalcular la ruta y, sólo al final, se da por atascado (la tarea se suspende).
   walk(c, tx0, tz0, dt, stopDistance = 0.6) {
     // Con muros en medio se va por los portones (ruta por waypoints).
     const wp = this.pathTarget(c, tx0, tz0);
@@ -933,21 +998,132 @@ export class ColonySim {
       const r = this.walk(c, wp.x, wp.z, dt, 1.2);
       return r === 'arrived' ? 'moving' : r;
     }
-    const tx = tx0 - c.x;
-    const tz = tz0 - c.z;
-    const dist = Math.hypot(tx, tz);
     c.walking = true;
-    if (dist < stopDistance) {
-      c.walking = false;
-      c.stuckTimer = 0;
-      c.lastProgress = Infinity;
-      return 'arrived';
+    const finalDist = Math.hypot(tx0 - c.x, tz0 - c.z);
+    if (finalDist < stopDistance) return this.settle(c, dt);
+    // Cola: ya cerca del destino y alguien parado ocupa el sitio: se toma el puesto libre más próximo en vez de empujar.
+    if (finalDist < stopDistance + QUEUE_REACH && (c.blocked ?? 0) > 0.5) {
+      let taken = false;
+      this.eachNear(c, 1.3, (o) => (taken = !o.moving && Math.hypot(o.x - tx0, o.z - tz0) < finalDist - 0.15));
+      if (taken) {
+        c.waiting = true;
+        if (finalDist < stopDistance + QUEUE_SLOT) return this.settle(c, dt);
+        c.queued = (c.queued ?? 0) + dt;
+        if (c.queued > QUEUE_PATIENCE) return this.giveUp(c, 'Había demasiada gente en el destino y no se liberó el sitio');
+        return 'moving';
+      }
     }
-    let dx = tx / dist;
-    let dz = tz / dist;
-    const steer = (ox, oz, r, strength) => {
-      const px = c.x - ox;
-      const pz = c.z - oz;
+    c.queued = 0;
+    // Desvío temporal para salir de un atasco: primero se va a ese hueco y luego se sigue al destino.
+    let tx = tx0;
+    let tz = tz0;
+    if (c.detour) {
+      c.detour.t -= dt;
+      if (c.detour.t <= 0 || Math.hypot(c.detour.x - c.x, c.detour.z - c.z) < 0.5) c.detour = null;
+      else {
+        tx = c.detour.x;
+        tz = c.detour.z;
+      }
+    }
+    const moved = this.moveToward(c, tx, tz, dt, tx === tx0 ? stopDistance : 0.4);
+    // Seguimiento del progreso real (no de la distancia en línea recta): sin avance, sube "blocked".
+    const nominal = this.speedOf(c) * dt;
+    if (moved < nominal * 0.25) c.blocked = (c.blocked ?? 0) + dt;
+    else c.blocked = Math.max(0, (c.blocked ?? 0) - dt * 2);
+    // Moverse sin acercarse (lo empujan de un lado a otro) también es estar atascado: se mide el avance hacia el destino.
+    const prog = c.progress;
+    if (!prog || prog.tx !== tx0 || prog.tz !== tz0) {
+      c.progress = { tx: tx0, tz: tz0, best: finalDist, t: 0 };
+    } else if (finalDist < prog.best - 0.3) {
+      prog.best = finalDist;
+      prog.t = 0;
+    } else {
+      prog.t += dt;
+      if (prog.t > 4) c.blocked = Math.max(c.blocked, 1 + (prog.t - 4));
+    }
+    c.moveTick = c.moveTick || moved > nominal * 0.3;
+    const b = c.blocked;
+    if (b > 12) return this.giveUp(c, 'No logra pasar: algo le cierra el camino');
+    if (b > 7 && !c.recalc) {
+      c.recalc = true; // recalcular el tramo
+      c.path = null;
+      c.detour = null;
+    } else if (b > 3.5 && !c.detour) {
+      const spot = this.detourPoint(c, tx0, tz0);
+      if (spot) c.detour = { x: spot.x, z: spot.z, t: 3 };
+    } else if (b > 1 && !c.detour) {
+      // Apartarse un paso a un costado para dejar pasar.
+      const dx = tx0 - c.x;
+      const dz = tz0 - c.z;
+      const l = Math.hypot(dx, dz) || 1;
+      for (const side of [1, -1]) {
+        const px = c.x + (dz / l) * side * 1.3;
+        const pz = c.z - (dx / l) * side * 1.3;
+        if (this.walkable(px, pz, COLONIST_RADIUS + 0.1)) {
+          c.detour = { x: px, z: pz, t: 1.6 };
+          break;
+        }
+      }
+    }
+    if (b < 0.2) c.recalc = false;
+    if (b > 1.2) c.waiting = true;
+    return 'moving';
+  }
+
+  speedOf(c) {
+    return WALK_SPEED * (0.85 + gene(c.genome, 'agility') * 0.3) * roadSpeed(this, c.x, c.z);
+  }
+
+  // Llegar sin quedar encimado a otro que ya está parado: primero se corre al hueco libre más cercano (unos segundos como mucho).
+  settle(c, dt) {
+    let over = false;
+    this.eachNear(c, COLONIST_RADIUS * 1.7, () => (over = true));
+    c.settleT = (c.settleT ?? 0) + dt;
+    if (over && c.settleT < 4) {
+      this.separate(c);
+      c.walking = true;
+      return 'moving';
+    }
+    c.settleT = 0;
+    return this.arrive(c);
+  }
+
+  arrive(c) {
+    c.walking = false;
+    c.progress = null;
+    c.blocked = 0;
+    c.queued = 0;
+    c.recalc = false;
+    c.detour = null;
+    return 'arrived';
+  }
+
+  // Suspende la tarea actual por un bloqueo real: la IA elegirá otra cosa y reintentará pasado un rato.
+  giveUp(c, why) {
+    c.progress = null;
+    c.blocked = 0;
+    c.queued = 0;
+    c.recalc = false;
+    c.detour = null;
+    c.stuckWhy = why;
+    return 'stuck';
+  }
+
+  // Un paso hacia (tx, tz) con evasión local. Devuelve cuánto avanzó de verdad.
+  moveToward(c, tx, tz, dt, stopDistance) {
+    const gx = tx - c.x;
+    const gz = tz - c.z;
+    const dist = Math.hypot(gx, gz);
+    if (dist < 1e-4) return 0;
+    const ox = c.x;
+    const oz = c.z;
+    let dx = gx / dist;
+    let dz = gz / dist;
+    const gdx = dx;
+    const gdz = dz;
+    const steer = (px0, pz0, r, strength) => {
+      const px = c.x - px0;
+      const pz = c.z - pz0;
       const d = Math.hypot(px, pz) || 1e-3;
       const reach = r + COLONIST_RADIUS + 1.8;
       if (d > reach) return;
@@ -961,16 +1137,47 @@ export class ColonySim {
       dz += (pz / d) * w * 0.6 - odx * side * w;
     };
     for (const o of this.obstacles) steer(o.x, o.z, o.r, 1.6);
-    for (const other of this.colonists) {
-      if (other !== c && !other.sleeping) steer(other.x, other.z, COLONIST_RADIUS, 1.2);
-    }
-    const len = Math.hypot(dx, dz) || 1;
+    // Los demás colonos: quien tiene prioridad apenas se desvía; el otro rodea por su derecha (así dos que vienen de
+    // frente no eligen el mismo lado) y afloja si lo tiene encima, para que el primero pase.
+    let slow = 1;
+    const reach = COLONIST_RADIUS * 2 + 1.6;
+    let lx = 0;
+    let lz = 0;
+    this.eachNear(c, reach, (o, d) => {
+      const px = c.x - o.x;
+      const pz = c.z - o.z;
+      const ahead = -(px * gdx + pz * gdz) / (d || 1e-3);
+      if (ahead < -0.1) return false; // quedó atrás
+      const w = (reach - d) / reach;
+      const mine = o.moving && c.id < o.id; // los dos andan y yo tengo el número menor
+      const k = mine ? 0.25 : 1.5;
+      const f = w * k * Math.min(1, ahead + 0.4);
+      lx += gdz * f; // derecha del rumbo
+      lz -= gdx * f;
+      if (!mine && o.moving && d < COLONIST_RADIUS * 2.4 && ahead > 0.6) slow = Math.min(slow, 0.3);
+      return false;
+    });
+    dx += lx;
+    dz += lz;
+    let len = Math.hypot(dx, dz) || 1;
     dx /= len;
     dz /= len;
+    // Nunca de espaldas al destino mientras esquiva: el giro se limita a unos 75°.
+    const dot = dx * gdx + dz * gdz;
+    if (dot < 0.25) {
+      const sx = dx - dot * gdx;
+      const sz = dz - dot * gdz;
+      const sl = Math.hypot(sx, sz) || 1;
+      dx = gdx * 0.25 + (sx / sl) * 0.968;
+      dz = gdz * 0.25 + (sz / sl) * 0.968;
+      len = Math.hypot(dx, dz) || 1;
+      dx /= len;
+      dz /= len;
+    }
 
-    const speed = WALK_SPEED * (0.85 + gene(c.genome, 'agility') * 0.3) * roadSpeed(this, c.x, c.z);
-    let nx = c.x + dx * Math.min(speed * dt, dist);
-    let nz = c.z + dz * Math.min(speed * dt, dist);
+    const step = Math.min(this.speedOf(c) * slow * dt, Math.max(0, dist - stopDistance * 0.5));
+    let nx = c.x + dx * step;
+    let nz = c.z + dz * step;
     // Nunca dentro de un obstáculo: se empuja hasta su borde.
     for (const o of this.obstacles) {
       const px = nx - o.x;
@@ -986,17 +1193,30 @@ export class ColonySim {
       c.x = nx;
       c.z = nz;
     }
+    this.separate(c);
     this.face(c, Math.atan2(dx, dz), dt);
+    return Math.hypot(c.x - ox, c.z - oz);
+  }
 
-    // Si no avanza, está atascado.
-    c.stuckTimer += dt;
-    if (c.stuckTimer > 3) {
-      const stuck = c.lastProgress - dist < 1;
-      c.lastProgress = dist;
-      c.stuckTimer = 0;
-      if (stuck) return 'stuck';
-    }
-    return 'moving';
+  // Separación: si dos colonos quedaron encimados, el de menos prioridad se corre un poco (o el que se mueve, si el otro
+  // está parado). Sólo a un sitio transitable, sin entrar en obstáculos ni en el agua.
+  separate(c) {
+    const min = COLONIST_RADIUS * 1.7;
+    this.eachNear(c, min, (o, d) => {
+      const yields = !o.moving ? true : c.id > o.id;
+      if (!yields) return false;
+      const px = c.x - o.x || (c.id > o.id ? 1e-3 : -1e-3);
+      const pz = c.z - o.z;
+      const l = Math.hypot(px, pz) || 1e-3;
+      const push = Math.min((min - d) * 0.5, 0.06);
+      const nx = c.x + (px / l) * push;
+      const nz = c.z + (pz / l) * push;
+      if (this.walkable(nx, nz, COLONIST_RADIUS * 0.9)) {
+        c.x = nx;
+        c.z = nz;
+      }
+      return false;
+    });
   }
 
   face(c, angle, dt) {
@@ -1016,6 +1236,8 @@ export class ColonySim {
   step(c, dt, env) {
     c.walking = false;
     c.working = false;
+    c.waiting = false;
+    c.moveTick = false;
     c.thinkTimer -= dt;
     if (c.thinkTimer <= 0 || !c.task) {
       c.thinkTimer = 1.5 + c.rand() * 0.5;
@@ -1025,12 +1247,27 @@ export class ColonySim {
     if (c.task) {
       const result = runTask(this, c, c.task, dt, env);
       if (result === 'done' || result === 'failed') {
-        if (result === 'failed') c.avoid = { key: taskKey(c.task), until: env.gameTime + 40 };
+        const key = taskKey(c.task);
+        const need = NEED_OF_TASK[c.task.type];
+        if (result === 'failed') {
+          // Reintentar la misma tarea tarda cada vez más (40, 80, 160 s) salvo que cambie un obstáculo (wallRev).
+          const n = c.avoidN?.key === key ? c.avoidN.n + 1 : 1;
+          c.avoidN = { key, n };
+          c.avoid = { key, until: env.gameTime + Math.min(160, 40 * 2 ** (n - 1)), rev: this.wallRev };
+          if (need) c.block = { need, why: failReason(this, c, c.task), at: env.gameTime };
+        } else {
+          if (c.avoidN?.key === key) c.avoidN = null;
+          if (need && c.block?.need === need) c.block = null;
+        }
         endTask(this, c, c.task);
         c.task = null;
         c.thinkTimer = result === 'failed' ? 0.5 : 0;
       }
     }
+    if (c.block && (c.needs[c.block.need] >= 75 || env.gameTime - c.block.at > 240)) c.block = null;
+    // Lo que se ve moverse es el desplazamiento real, no la intención de caminar: así un colono frenado no camina en el lugar.
+    c.moveEma = (c.moveEma ?? 0) + ((c.moveTick ? 1 : 0) - (c.moveEma ?? 0)) * Math.min(1, dt * 5);
+    c.moving = c.moving ? c.moveEma > 0.2 : c.moveEma > 0.5;
     // Punto seguro: sin tarea de trabajo en curso (o con una orden directa) se aplica el cambio de especialidades.
     if (c.pendingSpec && (!c.task || !WORK_TYPES.has(c.task.type) || c.task.ordered)) this.applySpec(c);
     if (isWorker(c) && !c.spec) specOf(this, c);
@@ -1038,6 +1275,7 @@ export class ColonySim {
     if (c.working && c.task && WORK_TYPES.has(c.task.type)) this.practice(c, c.task, dt);
     c.activity = c.task ? taskActivity(this, c, c.task) : 'Descansando un momento';
     if (c.task?.type === 'wander' && c.idle) c.activity = c.idle;
+    if (c.waiting && c.task) c.activity += ' (esperando paso)';
     c.orderState = !c.order ? null : c.task?.ordered ? 'active' : 'interrupted';
     if (c.orderState === 'interrupted') c.activity += ' (orden en pausa: necesidad urgente)';
   }
@@ -1231,7 +1469,7 @@ export class ColonySim {
       for (let j = j0; j <= j1 && j < j0 + cols; j++) {
         const jw = ((j % cols) + cols) % cols;
         const key = i * 1_000_000 + jw;
-        addTile(key, generateTile(i, jw, cols), CAMP_CLEAR + 2);
+        addTile(key, generateTile(i, jw, cols), CAMP_CLEAR);
       }
     }
     // Arboleda del campamento: recursos garantizados entre 50 y 100 m de la fogata.
@@ -1466,6 +1704,16 @@ export class ColonySim {
     return this.layout.storage;
   }
 
+  // Ponerle nombre a la aldea (en el navegador se manda al servidor, que lo valida y lo guarda).
+  setVillageName(name) {
+    if (!this.camp) return false;
+    if (this.remote) {
+      this.remote('setVillageName', [name]);
+      return true;
+    }
+    return this.applyCommand('setVillageName', [name]);
+  }
+
   // Cambiar la bandera del mástil (en el navegador se manda al servidor).
   setFlag(id) {
     if (typeof id !== 'string' || !FLAG_IDS.has(id) || !this.camp) return false;
@@ -1506,7 +1754,7 @@ export class ColonySim {
     }
     for (const c of this.colonists) {
       addLog(c, time, `Celebró la llegada de la ${status.next.name}`);
-      c.needs.mood = Math.min(100, c.needs.mood + 25);
+      addMoodEvent(c, 'age', 25, this.gameTime);
     }
     this.emit('changed');
     return true;
@@ -1604,7 +1852,7 @@ export class ColonySim {
     for (const s of this.spots) {
       if (s.kind === 'food' && s.readyAt > this.gameTime) s.readyAt -= boost;
     }
-    if (rain < 0.3 || this.liveSprouts() >= MAX_SPROUTS) return;
+    if (rain < 0.3 || this.wildSprouts() >= MAX_SPROUTS) return;
     this.sproutTimer += gameDt * rain;
     if (this.sproutTimer < SPROUT_EVERY) return;
     this.sproutTimer = 0;
@@ -1652,7 +1900,7 @@ export class ColonySim {
   // Un lugar donde un colono puede plantar una semilla: cerca de la aldea, libre de edificios,
   // zona de acopio, caminos y otros árboles. Null si no hay ninguno (o ya hay demasiados brotes).
   plantSpotFor(c) {
-    if (this.remote || this.liveSprouts() >= MAX_SPROUTS) return null;
+    if (this.remote || this.plantedSprouts() >= MAX_PLANTED) return null;
     for (let k = 0; k < 8; k++) {
       const a = c.rand() * Math.PI * 2;
       const r = CAMP_CLEAR + 4 + c.rand() * 60;
@@ -1689,6 +1937,55 @@ export class ColonySim {
     return this.sprouts.length - (this.removed.get(SPROUT_KEY)?.size ?? 0);
   }
 
+  // Los espontáneos (lluvia, ramas, piedrecitas) y los plantados (tienen "sown") se cuentan aparte: un bosque plantado
+  // no debe dejar sin ramas ni brotes a la aldea.
+  countSprouts(planted) {
+    const gone = this.removed.get(SPROUT_KEY);
+    let n = 0;
+    for (let i = 0; i < this.sprouts.length; i++) if (!gone?.has(i) && Number.isFinite(this.sprouts[i].sown) === planted) n++;
+    return n;
+  }
+
+  wildSprouts() {
+    return this.countSprouts(false);
+  }
+
+  plantedSprouts() {
+    return this.countSprouts(true);
+  }
+
+  // El leñador replanta: donde cayó un árbol nace un brote de la misma especie, que tarda en crecer y no se puede talar
+  // hasta entonces (se dibuja pequeño). Sólo en el servidor. Devuelve true si plantó.
+  replantAt(spot, gameTime) {
+    if (this.remote || !spot?.tree || !this.camp) return false;
+    if (this.plantedSprouts() >= MAX_PLANTED) return false;
+    const typeIndex = RESOURCE_TYPES.findIndex((t) => t.id === spot.type);
+    const info = RESOURCE_TYPES[typeIndex];
+    if (!info) return false;
+    for (let k = 0; k < 4; k++) {
+      // Junto al tocón (a veces unos pasos a un lado, para no quedar exactamente igual).
+      const x = spot.x + (k ? (Math.random() - 0.5) * 3 : 0);
+      const z = spot.z + (k ? (Math.random() - 0.5) * 3 : 0);
+      if (this.resourceSiteProblem(x, z)) continue;
+      const p = new THREE.Vector3();
+      this.toDirection(x, z, p);
+      this.addSprout({
+        typeIndex,
+        d: [p.x, p.y, p.z],
+        h: surfaceHeight(p),
+        yaw: Math.random() * Math.PI * 2,
+        scale: info.scale[0] + Math.random() * (info.scale[1] - info.scale[0]),
+        tint: 0.85 + Math.random() * 0.3,
+        rank: 0,
+        readyAt: gameTime + SAPLING_GROW_SECONDS,
+        sown: gameTime,
+      });
+      this.emit('changed');
+      return true;
+    }
+    return false;
+  }
+
   addSprout(item) {
     if (this.sprouts.length >= SPROUT_ARRAY_MAX && !this.remote) this.compactSprouts();
     this.staticsRevision++;
@@ -1700,14 +1997,18 @@ export class ColonySim {
   // Ramas caídas o piedrecitas sueltas junto a un edificio de recolección que se quedó sin recursos:
   // son recursos de verdad (se ven y se consumen), no un trabajo sobre el suelo vacío.
   spawnLitter(kind, near) {
-    if (this.remote || this.liveSprouts() >= MAX_SPROUTS) return null;
+    if (this.remote || this.wildSprouts() >= MAX_SPROUTS) return null;
     const type = kind === 'stone' ? 'pebbles' : 'sticks';
     const typeIndex = RESOURCE_TYPES.findIndex((t) => t.id === type);
     const info = RESOURCE_TYPES[typeIndex];
     const p = new THREE.Vector3();
-    for (let k = 0; k < 10; k++) {
+    // Dentro de su alcance (lo que el edificio alcanza a recoger) y fuera del claro del campamento, donde no se dibuja nada:
+    // una zona de leña cerca de la fogata antes no podía generar ramas nunca y decía que no había palos.
+    const reach = Math.max(12, (near.def?.range ?? 40) - 6);
+    const first = (near.def?.footprint ?? 3) + 3;
+    for (let k = 0; k < 40; k++) {
       const a = Math.random() * Math.PI * 2;
-      const r = (near.def?.footprint ?? 3) + 3 + Math.random() * 20;
+      const r = first + Math.random() * Math.max(6, Math.min(reach, k < 10 ? 20 : 60) - first);
       const x = near.x + Math.cos(a) * r;
       const z = near.z + Math.sin(a) * r;
       if (this.resourceSiteProblem(x, z)) continue;
@@ -1791,7 +2092,7 @@ export class ColonySim {
     if ((this.stock.tree_seed ?? 0) < 1) return 'No quedan semillas de árbol';
     const problem = this.plantProblem(x, z);
     if (problem) return problem;
-    if (this.liveSprouts() >= MAX_SPROUTS) return 'Ya hay demasiados brotes esperando a crecer';
+    if (this.plantedSprouts() >= MAX_PLANTED) return 'Ya hay demasiados árboles plantados esperando a crecer';
     const p = new THREE.Vector3();
     this.toDirection(x, z, p);
     const biome = biomeAt(p.x, p.y, p.z).id;
@@ -2885,6 +3186,7 @@ export class ColonySim {
         age: this.age,
         clothesLeft: this.clothesLeft,
         flag: this.flag,
+        villageName: this.villageName,
         produced: this.produced,
         techs: [...this.techs],
         expansions: this.expansions,
@@ -2909,6 +3211,7 @@ export class ColonySim {
           health: c.health,
           log: c.log,
           flags: c.flags,
+          moodEvents: c.moodEvents,
           chatCooldown: c.chatCooldown,
           clothed: c.clothed,
           x: c.x,
@@ -3100,6 +3403,13 @@ export class ColonySim {
         return this.dismiss(this.colonist(args[0]));
       case 'upgradeSoldier':
         return this.upgradeSoldier(this.colonist(args[0]));
+      case 'setVillageName': {
+        if (typeof args[0] !== 'string') return false;
+        this.villageName = cleanVillageName(args[0]);
+        this.emit('village', this.villageName);
+        this.emit('changed');
+        return true;
+      }
       case 'setFlag': {
         if (typeof args[0] !== 'string' || !FLAG_IDS.has(args[0])) return false;
         this.flag = args[0];
@@ -3136,7 +3446,7 @@ export class ColonySim {
   // cuando nace alguien; después no hace falta repetirlos).
   snapshot(part = 'full', { statics = true } = {}) {
     const r2 = (v) => Math.round(v * 100) / 100;
-    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0);
+    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0);
     const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state]);
     if (part === 'fast') {
       const out = { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]), mobs: mobsRows() };
@@ -3163,6 +3473,7 @@ export class ColonySim {
       age: this.age,
       clothesLeft: this.clothesLeft,
       flag: this.flag,
+      villageName: this.villageName,
       produced: this.produced,
       techs: [...this.techs],
       expansions: this.expansions,
@@ -3210,6 +3521,12 @@ export class ColonySim {
         pspec: c.pendingSpec,
         idle: c.idle,
         age: c.age,
+        // Por qué está como está (sim/wellbeing.js): hacia dónde tira el ánimo, su categoría y tendencia, los golpes recientes,
+        // la tarea y lo que le impide resolver su necesidad. La réplica del navegador lo usa para explicarlo.
+        mf: [r2(c.moodTarget ?? c.needs.mood), c.moodBand ?? 2, c.moodTrend ?? 0, c.moodFx?.companion ?? 0, Math.round((c.moodFx?.homeless ?? 0) * 100)],
+        me: c.moodEvents?.length ? c.moodEvents.map((e) => [e.id, r2(e.delta), r2(e.at)]) : undefined,
+        tt: c.task?.type ?? null,
+        bl: c.block ? [c.block.need, c.block.why] : undefined,
         sd: c.soldier ? c.soldier.unit : null,
         x: r2(c.x),
         z: r2(c.z),
@@ -3278,6 +3595,7 @@ export class ColonySim {
       c.z = z;
       c.facing = facing;
       c.walking = !!(f & 1);
+      c.moving = !!(f & 128);
       c.working = !!(f & 2);
       c.sleeping = !!(f & 4);
       c.loving = !!(f & 16);
@@ -3301,6 +3619,15 @@ export class ColonySim {
       c.spec = row.spec ?? null;
       c.pendingSpec = row.pspec ?? null;
       c.idle = row.idle ?? null;
+      if (row.mf) {
+        c.moodTarget = row.mf[0];
+        c.moodBand = row.mf[1];
+        c.moodTrend = row.mf[2];
+        c.moodFx = { companion: row.mf[3], homeless: row.mf[4] / 100 };
+      }
+      c.moodEvents = row.me ? row.me.map(([id, delta, at]) => ({ id, delta, at })) : undefined;
+      c.taskType = row.tt ?? null;
+      c.block = row.bl ? { need: row.bl[0], why: row.bl[1] } : null;
       c.order = row.order ?? null;
       c.orderState = row.order?.state ?? null;
       c.soldier = row.sd && UNITS_BY_ID[row.sd] ? { unit: row.sd, tier: UNITS_BY_ID[row.sd].age } : null;
@@ -3355,6 +3682,10 @@ export class ColonySim {
     if (s.flag && s.flag !== this.flag) {
       this.flag = s.flag;
       this.emit('flag', this.flag);
+    }
+    if (typeof s.villageName === 'string' && s.villageName !== this.villageName) {
+      this.villageName = cleanVillageName(s.villageName);
+      this.emit('village', this.villageName);
     }
     if (s.clothesLeft !== this.clothesLeft) {
       this.clothesLeft = s.clothesLeft;
@@ -3448,6 +3779,7 @@ export class ColonySim {
     this.spoiled = data.spoiled || 0;
     this.setAge(Math.min(AGES.length, Math.max(1, data.age || 1)));
     this.flag = FLAG_IDS.has(data.flag) ? data.flag : DEFAULT_FLAG;
+    this.villageName = cleanVillageName(data.villageName);
     this.produced = data.produced && typeof data.produced === 'object' ? { ...data.produced } : {};
     this.techs = new Set(Array.isArray(data.techs) ? data.techs.filter((t) => typeof t === 'string') : []);
     this.expansions = Number.isInteger(data.expansions) ? Math.max(0, data.expansions) : 0;
@@ -3500,6 +3832,9 @@ export class ColonySim {
       c.log = Array.isArray(saved.log) ? saved.log : c.log;
       c.flags = saved.flags || {};
       c.chatCooldown = saved.chatCooldown || 0;
+      // Golpes recientes al ánimo (se validan: la partida puede venir de otra versión).
+      const evs = Array.isArray(saved.moodEvents) ? saved.moodEvents.filter((e) => e && typeof e.id === 'string' && Number.isFinite(e.delta) && Number.isFinite(e.at) && this.gameTime - e.at < 0.5 * DAY_LENGTH_SECONDS) : [];
+      c.moodEvents = evs.length ? evs.slice(0, 4).map((e) => ({ id: e.id, delta: Math.max(-40, Math.min(40, e.delta)), at: Math.min(e.at, this.gameTime) })) : undefined;
       c.clothed = !!saved.clothed;
       if (Number.isFinite(saved.x) && this.walkable(saved.x, saved.z, 0.2)) {
         c.x = saved.x;

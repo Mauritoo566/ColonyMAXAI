@@ -3,16 +3,18 @@
 // servidor desde que existe el mundo (server/game/world.js), así que dos jugadores cualesquiera ven la
 // misma fecha y la misma estación en el mismo lugar.
 //
-// - Un día dura 6 minutos reales y un año 365 días exactos (sin bisiestos): 36 h 30 min reales.
-// - El año empieza en el equinoccio de primavera del hemisferio norte: día 1 = primavera, verano desde
-//   el día 93, otoño desde el 184 y invierno desde el 275 (cuartos de año: 91,25 días cada uno).
+// - Un día dura 6 minutos reales y un año YEAR_DAYS días exactos (sin bisiestos). Con 48 días cada estación
+//   dura 12 días (72 min reales) y el año 4 h 48 min: las estaciones se ven rotar en una sesión de juego. Para
+//   un año largo (p. ej. 365 días = 36 h 30 min) basta cambiar esa constante; todo lo demás se deriva de ella.
+// - El año empieza en el equinoccio de primavera del hemisferio norte: día 1 = primavera, y cada estación
+//   ocupa un cuarto del año (verano desde el cuarto 2, otoño desde el 3, invierno desde el 4).
 // - El hemisferio sur lo vive invertido. En los trópicos no hay cuatro estaciones sino épocas húmeda y
 //   seca; en los polos mandan la luz y la oscuridad (la inclinación del Sol sale de la misma fecha).
 // - La fecha sigue la hora real del servidor aunque el servidor esté caído: no se pausa. Lo que se
 //   limita es el "ponerse al día" económico de cada colonia (dos días de juego), nunca el calendario.
 
 export const DAY_LENGTH_SECONDS = 360; // un día completo dura 6 minutos a velocidad ×1
-export const YEAR_DAYS = 365;
+export const YEAR_DAYS = 48; // 12 días por estación
 export const YEAR_SECONDS = YEAR_DAYS * DAY_LENGTH_SECONDS;
 export const WORLD_START_HOUR = 12; // a las 12:00 del meridiano cero empezó el mundo
 export const AXIAL_TILT = (23.44 * Math.PI) / 180;
@@ -50,7 +52,7 @@ export function dayCount(elapsed, startHour = WORLD_START_HOUR) {
 // La fecha del mundo en un instante:
 //   day        número de día desde el principio (empieza en 1; es el «Día N» de siempre)
 //   year       año (empieza en 1)
-//   dayOfYear  1..365
+//   dayOfYear  1..YEAR_DAYS
 //   phase      0..1: avance continuo dentro del año (0 = equinoccio de primavera del norte)
 //   hour       hora del meridiano cero (0..24)
 export function dateAt(elapsed, startHour = WORLD_START_HOUR) {

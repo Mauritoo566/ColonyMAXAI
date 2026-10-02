@@ -73,6 +73,8 @@ const MAX_FAR = 60_000; // ejemplares con el modelo simple, por tipo
 const LOD_DISTANCE = 380; // metros: más lejos, modelo simple
 const FULL_DENSITY_DISTANCE = 900; // hasta aquí se ve todo; más lejos se aclara
 const MAX_VISIBLE_CLEARANCE = 6_000; // más alto no se dibujan
+const SAPLING_MIN_SCALE = 0.22; // tamaño de un brote recién plantado frente al del árbol adulto
+const GROW_REDRAW_SECONDS = 6; // segundos de juego entre redibujos mientras crece algún brote
 const CAMP_CLEAR_RADIUS = 45; // alrededor del campamento no aparece nada
 const MAX_PENDING = 24; // baldosas encargadas a la vez
 const REBUILD_INTERVAL = 0.12; // segundos mínimos entre dos reconstrucciones
@@ -320,6 +322,9 @@ export class ResourceSystem {
     this.zonesSignature = '';
     this.sites = []; // aldeas: [{ x, y, z, dir }] posición en el mundo y dirección
     this.activeSites = []; // las que están cerca de la cámara ahora
+    this.gameTime = 0; // hora de juego de la propia colonia (para hacer crecer los brotes plantados)
+    this.growingUntil = 0; // hasta cuándo queda algún brote creciendo (para redibujar mientras tanto)
+    this.lastGrowRebuild = 0;
     this.removed = new Map(); // baldosa -> índices de recursos que ya no están
     this.extra = new Map(); // baldosas especiales (arboleda del campamento)
     this.workers = new ResourceWorkers((key, data) => {
@@ -367,6 +372,8 @@ export class ResourceSystem {
       for (const s of this.activeSites) for (const t of this.collectTiles(s.dir, SITE_RADIUS + TILE)) if (!have.has(t)) { have.add(t); tiles.push(t); }
     }
 
+    // Los brotes plantados crecen: se redibujan cada pocos segundos de juego mientras haya alguno creciendo.
+    if (this.growingUntil > this.gameTime && this.gameTime - this.lastGrowRebuild >= GROW_REDRAW_SECONDS) this.dirty = true;
     // Reconstruir si la cámara se movió lo suficiente o llegaron baldosas nuevas.
     const moved = this.lastCamera.distanceTo(camera.position);
     if (moved > Math.max(15, clearance * 0.06)) this.dirty = true;
@@ -483,17 +490,22 @@ export class ResourceSystem {
     const cx = cameraPos.x, cy = cameraPos.y, cz = cameraPos.z;
     const radius2 = radius * radius;
     const lod2 = LOD_DISTANCE * LOD_DISTANCE;
-    // Cada zona despeja recursos a su alrededor (el campamento 90 m, un edificio poco).
+    // Cada zona despeja recursos a su alrededor (el campamento 45 m, un edificio poco). La distancia es la HORIZONTAL
+    // al eje de la zona (la misma que usa la simulación en sim/colony.js: blockedByBuilding y los recursos del
+    // campamento), no la de 3D: con la de 3D un árbol en una cuesta se dibujaba pero el servidor lo daba por tapado
+    // (o al revés) y quedaban árboles "para talar" que no se podían talar.
     const zones = terrainZones().map((z) => {
-      const r = RADIUS + (z.height || 0);
       const clear = z.resourceClear ?? CAMP_CLEAR_RADIUS;
-      return [z.dir.x * r, z.dir.y * r, z.dir.z * r, clear * clear];
+      return [z.dir.x, z.dir.y, z.dir.z, clear * clear];
     });
     const removed = this.removed;
     const maxDist2 = RESOURCE_TYPES.map((t) => (t.maxDistance ?? Infinity) ** 2);
     const sites = this.activeSites.map((s) => [s.pos.x, s.pos.y, s.pos.z]);
     const site2 = SITE_RADIUS * SITE_RADIUS;
 
+    const now = this.gameTime;
+    let growingUntil = 0;
+    this.lastGrowRebuild = now;
     const nearCount = new Int32Array(RESOURCE_TYPES.length);
     const farCount = new Int32Array(RESOURCE_TYPES.length);
     const nearM = this.near.map((m) => m.instanceMatrix.array);
@@ -529,8 +541,12 @@ export class ResourceSystem {
         }
         let blocked = false;
         for (const z of zones) {
-          const zx = px - z[0], zy = py - z[1], zz = pz - z[2];
-          if (zx * zx + zy * zy + zz * zz < z[3]) blocked = true;
+          // Distancia al eje de la zona: |P × dir|.
+          const cx2 = py * z[2] - pz * z[1], cy2 = pz * z[0] - px * z[2], cz2 = px * z[1] - py * z[0];
+          if (cx2 * cx2 + cy2 * cy2 + cz2 * cz2 < z[3]) {
+            blocked = true;
+            break;
+          }
         }
         if (blocked) continue;
 
@@ -549,9 +565,16 @@ export class ResourceSystem {
           col = nearC[ti];
         }
         const o = n * 16, b = k * 9;
-        arr[o] = basis[b]; arr[o + 1] = basis[b + 1]; arr[o + 2] = basis[b + 2]; arr[o + 3] = 0;
-        arr[o + 4] = basis[b + 3]; arr[o + 5] = basis[b + 4]; arr[o + 6] = basis[b + 5]; arr[o + 7] = 0;
-        arr[o + 8] = basis[b + 6]; arr[o + 9] = basis[b + 7]; arr[o + 10] = basis[b + 8]; arr[o + 11] = 0;
+        // Un brote plantado de la propia aldea todavía no está grande: se dibuja a una fracción de su tamaño.
+        let grow = 1;
+        if (t.readyAt && t.key === SPROUT_KEY && t.readyAt[k] > now) {
+          const span = t.readyAt[k] - t.sown[k] || 1;
+          grow = SAPLING_MIN_SCALE + (1 - SAPLING_MIN_SCALE) * Math.min(1, Math.max(0, (now - t.sown[k]) / span));
+          if (t.readyAt[k] > growingUntil) growingUntil = t.readyAt[k];
+        }
+        arr[o] = basis[b] * grow; arr[o + 1] = basis[b + 1] * grow; arr[o + 2] = basis[b + 2] * grow; arr[o + 3] = 0;
+        arr[o + 4] = basis[b + 3] * grow; arr[o + 5] = basis[b + 4] * grow; arr[o + 6] = basis[b + 5] * grow; arr[o + 7] = 0;
+        arr[o + 8] = basis[b + 6] * grow; arr[o + 9] = basis[b + 7] * grow; arr[o + 10] = basis[b + 8] * grow; arr[o + 11] = 0;
         arr[o + 12] = px - ox; arr[o + 13] = py - oy; arr[o + 14] = pz - oz; arr[o + 15] = 1;
         const c = tint[k];
         col[n * 3] = c; col[n * 3 + 1] = c; col[n * 3 + 2] = c;
@@ -572,6 +595,7 @@ export class ResourceSystem {
       apply(this.near[ti], nearCount[ti]);
       apply(this.far[ti], farCount[ti]);
     }
+    this.growingUntil = growingUntil;
     this.lastCounts = { near: nearCount.reduce((a, b) => a + b, 0), far: farCount.reduce((a, b) => a + b, 0) };
   }
 }

@@ -138,7 +138,8 @@ export function chooseTask(colony, c, env) {
   const add = (score, task) => {
     if (score <= 0) return;
     // Lo que acaba de fallar (camino bloqueado, etc.) se evita un rato.
-    if (c.avoid && c.avoid.until > env.gameTime && c.avoid.key === taskKey(task)) return;
+    // (si cambió algo en los muros desde entonces —un obstáculo nuevo o uno que se quitó—, se reintenta antes)
+    if (c.avoid && c.avoid.until > env.gameTime && c.avoid.rev === colony.wallRev && c.avoid.key === taskKey(task)) return;
     options.push({ ...task, score });
   };
   const stock = colony.stock;
@@ -312,8 +313,29 @@ export function shouldSwitch(current, next) {
 // Camina hacia un punto; si queda atascado la tarea fracasa.
 function go(colony, c, task, point, dt, stop = 0.8) {
   const r = colony.walk(c, point.x, point.z, dt, stop);
-  if (r === 'stuck') task.failed = true;
+  if (r === 'stuck') {
+    task.failed = true;
+    task.failWhy = c.stuckWhy ?? 'No logra llegar a su destino';
+  }
   return r === 'arrived';
+}
+
+// Qué necesidad atiende cada tarea (para registrar qué le impide resolverla si la tarea falla).
+export const NEED_OF_TASK = { eat: 'food', drink: 'water', sleep: 'rest', warm: 'warmth', dress: 'warmth' };
+
+// Por qué falló una tarea, en palabras del jugador.
+export function failReason(colony, c, task) {
+  if (task.failWhy) return task.failWhy;
+  switch (task.type) {
+    case 'eat':
+      return task.source === 'bush' ? 'Las bayas o setas ya no están o las ocupa otro' : 'Ya no quedan provisiones en el almacén';
+    case 'drink':
+      return task.source === 'well' ? 'El pozo está seco' : 'Ya no queda agua en el almacén';
+    case 'dress':
+      return 'Ya no queda ropa en el campamento';
+    default:
+      return 'No pudo completarla';
+  }
 }
 
 // Espera "seconds" trabajando; devuelve true al terminar.
@@ -576,7 +598,7 @@ function runWork(colony, c, task, dt, env) {
     }
     if (!task.spot) {
       task.noResource = true;
-      b.status = def.noResourceText;
+      b.status = level.noResourceText ?? def.noResourceText;
       return busy(task, dt, 20) ? 'done' : 'running';
     }
     task.spot.taken = c;
@@ -594,7 +616,10 @@ function runWork(colony, c, task, dt, env) {
     if (task.spot.gone) return release(task.spot); // alguien se llevó lo último: no se cobra dos veces
     if (!busy(task, dt, def.workTime * (1.4 - skill * 0.7) * (isLitter(task.spot) ? 1.5 : 1))) return 'running';
     task.litter = isLitter(task.spot);
-    colony.consumeSpot(task.spot, env.gameTime);
+    const felled = task.spot;
+    colony.consumeSpot(felled, env.gameTime);
+    // Un leñador de verdad replanta lo que tala (desde la Cabaña, nivel 2): nace un brote que tarda en crecer.
+    if (def.replantFrom && b.level >= def.replantFrom && felled.tree && colony.replantAt(felled, env.gameTime)) b.replanted = (b.replanted ?? 0) + 1;
     task.phase = 'returning';
   }
   if (task.phase === 'returning') {
@@ -727,7 +752,7 @@ export function taskActivity(colony, c, task) {
       if (def.kind) return task.building.status ?? (walking ? `Va a su puesto: ${task.building.name}` : `Trabajando en: ${task.building.name}`);
       if (task.noAccess) return 'Espera: la entrada de su puesto está bloqueada';
       if (task.storeFull) return 'Espera: el almacén está lleno';
-      if (task.noResource) return def.id === 'well' ? 'Espera a que llueva' : def.noResourceText;
+      if (task.noResource) return def.id === 'well' ? 'Espera a que llueva' : (levelOf(task.building).noResourceText ?? def.noResourceText);
       if (def.id === 'well') {
         if (levelOf(task.building).rainOnly) return walking ? 'Va al recolector de lluvia' : 'Vaciando las vasijas de lluvia';
         return walking ? 'Va al pozo' : 'Sacando agua del pozo';

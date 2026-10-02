@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { BUILDINGS } from './sim/buildingTypes.js';
+import { diagnose as diagnoseMood } from './sim/wellbeing.js';
 import { RADIUS } from './elevation.js';
 import { createPlanet } from './planet.js';
 import { PlanetControls } from './controls.js';
@@ -10,7 +12,7 @@ import { biomeAt } from './biomes.js';
 import { ResourceSystem } from './resources.js';
 import { createSky } from './sky.js';
 import { graphics } from './graphics.js';
-import { DAY_LENGTH_SECONDS, dateAt, seasonAt, effectiveTemperature, snowCover } from './sim/calendar.js';
+import { DAY_LENGTH_SECONDS, YEAR_DAYS, dateAt, seasonAt, effectiveTemperature, snowCover } from './sim/calendar.js';
 import { setSeasonPhase } from './seasonShader.js';
 import { ColonySim } from './sim/colony.js';
 import { ColonyView } from './colonists.js';
@@ -183,6 +185,11 @@ for (const id of ['colonist-panel', 'building-panel', 'world-panel']) makeFoldab
 const villageUI = new VillageUI({ colony, button: document.getElementById('village-button'), panel: document.getElementById('village-panel') });
 villageUI.onOpen = () => militaryUI.toggle(false);
 colony.on('flag', () => camps.setFlag(colony.flag));
+// Tu campamento lleva el nombre que le pusiste (si no, "Campamento").
+const campLabel = document.querySelector('#camp-marker .camp-marker-label');
+const syncVillageLabel = () => campLabel && (campLabel.textContent = colony.villageName || 'Campamento');
+colony.on('village', syncVillageLabel);
+syncVillageLabel();
 new FlagUI({
   button: document.getElementById('flag-button'),
   chip: document.getElementById('flag-chip'),
@@ -248,12 +255,55 @@ net.onStatus = (status) => {
 // Avisos breves arriba al centro (errores del servidor, lugar no válido...).
 const notice = document.getElementById('notice');
 let noticeTimer = null;
-function showNotice(text, isError = false) {
+function showNotice(text, isError = false, ms = 4000) {
   notice.textContent = text;
   notice.classList.toggle('is-error', isError);
   notice.hidden = false;
   clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => (notice.hidden = true), 4000);
+  noticeTimer = setTimeout(() => (notice.hidden = true), ms);
+}
+
+// Cambios de estación y temporales sobre TU aldea: salen de la fecha del mundo y del clima que manda el servidor (los
+// mismos para todos), así que todos los jugadores de la zona los ven a la vez. Sólo se anuncia un cambio, no cada tanto.
+const SEASON_NEWS = {
+  spring: 'Llega la primavera: la vegetación y los cultivos rebrotan más rápido.',
+  summer: 'Llega el verano: hace calor y los colonos beben más.',
+  autumn: 'Llega el otoño: los árboles pierden la hoja y empieza a enfriar. Asegurá comida y abrigo.',
+  winter: 'Llega el invierno: más frío y poco rebrote; puede nevar. Mantené a todos cerca de la fogata y con comida.',
+  wet: 'Empieza la época de lluvias: más agua y más lluvia, la vegetación crece.',
+  dry: 'Empieza la época seca: llueve poco; cuidá el agua.',
+};
+const announced = { season: null, weather: null, weatherAt: -1e9 };
+function announceNews(date) {
+  const campDir = camps.camp?.dir;
+  if (!campDir) return;
+  const season = seasonAt(campDir.y, date.phase);
+  if (announced.season === null) announced.season = season.id;
+  else if (announced.season !== season.id) {
+    announced.season = season.id;
+    showNotice(SEASON_NEWS[season.id] ?? `Cambió la estación: ${season.name}.`, false, 9000);
+  }
+  const w = colony.weather;
+  if (!w) return;
+  const snowy = w.snowy && w.rain > 0.05;
+  const kind = w.state.id === 'storm' ? (snowy ? 'blizzard' : 'storm') : w.state.id === 'rain' ? (snowy ? 'snow' : 'rain') : 'calm';
+  if (announced.weather === null) announced.weather = kind;
+  else if (announced.weather !== kind) {
+    const before = announced.weather;
+    announced.weather = kind;
+    const now = performance.now();
+    const text = {
+      storm: '¡Temporal sobre tu aldea! Tormenta: mucha lluvia, buscá refugio y cuidá el abrigo.',
+      blizzard: '¡Ventisca sobre tu aldea! Nieve y viento fuertes: todos junto a la fogata.',
+      rain: 'Empieza a llover en tu aldea: el pozo rinde más y rebrotan bayas y setas.',
+      snow: 'Empieza a nevar en tu aldea: hace más frío.',
+      calm: before === 'storm' || before === 'blizzard' ? 'Pasó el temporal.' : null,
+    }[kind];
+    if (text && now - announced.weatherAt > 20_000) {
+      announced.weatherAt = now;
+      showNotice(text, kind === 'storm' || kind === 'blizzard', 8000);
+    }
+  }
 }
 // Nacimientos, muertes, tecnologías, incursiones, semillas que caen al talar... la
 // simulación ya los avisa con "notice" desde hace rato; faltaba mostrarlos en pantalla.
@@ -281,6 +331,28 @@ roads.onMessage = (text) => showNotice(text, true);
 }
 controls.blockLeftDrag = () => harvest.active || roads.active || !!buildings.placing?.line;
 const buildUI = new BuildUI({ buildings, colony, harvest, roads, onFocusColonist: (c) => colonyUI.focusColonist(c) });
+// Acciones sugeridas en la ficha de un colono: sólo llevan a ver el problema (cámara o menú); nunca gastan ni construyen.
+document.addEventListener('colony:action', (e) => {
+  const a = e.detail;
+  const flyTo = (x, z) => controls.flyTo(colony.toDirection(x, z, new THREE.Vector3()), 45);
+  if (a.kind === 'build' && a.type) buildUI.setTab(BUILDINGS[a.type]?.category ?? 'housing', false);
+  else if (a.kind === 'build') buildUI.setTab('production', false);
+  else if (a.kind === 'storage') flyTo(colony.layout.storage.x, colony.layout.storage.z);
+  else if (a.kind === 'building' || a.kind === 'housing') {
+    const home = a.id != null ? colony.building(a.id) : colony.buildings.find((b) => b.def.levels[0].housing != null && b.done);
+    if (home) flyTo(home.x, home.z);
+    else buildUI.setTab('housing', false);
+  }
+});
+// Un aviso colectivo ("4 colonos no tienen cama") lleva al siguiente afectado cada vez que se toca.
+const affectedCursor = new Map();
+document.addEventListener('colony:focus-colonists', (e) => {
+  const { id, ids } = e.detail;
+  const i = (affectedCursor.get(id) ?? -1) + 1;
+  affectedCursor.set(id, i);
+  const c = colony.colonist(ids[i % ids.length]);
+  if (c) colonyUI.focusColonist(c);
+});
 // Sólo una ficha abierta a la vez.
 colonyUI.onOpen = () => buildings.select(null);
 buildUI.onOpen = () => colonyView.select(null);
@@ -372,12 +444,13 @@ function renderPlayers(players) {
     const info = document.createElement('div');
     info.className = 'world-player';
     const name = document.createElement('strong');
-    name.textContent = p.isMe ? `${p.name} (tú)` : p.name;
+    // Se ve el nombre de la aldea; debajo, de qué jugador es.
+    name.textContent = p.village ? (p.isMe ? `${p.village} (tu aldea)` : p.village) : p.isMe ? `${p.name} (tú)` : p.name;
     const detail = document.createElement('span');
     const state = p.isMe || p.online ? 'conectado' : 'desconectado';
     const sky = WEATHER[p.weather]?.name; // clima de su zona (cambia en vivo)
     detail.textContent = p.camp
-      ? `Edad ${['I', 'II', 'III', 'IV', 'V'][p.age - 1] ?? p.age} · ${p.population} colonos · ${sky ? sky + ' · ' : ''}${state}`
+      ? `${p.village ? `Jugador ${p.name} · ` : ''}Edad ${['I', 'II', 'III', 'IV', 'V'][p.age - 1] ?? p.age} · ${p.population} colonos · ${sky ? sky + ' · ' : ''}${state}`
       : `Todavía sin campamento · ${state}`;
     info.append(name, detail);
     li.append(info);
@@ -400,7 +473,7 @@ const lastView = new THREE.Vector3();
 
 // Sesión.
 document.getElementById('player-name').textContent = player.name;
-new SettingsUI({ net, playerName: player.name });
+new SettingsUI({ net, playerName: player.name, colony });
 document.getElementById('logout').addEventListener('click', () => logout(net));
 
 // Estrellas pegadas a la cámara: siempre están "en el infinito".
@@ -611,7 +684,20 @@ function setPixelRatio(value) {
 }
 
 // Diagnóstico: con ?debug en la dirección se expone lo principal para medir (consola del navegador).
-if (new URLSearchParams(location.search).has('debug')) window.__dbg = { graphics, renderer, buildings, harvest, colonyView, roads, scene, camera, quality, planet, resources, controls, colony, others, camps, THREE };
+// Diagnóstico de un colono (sólo con ?debug): window.__dbg.colonist(id). Tarea, desplazamiento, bloqueo, cola, desvío y por qué está como está.
+function debugColonist(id) {
+  const c = colony.colonist(id);
+  if (!c) return null;
+  const d = diagnoseMood(colony, c);
+  return {
+    nombre: c.name, tarea: c.task?.type ?? c.taskType ?? null, actividad: c.activity,
+    pos: [c.x, c.z].map((v) => +v.toFixed(2)), caminaPorIntencion: !!c.walking, seMueveDeVerdad: !!c.moving,
+    sinProgreso: +(c.blocked ?? 0).toFixed(1), enCola: +(c.queued ?? 0).toFixed(1), desvio: c.detour ?? null, progreso: c.progress ?? null,
+    ultimoMotivoBloqueo: c.stuckWhy ?? null, bloqueo: c.block ?? null, evita: c.avoid ?? null,
+    animo: { valor: d.mood, objetivo: d.target, categoria: d.band.text, tendencia: d.trendText, causas: d.causes.map((x) => [x.id, x.impact, x.blocker ?? null]), positivos: d.positives.map((x) => [x.id, x.impact]) },
+  };
+}
+if (new URLSearchParams(location.search).has('debug')) window.__dbg = { colonist: debugColonist, graphics, renderer, buildings, harvest, colonyView, roads, scene, camera, quality, planet, resources, controls, colony, others, camps, THREE };
 
 // ---- Mientras no estabas ------------------------------------------------------------
 // El servidor sigue simulando la colonia cuando el jugador no está (nadie baja de la salud
@@ -650,7 +736,7 @@ let weatherPlaceTimer = 0;
 let sitesTimer = 0;
 // Sólo para pruebas visuales: ?doy=200&hour=13 fija el día del año y la hora local que se dibujan (no toca el
 // mundo ni el servidor: el clima y la simulación siguen siendo los reales).
-const debugPhase = flags.has('doy') ? (Number(flags.get('doy')) - 0.5) / 365 : null;
+const debugPhase = flags.has('doy') ? (Number(flags.get('doy')) - 0.5) / YEAR_DAYS : null;
 function debugElapsed(lon) {
   const hour = flags.has('hour') ? Number(flags.get('hour')) : 13;
   const lonHours = (lon / (Math.PI * 2)) * 24;
@@ -698,6 +784,7 @@ renderer.setAnimationLoop(() => {
       resources.setSites(sites);
     }
   }
+  resources.gameTime = colony.gameTime; // los brotes plantados crecen con la hora de juego de tu aldea
   resources.update(camera, resourceFocus, clearance, delta);
   lap('resources');
   camps.update(delta);
@@ -754,7 +841,8 @@ renderer.setAnimationLoop(() => {
     // Estación del lugar que se mira (fecha del mundo + latitud) y de qué aldea es el clima mostrado.
     const here = seasonAt(controls.dir.y, date.phase);
     if (seasonName) seasonName.textContent = `${here.name} · hemisferio ${here.north ? 'norte' : 'sur'}`;
-    const placeText = source && nearZone > 0.5 ? `Clima de ${source.name === 'tu aldea' ? 'tu aldea' : 'la aldea de ' + source.name}` : 'Sin aldea cerca: clima de ejemplo';
+    announceNews(date);
+    const placeText = source && nearZone > 0.5 ? `Clima de ${source.name === 'tu aldea' ? (colony.villageName || 'tu aldea') : source.village ?? 'la aldea de ' + source.name}` : 'Sin aldea cerca: clima de ejemplo';
     if (climatePlace && climatePlace.textContent !== placeText) climatePlace.textContent = placeText;
     if (weatherChip) {
       const w = weather.state;

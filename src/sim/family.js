@@ -8,7 +8,7 @@
 import { DAY_LENGTH_SECONDS } from '../daynight.js';
 import { levelOf } from './buildingTypes.js';
 import { limitsFor } from './progression.js';
-import { createChildProfile, createProfile, wellbeing, hasTrait, addLog } from '../needs.js';
+import { createChildProfile, createProfile, wellbeing, hasTrait, addLog, addMoodEvent } from '../needs.js';
 import { appearanceFromGenes } from '../genes.js';
 import { pickName } from './names.js';
 
@@ -304,7 +304,7 @@ export function runLove(colony, c, task, dt, env, go) {
   if (task.phase === 'inside') {
     c.inside = true;
     c.loving = true;
-    c.needs.mood = Math.min(100, c.needs.mood + (8 / LOVE_SECONDS) * dt);
+    addMoodEvent(c, 'love', (8 / LOVE_SECONDS) * dt, colony.gameTime);
     task.timer += dt;
     if (task.timer < LOVE_SECONDS) return 'running';
     finishLove(colony, c, p, task.pact, env);

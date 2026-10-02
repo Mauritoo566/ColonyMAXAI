@@ -293,6 +293,7 @@ export class World {
         age: sim?.age ?? 1,
         population: sim?.count ?? 0,
         flag: sim?.flag ?? null,
+        village: sim?.villageName || null, // nombre de la aldea (los demás ven este, no sólo el del jugador)
         w: sim?.weather?.state.id ?? null, // clima de su zona (sólo el estado: la intensidad va en "other")
         buildings: sim
           ? sim.buildings.map((b) => ({ t: b.def.id, l: b.level, x: Math.round(b.x * 10) / 10, z: Math.round(b.z * 10) / 10, yaw: Math.round(b.yaw * 100) / 100, d: b.done || b.upgrading }))

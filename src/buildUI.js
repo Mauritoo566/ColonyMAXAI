@@ -9,6 +9,7 @@ import { productionEstimate, estimateLine } from './sim/estimates.js';
 import { FOOD_SPOIL_SECONDS, zoneCapacity } from './sim/colony.js';
 import { villageReport } from './sim/report.js';
 import { storageKey } from './storage.js';
+import { preserveScroll, keepScroll } from './keepScroll.js';
 import { DAY_LENGTH_SECONDS } from './daynight.js';
 
 const DAY_SECONDS = DAY_LENGTH_SECONDS;
@@ -57,6 +58,7 @@ export class BuildUI {
     this.list = $('build-list');
     this.stock = $('stock');
     this.panel = $('building-panel');
+    preserveScroll(this.panel);
 
     this.stockKey = '';
 
@@ -499,7 +501,7 @@ export class BuildUI {
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
-    this.panel.innerHTML = `
+    keepScroll(this.panel, () => (this.panel.innerHTML = `
       <header class="cp-head">
         <span class="bp-icon">${icon('wood')}</span>
         <div>
@@ -521,7 +523,7 @@ export class BuildUI {
           <button type="button" class="btn btn--primary" data-open-storage>${icon('wood')}Construir un almacén</button>
         </section>
         ${this.outdoorHtml()}
-      </div>`;
+      </div>`));
     this.panel.querySelector('[data-close]').addEventListener('click', () => this.buildings.select(null));
     for (const button of this.panel.querySelectorAll('[data-remove-zone]')) {
       button.addEventListener('click', () => this.colony.removeZone());
@@ -688,7 +690,7 @@ export class BuildUI {
         ${blockedHtml}
         <p class="order-msg" data-site-msg role="status"></p>`;
     };
-    this.panel.innerHTML = `
+    keepScroll(this.panel, () => (this.panel.innerHTML = `
       <header class="cp-head">
         <span class="bp-icon">${icon(def.icon)}</span>
         <div>
@@ -747,7 +749,7 @@ export class BuildUI {
           ${def.line ? `<p class="reason">${b.gate ? 'Es un portón: los colonos lo atraviesan; es la única salida de un recinto cerrado.' : `Un portón deja pasar a los colonos (cuesta ${Object.entries(colony.gateCost(b)).map(([k, n]) => `${n} ${STOCK_NAMES[k] ?? k}`).join(', ')}). ${colony.gateProblem(b, true) ?? ''}`}</p>` : ''}
           <p class="reason">Demoler devuelve ${escapeHtml(refundText)} (la mitad de lo gastado). Mover es gratis: pasa a otro lugar con su nivel, obra y dotación.</p>
         </section>
-      </div>`;
+      </div>`));
     for (const el of this.panel.querySelectorAll('[data-avatar]')) {
       const who = colony.colonists.find((c) => c.id === Number(el.dataset.avatar));
       if (who) paintAvatar(el, who.look);

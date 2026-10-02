@@ -435,18 +435,9 @@ export class ColonyView {
   selectMob(id) {
     if (id != null && this.selected) this.select(null);
     this.selectedMob = id;
-    if (this.mobBox) {
-      this.mobBox.removeFromParent();
-      this.mobBox.geometry.dispose();
-      this.mobBox = null;
-    }
     this.mobRing?.removeFromParent();
     const e = id != null ? this.mobViews?.get(id) : null;
     if (e) {
-      this.mobBox = new THREE.BoxHelper(e.object, '#ffd24a');
-      this.mobBox.material.depthTest = false;
-      this.mobBox.renderOrder = 9;
-      this.group.add(this.mobBox);
       this.mobRing ??= new THREE.Mesh(new THREE.RingGeometry(0.9, 1.1, 28), new THREE.MeshBasicMaterial({ color: '#ffd24a', transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
       this.mobRing.rotation.x = -Math.PI / 2;
       this.mobRing.position.y = 0.08;
@@ -533,7 +524,6 @@ export class ColonyView {
       this.mobViews.delete(id);
       if (this.selectedMob === id) this.selectMob(null);
     }
-    this.mobBox?.update();
   }
 
   place(e, animDelta) {
@@ -554,7 +544,8 @@ export class ColonyView {
       applyBody(object, c.look, e.build, growth);
     }
     const { world, yaw } = this.tmp;
-    const walking = c.walking ? 1 : 0;
+    // Camina sólo si de verdad avanza (el servidor manda el desplazamiento real): bloqueado, espera en reposo.
+    const walking = (c.moving ?? c.walking) ? 1 : 0;
     e.moving += (walking - e.moving) * Math.min(1, animDelta * 6);
     e.phase += animDelta * WALK_SPEED * 5.2 * e.moving;
 

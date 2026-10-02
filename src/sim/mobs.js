@@ -1,6 +1,7 @@
 // Mobs: animales del mundo. Se simulan en el servidor (dentro de la colonia cercana) y se mandan con el
 // resto del estado, así que todos los jugadores cercanos los ven en vivo. Sin Three.js (datos y cuentas).
 // Los modelos están en src/mobs.js. El mundo no depende de tu edad: aparecen por bioma.
+import { addMoodEvent } from '../needs.js';
 
 export const MOB_TYPES = ['conejo', 'ciervo', 'jabali', 'oveja', 'uro', 'caballo', 'lobo', 'oso'];
 
@@ -169,7 +170,7 @@ export function updateMobs(sim, dt, isNight) {
           m.cd = HIT_EVERY;
           target.health -= st.dmg;
           target.lastHurtBy = m.type;
-          target.needs.mood = Math.max(0, target.needs.mood - 15);
+          addMoodEvent(target, 'attack', -15, sim.gameTime);
         }
         continue; // pegado al colono: no se mueve
       }

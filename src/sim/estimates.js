@@ -96,7 +96,7 @@ export function productionEstimate(colony, b) {
       else found = false;
     }
     if (!found) {
-      out.blocked = def.noResourceText ?? 'No hay recursos cerca';
+      out.blocked = lv.noResourceText ?? def.noResourceText ?? 'No hay recursos cerca';
       out.lines.push(`Ahora no produce nada: ${out.blocked.toLowerCase()}.`);
       return out;
     }

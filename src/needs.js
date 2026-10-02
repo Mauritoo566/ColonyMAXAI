@@ -201,6 +201,21 @@ export function addLog(c, time, text) {
 
 const clamp = (v) => Math.min(100, Math.max(0, v));
 
+// Un golpe puntual al ánimo (celebración, saqueo, ataque...): se aplica una sola vez, de golpe, y se recuerda un rato
+// (como mucho 4 a la vez) para poder explicarlo; después el ánimo vuelve poco a poco hacia su objetivo.
+export function addMoodEvent(c, id, delta, gameTime) {
+  c.needs.mood = clamp(c.needs.mood + delta);
+  const list = (c.moodEvents ??= []);
+  const old = list.find((e) => e.id === id);
+  if (old) {
+    old.delta = Math.max(-40, Math.min(40, old.delta + delta));
+    old.at = gameTime;
+  } else {
+    list.push({ id, delta, at: gameTime });
+    if (list.length > 4) list.shift();
+  }
+}
+
 // Actualiza necesidades y salud. env: { dt (segundos de juego), ambient (0–1, calor del
 // lugar según clima y hora), nearFire, companion (colono cercano o null), walking, time,
 // absent (el dueño no está: la salud no baja de CRITICAL_HEALTH) }
@@ -240,6 +255,11 @@ export function updateNeeds(c, env) {
   // Sin casa propia (desde la Edad del Bronce) el ánimo baja; la molestia entra de a poco.
   moodTarget -= 14 * (env.homeless ?? 0);
   moodTarget = clamp(moodTarget);
+  // Lo que explica el ánimo (sim/wellbeing.js): hacia dónde tira y qué condiciones lo empujan. Es estado de trabajo, no se guarda.
+  c.moodTarget = moodTarget;
+  const fx = (c.moodFx ??= { companion: 0, homeless: 0 });
+  fx.companion = env.companion ? 1 : 0;
+  fx.homeless = env.homeless ?? 0;
   const moodRate = 100 / (0.8 * DAY);
   n.mood += Math.sign(moodTarget - n.mood) * Math.min(Math.abs(moodTarget - n.mood), moodRate * dt);
 
@@ -276,6 +296,10 @@ export function updateNeeds(c, env) {
     addLog(c, env.time, 'Su salud empieza a empeorar');
   } else if (!critical) {
     c.flags.sick = false;
+  }
+  if (c.moodEvents?.length && env.gameTime != null) {
+    c.moodEvents = c.moodEvents.filter((e) => env.gameTime - e.at < 0.5 * DAY);
+    if (!c.moodEvents.length) c.moodEvents = undefined;
   }
   c.chatCooldown = Math.max(0, c.chatCooldown - dt);
   if (env.companion && !env.walking && c.chatCooldown <= 0) {

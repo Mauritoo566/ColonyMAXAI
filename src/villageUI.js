@@ -1,4 +1,5 @@
 import { NEEDS } from './needs.js';
+import { preserveScroll } from './keepScroll.js';
 import { GOODS_BY_ID } from './sim/goods.js';
 import { villageReport } from './sim/report.js';
 
@@ -18,6 +19,7 @@ export class VillageUI {
     this.colony = colony;
     this.button = button;
     this.panel = panel;
+    preserveScroll(this.panel);
     this.timer = 0;
     this.key = '';
     button.addEventListener('click', () => this.toggle());

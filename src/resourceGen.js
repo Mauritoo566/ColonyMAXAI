@@ -167,8 +167,20 @@ function finish(out, items) {
   out.basis = new Float32Array(n * 9);
   out.tint = new Float32Array(n);
   out.rank = new Float32Array(n);
+  // Árboles plantados: cuándo se sembraron y cuándo estarán listos (hora de juego de la colonia). Mientras no lo
+  // están se dibujan pequeños y crecen (resources.js); así no hay "árboles" a la vista que todavía no se pueden talar.
+  let growing = false;
+  for (const it of items) if (it.readyAt > 0 && Number.isFinite(it.sown)) growing = true;
+  if (growing) {
+    out.sown = new Float64Array(n);
+    out.readyAt = new Float64Array(n);
+  }
   for (let k = 0; k < n; k++) {
     const it = items[k];
+    if (growing && it.readyAt > 0 && Number.isFinite(it.sown)) {
+      out.sown[k] = it.sown;
+      out.readyAt[k] = it.readyAt;
+    }
     const [ux, uy, uz] = it.d;
     const r = RADIUS + it.h - 0.25;
     out.type[k] = it.typeIndex;

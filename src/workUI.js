@@ -1,4 +1,5 @@
 import { SPEC_IDS, SPEC_NAMES, isWorker } from './sim/specialties.js';
+import { preserveScroll } from './keepScroll.js';
 
 // Tabla de trabajo de la aldea: una fila por colono con sus tres especialidades (prioridad 1, 2 y 3), su
 // actividad y su estado, y un resumen de cobertura. Cambiar una especialidad no pierde experiencia y se
@@ -13,6 +14,7 @@ export class WorkUI {
     this.button = document.getElementById('work-button');
     this.modal = document.getElementById('work-modal');
     this.panel = document.getElementById('work-panel');
+    preserveScroll(this.panel);
     this.key = '';
     this.timer = 0;
     this.button.addEventListener('click', () => this.toggle());

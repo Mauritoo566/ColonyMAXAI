@@ -1,4 +1,4 @@
-// Calendario del mundo y estaciones: años de 365 días, la misma fecha para todos, hemisferios invertidos,
+// Calendario del mundo y estaciones: años de YEAR_DAYS días, la misma fecha para todos, hemisferios invertidos,
 // clima local, que el reloj sobreviva a un reinicio y que el primer invierno no sea una condena.
 // Uso: node server/game/test/calendar.test.js
 
@@ -15,25 +15,26 @@ import { ColonySim } from '../../../src/sim/colony.js';
 import { WeatherState } from '../../../src/sim/weather.js';
 import { naturalSurfaceHeight } from '../../../src/elevation.js';
 
-// 1) Un año son 365 días exactos y 36 h 30 min reales; el día 365 pasa al día 1 del año siguiente.
-assert.equal(YEAR_DAYS, 365);
+// 1) Un año son YEAR_DAYS días exactos (12 por estación); el último día pasa al día 1 del año siguiente.
+assert.equal(YEAR_DAYS % 4, 0, 'cuatro estaciones iguales');
+assert.ok(YEAR_DAYS * DAY / 3600 <= 12, 'un año cabe en una sesión larga: las estaciones se ven rotar');
 assert.equal(DAY, 360, 'un día dura 6 minutos');
-assert.equal(YEAR_SECONDS / 3600, 36.5, 'un año dura 36 h 30 min');
+assert.equal(YEAR_SECONDS, YEAR_DAYS * DAY);
 {
   const at = (day, frac = 0) => dateAt(((day - 1) + frac - 0.5) * DAY); // día N (de 1) a esa fracción del día
   assert.deepEqual([at(1).year, at(1).dayOfYear], [1, 1]);
-  assert.deepEqual([at(365, 0.99).year, at(365, 0.99).dayOfYear], [1, 365]);
-  assert.deepEqual([at(366).year, at(366).dayOfYear], [2, 1], 'el día 365 pasa al día 1 del año siguiente');
-  assert.deepEqual([at(730).year, at(730).dayOfYear], [2, 365]);
-  assert.deepEqual([at(731).year, at(731).dayOfYear], [3, 1]);
+  assert.deepEqual([at(YEAR_DAYS, 0.99).year, at(YEAR_DAYS, 0.99).dayOfYear], [1, YEAR_DAYS]);
+  assert.deepEqual([at(YEAR_DAYS + 1).year, at(YEAR_DAYS + 1).dayOfYear], [2, 1], 'el último día pasa al día 1 del año siguiente');
+  assert.deepEqual([at(2 * YEAR_DAYS).year, at(2 * YEAR_DAYS).dayOfYear], [2, YEAR_DAYS]);
+  assert.deepEqual([at(2 * YEAR_DAYS + 1).year, at(2 * YEAR_DAYS + 1).dayOfYear], [3, 1]);
   // Coincide con el «Día N» que ya mostraba el juego.
   const clock = new DayNight({ startLon: 0, startHour: 12 });
-  for (const e of [0, 12_345, 360 * 77.3, 360 * 365, 360 * 1000.9]) {
+  for (const e of [0, 12_345, 360 * 77.3, 360 * YEAR_DAYS, 360 * 1000.9]) {
     clock.setElapsed(e);
     assert.equal(dateAt(e).day, clock.day, `día absoluto en ${e}`);
   }
   // El Sol se inclina según la fecha: máximo en el solsticio, cero en los equinoccios.
-  assert.ok(Math.abs(declinationAt(0)) < 0.01);
+  assert.ok(Math.abs(declinationAt(0)) < 0.41 * 2 * Math.PI * (0.6 / YEAR_DAYS), "en el origen (medio día después del equinoccio) la inclinación es casi cero");
   assert.ok(Math.abs((declinationAt(YEAR_SECONDS * 0.25 - 0.5 * DAY) * 180) / Math.PI - 23.44) < 0.1);
   assert.ok(declinationAt(YEAR_SECONDS * 0.75 - 0.5 * DAY) < 0);
 }
@@ -48,18 +49,19 @@ assert.equal(YEAR_SECONDS / 3600, 36.5, 'un año dura 36 h 30 min');
 
 // 3) Hemisferios invertidos; ecuador sin cuatro estaciones; polos reconocibles.
 {
-  const idAt = (sinLat, day) => seasonAt(sinLat, ((day - 1) / YEAR_DAYS) % 1).id;
+  const D = (n) => Math.max(1, Math.round((n / 365) * YEAR_DAYS)); // un día de un año de 365, llevado al año del juego
+  const idAt = (sinLat, day) => seasonAt(sinLat, ((D(day) - 1) / YEAR_DAYS) % 1).id;
   assert.equal(idAt(0.6, 20), 'spring');
   assert.equal(idAt(-0.6, 20), 'autumn', 'en el sur es otoño cuando en el norte es primavera');
   assert.equal(idAt(0.6, 120), 'summer');
   assert.equal(idAt(-0.6, 120), 'winter');
   assert.equal(idAt(0.6, 320), 'winter');
   assert.equal(idAt(-0.6, 320), 'summer');
-  for (let d = 1; d <= 365; d += 15) {
-    const n = seasonAt(0.6, (d - 1) / 365);
-    const s = seasonAt(-0.6, (d - 1) / 365);
+  for (let d = 1; d <= YEAR_DAYS; d += 15) {
+    const n = seasonAt(0.6, (d - 1) / YEAR_DAYS);
+    const s = seasonAt(-0.6, (d - 1) / YEAR_DAYS);
     assert.ok(Math.abs(n.warmth + s.warmth) < 1e-9, 'el calor del sur es el opuesto al del norte');
-    const eq = seasonAt(0.01, (d - 1) / 365);
+    const eq = seasonAt(0.01, (d - 1) / YEAR_DAYS);
     assert.ok(Math.abs(eq.warmth) < 0.1, 'en el ecuador casi no cambia la temperatura');
     assert.ok(['wet', 'dry'].includes(eq.id), 'el ecuador tiene épocas húmeda y seca, no cuatro estaciones');
   }
@@ -76,7 +78,7 @@ assert.equal(YEAR_SECONDS / 3600, 36.5, 'un año dura 36 h 30 min');
   const base = 1.05 - 0.7; // temperatura base a ~64° de latitud en tierra baja
   assert.ok(snowCover(effectiveTemperature(base, winterN)) > 0.7, 'nieva en el invierno de latitudes altas');
   assert.ok(snowCover(effectiveTemperature(base, summerN)) < 0.05, 'en verano no queda nieve');
-  for (let d = 1; d <= 365; d += 10) assert.equal(snowCover(effectiveTemperature(0.95, seasonAt(0.1, (d - 1) / 365))), 0, 'ni un día de nieve en el trópico llano');
+  for (let d = 1; d <= YEAR_DAYS; d += 10) assert.equal(snowCover(effectiveTemperature(0.95, seasonAt(0.1, (d - 1) / YEAR_DAYS))), 0, 'ni un día de nieve en el trópico llano');
   assert.ok(growthFactor(effectiveTemperature(0.5, winterN), winterN) < growthFactor(effectiveTemperature(0.5, summerN), summerN), 'los cultivos rinden menos en invierno');
 }
 
@@ -93,14 +95,14 @@ assert.equal(YEAR_SECONDS / 3600, 36.5, 'un año dura 36 h 30 min');
     const epoch = first.epoch;
     const firstDate = first.date;
     assert.equal(firstDate.year, 1);
-    // El servidor estuvo caído 40 horas: al volver, el calendario siguió su curso (año 2).
-    Date.now = () => 1_700_000_000_000 + 40 * 3600 * 1000;
+    // El servidor estuvo caído algo más de un año de juego: al volver, el calendario siguió su curso (año 2).
+    Date.now = () => 1_700_000_000_000 + Math.ceil(YEAR_SECONDS * 1.1) * 1000;
     store1.close();
     const store2 = new Store(file);
     stores.push(store2);
     const second = new World({ store: store2, log: () => {} });
     assert.equal(second.epoch, epoch, 'el origen del mundo se conserva tras reiniciar');
-    assert.equal(second.date.year, 2, '40 horas reales después ya es el año 2');
+    assert.equal(second.date.year, 2, 'tras la caída ya es el año 2');
     assert.ok(second.date.day > firstDate.day);
     // Un tick de simulación no puede atrasar ni adelantar la fecha de ninguna colonia.
     assert.equal(second.date.dayOfYear, dateAt(second.elapsed).dayOfYear);
@@ -152,10 +154,10 @@ assert.equal(YEAR_SECONDS / 3600, 36.5, 'un año dura 36 h 30 min');
   b.consumeSpot(spotB, 0);
   assert.ok(spotA.readyAt > spotB.readyAt, 'rebrota más despacio con frío');
 
-  // Un invierno completo (91 días de juego) a ~53° de latitud: con el dueño presente, nadie muere de frío.
+  // Un invierno completo (un cuarto de año) a ~53° de latitud: con el dueño presente, nadie muere de frío.
   const sim = make();
   const phase0 = 0.75; // arranca el invierno boreal
-  const WINTER_DAYS = 45;
+  const WINTER_DAYS = YEAR_DAYS / 4;
   for (let t = 0; t < WINTER_DAYS * DAY; t += 6) {
     sim.setSeason(seasonAt(dirNorth.y, (phase0 + t / YEAR_SECONDS) % 1));
     for (const k of ['food', 'water']) sim.stock[k] = Math.max(sim.stock[k], 400);

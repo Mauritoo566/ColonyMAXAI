@@ -1,4 +1,5 @@
 import { AGES, AGE_HOOKS, ageInfo, nextAgeStatus } from './ages.js';
+import { preserveScroll } from './keepScroll.js';
 import { STOCK_NAMES } from './buildings.js';
 import { unlockTable, limitsFor } from './sim/progression.js';
 
@@ -22,6 +23,7 @@ export class AgeUI {
     this.bar = $('age-bar');
     this.modal = $('age-modal');
     this.panel = $('age-panel');
+    preserveScroll(this.panel);
     this.tab = 'resumen';
     this.numeral = $('age-numeral');
     this.name = $('age-name');

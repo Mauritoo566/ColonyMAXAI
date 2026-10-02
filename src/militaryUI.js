@@ -1,4 +1,5 @@
 import { GOOD_NAMES } from './sim/goods.js';
+import { preserveScroll } from './keepScroll.js';
 import { UNITS, UNITS_BY_ID, upgradeOf, PVP } from './sim/units.js';
 
 // Panel del ejército: capacidad militar, plazas de cada edificio, mantenimiento, reclutar
@@ -15,6 +16,7 @@ export class MilitaryUI {
     this.colony = colony;
     this.button = button;
     this.panel = panel;
+    preserveScroll(this.panel);
     this.timer = 0;
     this.key = '';
     button.addEventListener('click', () => this.toggle());
