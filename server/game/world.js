@@ -237,7 +237,6 @@ export class World {
       return cache.get(key);
     };
     const pendingStatics = [];
-    const pendingOtherStatics = [];
     for (const client of this.clients) {
       const own = this.colonies.get(client.player.id);
       if (own && full) {
@@ -252,20 +251,18 @@ export class World {
       if (others && client.view) {
         for (const colony of this.colonies.values()) {
           if (colony === own || colony.dir.angleTo(client.view) * RADIUS > NEAR_OTHERS) continue;
-          // A los visitantes también hay que mandarles, de vez en cuando, los nacidos
-          // (colonos que no vienen de la semilla) y los caminos: "fast" normalmente no los trae.
-          const statics = colony.otherStaticsSent !== colony.sim.staticsRevision;
-          client.sendRaw(once(`other:${colony.playerId}`, () => ({ t: 'other', id: colony.playerId, w: colony.sim.weather?.brief(), ...colony.sim.snapshot('fast', { statics }) })));
-          if (statics && !cache.has(`otherSent:${colony.playerId}`)) {
-            cache.set(`otherSent:${colony.playerId}`, true);
-            pendingOtherStatics.push(colony);
-          }
+          // A los visitantes también hay que mandarles, de vez en cuando, los nacidos (colonos
+          // que no vienen de la semilla), los caminos y lo ya talado/picado: "fast" normalmente
+          // no los trae. Es por cliente (no por colonia): quien recién empieza a mirarla no se
+          // puede perder lo que ya pasó sólo porque otro ya lo recibió antes.
+          const statics = client.otherStatics.get(colony.playerId) !== colony.sim.staticsRevision;
+          client.sendRaw(once(`other:${colony.playerId}:${statics}`, () => ({ t: 'other', id: colony.playerId, w: colony.sim.weather?.brief(), ...colony.sim.snapshot('fast', { statics }) })));
+          if (statics) client.otherStatics.set(colony.playerId, colony.sim.staticsRevision);
         }
       }
       if (t % TIME_EVERY === 0) client.sendRaw(once('time', () => ({ t: 'time', elapsed: this.elapsed })));
     }
     for (const colony of pendingStatics) colony.staticsSent = colony.sim.staticsRevision;
-    for (const colony of pendingOtherStatics) colony.otherStaticsSent = colony.sim.staticsRevision;
     if (t % PLAYERS_EVERY === 0) this.sendPlayers();
   }
 

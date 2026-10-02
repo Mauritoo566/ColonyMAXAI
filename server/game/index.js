@@ -122,6 +122,7 @@ wss.on('connection', (ws, req) => {
     token: null,
     view: null,
     alive: true,
+    otherStatics: new Map(), // id de colonia ajena -> su staticsRevision ya recibida (nacidos, caminos, lo talado)
     sendRaw(text) {
       // A un jugador con la conexión saturada se le salta este envío (llega el próximo).
       if (ws.readyState === ws.OPEN && ws.bufferedAmount < 1_000_000) ws.send(text);

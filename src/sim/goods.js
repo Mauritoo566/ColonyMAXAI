@@ -11,6 +11,8 @@ export const GOODS = [
   { id: 'stone', name: 'piedra', icon: 'stone', color: '#a8a39a', age: 1, group: 'raw', use: 'Construcción, sillares y hormigón.' },
   { id: 'fiber', name: 'fibras', icon: 'fiber', color: '#b5c46a', age: 1, group: 'raw', use: 'Cuerdas, techos y telas.' },
   { id: 'grain', name: 'grano', icon: 'grain', color: '#e0c25a', age: 2, group: 'raw', use: 'Se hornea en pan o se muele en harina.' },
+  { id: 'vegetables', name: 'verduras', icon: 'food', color: '#7ab547', age: 2, group: 'food', use: 'Alimenta a los colonos.' },
+  { id: 'tree_seed', name: 'semilla de árbol', icon: 'leaf', color: '#8a6a3a', age: 2, group: 'seed', use: 'Plantá una donde quieras: nace el árbol propio de ese bioma.' },
   { id: 'clay', name: 'arcilla', icon: 'clay', color: '#b86a44', age: 2, group: 'raw', use: 'Cerámica y ladrillos.' },
   { id: 'copper', name: 'cobre', icon: 'ore', color: '#c8743c', age: 3, group: 'raw', use: 'Con estaño se funde en bronce; después, electrónica.' },
   { id: 'tin', name: 'estaño', icon: 'ore', color: '#9fb0b8', age: 3, group: 'raw', use: 'Aleación del bronce.' },
@@ -55,7 +57,7 @@ export const BASE_GOODS = ['food', 'water', 'wood', 'stone', 'fiber'];
 // Bienes que se pueden comprar y vender en el mercado (no se comercia ni con conocimiento
 // ni con equipo militar), y su valor en monedas por unidad.
 export const TRADE_VALUE = {
-  food: 1, water: 0.5, wood: 1, stone: 1.2, fiber: 1, grain: 1.2, clay: 1, copper: 2.5, tin: 2.5, bronze: 6,
+  food: 1, water: 0.5, wood: 1, stone: 1.2, fiber: 1, grain: 1.2, vegetables: 1.3, clay: 1, copper: 2.5, tin: 2.5, bronze: 6,
   bronze_tools: 10, pottery: 3, bread: 3, iron_ore: 2.5, charcoal: 2, iron: 7, iron_tools: 14, cut_stone: 4,
   planks: 3, flour: 3, cloth: 5, coal: 3, steel: 12, bricks: 5, concrete: 6,
 };

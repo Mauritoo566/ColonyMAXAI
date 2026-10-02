@@ -7,7 +7,7 @@ import { temperature, biomeAt, BIOMES } from '../biomes.js';
 import { createProfile, updateNeeds, hasTrait, wellbeing, addLog, SKILLS, TRAITS, completeSkill, completeSkills } from '../needs.js';
 import { appearanceFromGenes, gene } from '../genes.js';
 import { RESOURCE_TYPES } from '../resourceTypes.js';
-import { TILE_ANGLE, generateTile, generateCampGrove, GROVE_KEY, SPROUT_KEY, sproutItem, tileFromItems } from '../resourceGen.js';
+import { TILE_ANGLE, generateTile, generateCampGrove, GROVE_KEY, SPROUT_KEY, GROVE_TREES, sproutItem, tileFromItems } from '../resourceGen.js';
 import { chooseTask, shouldSwitch, runTask, endTask, taskActivity, taskLog, taskKey, siteStatus, orderProblem, PRIORITY } from '../ai.js';
 import { campLayout, campObstacles, campZone } from './campLayout.js';
 import { BUILDINGS, levelOf } from './buildingTypes.js';
@@ -1607,37 +1607,37 @@ export class ColonySim {
     this.emit('resources');
   }
 
-  // Al talar un árbol a veces caen semillas: nace uno nuevo de la misma especie cerca,
-  // que tarda en crecer antes de poder talarse. El trabajador no hace un viaje aparte: es
-  // parte del mismo talado.
-  plantSapling(spot, gameTime) {
-    if (this.sprouts.length >= MAX_SPROUTS) return false;
-    const typeIndex = RESOURCE_TYPES.findIndex((t) => t.id === spot.type);
-    if (typeIndex < 0) return false;
-    const type = RESOURCE_TYPES[typeIndex];
+  // Plantar a mano una semilla de árbol (gastada del almacén): nace el árbol propio del
+  // bioma de ese lugar, y tarda en crecer antes de poder talarse. Null si se pudo, o el motivo.
+  plantTreeSeed(x, z, gameTime) {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return 'Lugar no válido';
+    if ((this.stock.tree_seed ?? 0) < 1) return 'No quedan semillas de árbol';
+    if (Math.hypot(x, z) > SPOT_RADIUS) return 'Demasiado lejos de la aldea';
+    if (!this.walkable(x, z, 1.2) || this.blockedByBuilding(x, z)) return 'Ahí no se puede plantar';
+    if (this.sprouts.length >= MAX_SPROUTS) return 'Ya hay demasiados brotes esperando a crecer';
+    this.remote?.('plantTreeSeed', [x, z]);
     const p = new THREE.Vector3();
-    for (let attempt = 0; attempt < 6; attempt++) {
-      const a = Math.random() * Math.PI * 2;
-      const r = 3 + Math.random() * 7;
-      const x = spot.x + Math.cos(a) * r;
-      const z = spot.z + Math.sin(a) * r;
-      if (!this.walkable(x, z, 1.2) || this.blockedByBuilding(x, z)) continue;
-      this.toDirection(x, z, p);
-      const h = surfaceHeight(p);
-      this.sprouts.push({
-        typeIndex,
-        d: [p.x, p.y, p.z],
-        h,
-        yaw: Math.random() * Math.PI * 2,
-        scale: type.scale[0] + Math.random() * (type.scale[1] - type.scale[0]),
-        tint: 0.85 + Math.random() * 0.3,
-        rank: 0,
-        readyAt: gameTime + SAPLING_GROW_SECONDS,
-      });
-      this.refreshSprouts();
-      return true;
-    }
-    return false;
+    this.toDirection(x, z, p);
+    const biome = biomeAt(p.x, p.y, p.z).id;
+    const options = GROVE_TREES[biome] || ['broadleaf', 'broadleaf', 'pine'];
+    const species = options[Math.floor(Math.random() * options.length)];
+    const typeIndex = RESOURCE_TYPES.findIndex((t) => t.id === species);
+    const type = RESOURCE_TYPES[typeIndex];
+    const h = surfaceHeight(p);
+    this.takeStock('tree_seed', 1);
+    this.sprouts.push({
+      typeIndex,
+      d: [p.x, p.y, p.z],
+      h,
+      yaw: Math.random() * Math.PI * 2,
+      scale: type.scale[0] + Math.random() * (type.scale[1] - type.scale[0]),
+      tint: 0.85 + Math.random() * 0.3,
+      rank: 0,
+      readyAt: gameTime + SAPLING_GROW_SECONDS,
+    });
+    this.refreshSprouts();
+    this.emit('changed');
+    return null;
   }
 
   // ¿Se puede recoger este sitio ahora? Los árboles sólo desde la Edad de Piedra (antes: palos del suelo).
@@ -1766,7 +1766,9 @@ export class ColonySim {
       // Para que un visitante también vea esto ya talado/picado (sólo baldosas normales:
       // la arboleda y los brotes son de cada campamento y no viajan por la red).
       if (spot.key !== GROVE_KEY && spot.key !== SPROUT_KEY) this.staticsRevision++;
-      if (spot.tree && Math.random() < SEED_CHANCE) this.plantSapling(spot, gameTime);
+      // Al talar un árbol de verdad, a veces caen semillas: el jugador las guarda y las
+      // planta donde quiera (no se planta solo).
+      if (spot.tree && Math.random() < SEED_CHANCE) this.produce('tree_seed', 1);
     }
   }
 
@@ -2882,6 +2884,11 @@ export class ColonySim {
       case 'clearMarks':
         this.clearMarks(cleanKinds(args[0]));
         return true;
+      case 'plantTreeSeed': {
+        const [x, z] = args;
+        if (num(x, 500) === null || num(z, 500) === null) return false;
+        return this.plantTreeSeed(x, z, this.gameTime) === null;
+      }
     }
     return false;
   }

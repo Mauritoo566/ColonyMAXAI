@@ -89,7 +89,7 @@ export function generateTile(i, j, cols) {
 // fogata, según el bioma, para que la colonia siempre tenga árboles, bayas y piedras
 // cerca. Se dibuja y se usa como una baldosa más (clave GROVE_KEY).
 export const GROVE_KEY = -1;
-const GROVE_TREES = {
+export const GROVE_TREES = {
   taiga: ['pine'], tundra: ['pine'], mountain: ['pine'], snow: ['pine'],
   jungle: ['jungleTree', 'palm'], savanna: ['acacia'], desert: ['palm', 'acacia'], beach: ['palm'],
   swamp: ['broadleaf', 'jungleTree'],

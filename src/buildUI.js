@@ -45,10 +45,11 @@ function costHtml(def, stock) {
 }
 
 export class BuildUI {
-  constructor({ buildings, colony, harvest, roads, onFocusColonist }) {
+  constructor({ buildings, colony, harvest, roads, plant, onFocusColonist }) {
     this.roads = roads;
     this.buildings = buildings;
     this.harvest = harvest;
+    this.plant = plant;
     this.colony = colony;
     this.onFocusColonist = onFocusColonist;
     this.timer = 0;
@@ -432,6 +433,7 @@ export class BuildUI {
           <span class="store-name" style="--res:${r.color}">${icon(r.icon)}${STOCK_NAMES[r.id]}</span>
           <span class="bar" style="--bar:${tone}"><i style="width:${Math.round(fill * 100)}%"></i></span>
           <strong>${have}<small> / ${cap}${out ? ` · +${out} afuera` : ''}</small></strong>
+          ${r.id === 'tree_seed' && have >= 1 ? `<button type="button" class="btn" data-plant-seed aria-pressed="${this.plant?.active}">${this.plant?.active ? 'Plantando…' : 'Plantar'}</button>` : ''}
         </div>`;
     }).join('');
   }
@@ -495,7 +497,7 @@ export class BuildUI {
   renderStore(b) {
     const colony = this.colony;
     const piles = this.buildings.list.filter((o) => o.def.id === 'stockpile' && (o.done || o.upgrading)).length;
-    const key = ['store', piles, JSON.stringify(visibleGoods(colony).map((r) => [r.id, Math.floor(colony.stock[r.id] ?? 0), colony.capacity(r.id), Math.floor(colony.outdoor[r.id] ?? 0)])), JSON.stringify(colony.zones), Math.floor(colony.spoiled), Math.floor(((colony.foodBatches[0]?.expires ?? 0) - colony.gameTime) / 15)].join('|');
+    const key = ['store', piles, JSON.stringify(visibleGoods(colony).map((r) => [r.id, Math.floor(colony.stock[r.id] ?? 0), colony.capacity(r.id), Math.floor(colony.outdoor[r.id] ?? 0)])), JSON.stringify(colony.zones), Math.floor(colony.spoiled), Math.floor(((colony.foodBatches[0]?.expires ?? 0) - colony.gameTime) / 15), this.plant?.active].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -534,6 +536,7 @@ export class BuildUI {
       this.setTab('storage');
       this.buildings.select(null);
     });
+    this.panel.querySelector('[data-plant-seed]')?.addEventListener('click', () => this.plant?.setActive(!this.plant.active));
   }
 
   // ---- Ficha del edificio ----------------------------------------------------
@@ -575,7 +578,7 @@ export class BuildUI {
     // Clave para no redibujar si nada cambió.
     const site = b.done ? null : colony.siteInfo(b);
     const siteKey = site ? [site.state, site.why, (site.ids ?? []).join(), (site.ordered ?? []).join(), b.priority, b.paused, colony.colonists.map((c) => (c.growth ?? 1) < 1 || c.soldier ? '' : c.id).join('.')].join('~') : '';
-    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, b.gate, est?.lines[0], (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, b.gate, est?.lines[0], (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), Math.floor(colony.stock.tree_seed ?? 0), this.plant?.active, ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -814,6 +817,7 @@ export class BuildUI {
         this.buildings.setWorker(b, c);
       });
     }
+    this.panel.querySelector('[data-plant-seed]')?.addEventListener('click', () => this.plant?.setActive(!this.plant.active));
   }
 
   // Mercado: cupo diario y compra/venta de bienes.

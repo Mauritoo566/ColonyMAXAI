@@ -139,11 +139,11 @@ add({
   kind: 'process',
   requires: [{ id: 'well' }], // los cultivos piden agua cerca
   levels: [
-    L(2, 'Campo de cultivo', 'Surcos de grano con un cercado de ramas. Con lluvia rinde más.', 'gen:farm:2', { recipe: { in: {}, out: { grain: 4 }, time: 60 }, rain: true }),
-    L(3, 'Campos con arado de bronce', 'Un arado de bronce abre surcos más hondos.', 'gen:farm:3', { recipe: { in: {}, out: { grain: 6 }, time: 60 }, rain: true, upgradeCost: { wood: 20, bronze_tools: 2, fiber: 8 } }),
-    L(5, 'Granja de arado de hierro', 'Arado de hierro tirado por bueyes y graneros de piedra.', 'gen:farm:5', { recipe: { in: {}, out: { grain: 9 }, time: 60 }, rain: true, upgradeCost: { wood: 30, iron_tools: 3, cut_stone: 6 } }),
-    L(8, 'Granja mecanizada', 'Segadora de vapor y silos de ladrillo.', 'gen:farm:8', { recipe: { in: {}, out: { grain: 14 }, time: 60 }, rain: true, upgradeCost: { machinery: 2, bricks: 12, steel: 4 }, energy: 1 }),
-    L(10, 'Granja automatizada', 'Tractores guiados, riego controlado y almacén climatizado.', 'gen:farm:10', { recipe: { in: {}, out: { grain: 22 }, time: 60 }, rain: false, upgradeCost: { machinery: 4, electronics: 3, concrete: 12 }, energy: 3, workers: 1 }),
+    L(2, 'Campo de cultivo', 'Surcos de grano y un cantero de verduras, con un cercado de ramas. Con lluvia rinde más.', 'gen:farm:2', { recipe: { in: {}, out: { grain: 4, vegetables: 1 }, time: 60 }, rain: true }),
+    L(3, 'Campos con arado de bronce', 'Un arado de bronce abre surcos más hondos.', 'gen:farm:3', { recipe: { in: {}, out: { grain: 6, vegetables: 2 }, time: 60 }, rain: true, upgradeCost: { wood: 20, bronze_tools: 2, fiber: 8 } }),
+    L(5, 'Granja de arado de hierro', 'Arado de hierro tirado por bueyes y graneros de piedra.', 'gen:farm:5', { recipe: { in: {}, out: { grain: 9, vegetables: 3 }, time: 60 }, rain: true, upgradeCost: { wood: 30, iron_tools: 3, cut_stone: 6 } }),
+    L(8, 'Granja mecanizada', 'Segadora de vapor y silos de ladrillo.', 'gen:farm:8', { recipe: { in: {}, out: { grain: 14, vegetables: 5 }, time: 60 }, rain: true, upgradeCost: { machinery: 2, bricks: 12, steel: 4 }, energy: 1 }),
+    L(10, 'Granja automatizada', 'Tractores guiados, riego controlado y almacén climatizado.', 'gen:farm:10', { recipe: { in: {}, out: { grain: 22, vegetables: 7 }, time: 60 }, rain: false, upgradeCost: { machinery: 4, electronics: 3, concrete: 12 }, energy: 3, workers: 1 }),
   ],
 });
 

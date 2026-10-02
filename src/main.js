@@ -17,6 +17,7 @@ import { BuildUI } from './buildUI.js';
 import { WeatherSystem, WEATHER } from './weather.js';
 import { AgeUI } from './ageUI.js';
 import { HarvestTool } from './harvest.js';
+import { PlantTool } from './plant.js';
 import { Connection } from './net.js';
 import { requireLogin, logout } from './auth.js';
 import { SettingsUI } from './settingsUI.js';
@@ -152,6 +153,7 @@ const buildings = new BuildingSystem({
   pickColonist: (x, y) => colonyView.pickAt(x, y) ?? (colonyView.pickMobAt(x, y) != null ? true : null),
 });
 const harvest = new HarvestTool({ scene, camera, canvas, colony, controls, campObject });
+const plant = new PlantTool({ scene, camera, canvas, colony });
 // Recursos del mundo: lo talado desaparece y lo que brota con la lluvia aparece.
 colony.on('resources', () => {
   resources.restoreRemoved(colony.serializeRemoved());
@@ -259,7 +261,7 @@ roads.onMessage = (text) => showNotice(text, true);
   syncGrid();
 }
 controls.blockLeftDrag = () => harvest.active || roads.active || !!buildings.placing?.line;
-const buildUI = new BuildUI({ buildings, colony, harvest, roads, onFocusColonist: (c) => colonyUI.focusColonist(c) });
+const buildUI = new BuildUI({ buildings, colony, harvest, roads, plant, onFocusColonist: (c) => colonyUI.focusColonist(c) });
 // Sólo una ficha abierta a la vez.
 colonyUI.onOpen = () => buildings.select(null);
 buildUI.onOpen = () => colonyView.select(null);
@@ -618,6 +620,7 @@ renderer.setAnimationLoop(() => {
   militaryUI.update(delta);
   harvest.update(waterUniforms.uTime.value, delta);
   roads.update();
+  plant.update();
   grid.update();
   others.update(delta);
   viewTimer -= delta;
