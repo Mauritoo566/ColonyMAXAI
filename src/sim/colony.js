@@ -20,6 +20,7 @@ import { updateFamily, updateImmigration, immigrationBlocker, assignHomes, maxPo
 import { buildBlocker, upgradeBlocker, evolveHouses, buildCostOf, buildLevelFor, limitsFor, radiusOf, expansionBlocker, expansionCost, EXPANSION_STEP } from './progression.js';
 import { GOOD_NAMES } from './goods.js';
 import { centerProps } from './centerLayout.js';
+import { entranceOf, accessProblem, halfOf, pointInRect, rectsOverlap, circleHitsRect, footprintRect, resourceClearOf, cardinalYaw } from './access.js';
 import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, ROAD_LEVELS, ROAD_CELL, autoRoadPath } from './economy.js';
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
@@ -91,8 +92,7 @@ const ASSIGN_EVERY = 1; // segundos entre repasos de trabajadores libres
 // tamaño (footprint), pegadas sin hueco a las del vecino. Fuera de ahí (terreno, caminos de
 // colono, props) el footprint se sigue usando como radio normal: no hace falta que sea cuadrado.
 function footprintHalf(footprint) {
-  const cells = Math.max(1, Math.round((footprint * 2) / ROAD_CELL));
-  return (cells * ROAD_CELL) / 2;
+  return halfOf(footprint);
 }
 // Qué recursos naturales sirven para qué.
 // Árboles: se talan con herramientas (Edad de Piedra en adelante). En Primitiva la madera sale de los palos caídos.
@@ -1841,7 +1841,7 @@ export class ColonySim {
 
   blockedByBuilding(x, z) {
     for (const b of this.buildings) {
-      if (Math.hypot(x - b.x, z - b.z) < b.def.footprint + 3) return true;
+      if (Math.hypot(x - b.x, z - b.z) < resourceClearOf(b.def)) return true;
     }
     return false;
   }
@@ -1955,18 +1955,24 @@ export class ColonySim {
   // ---- Edificios ----------------------------------------------------------------------------
 
   // Por qué no se puede construir "def" en (x, z), o null si se puede.
-  buildProblem(def, x, z) {
+  buildProblem(def, x, z, yaw = null) {
     const blocked = buildBlocker(this, def);
     if (blocked) return blocked;
     if (def.deposit && !depositAt(this, def.deposit, x, z)) return `Aquí no hay yacimiento de ${GOOD_NAMES[def.deposit]}: busca las manchas del color del mineral`;
     const cost = buildCostOf(def, this.age);
     if (!this.canAfford(cost)) return `Faltan ${this.missing(cost).join(' y ')}`;
-    return this.siteProblem(def, x, z);
+    return this.siteProblem(def, x, z, null, yaw);
+  }
+
+  // Hacia dónde mira un edificio: siempre un cuarto de vuelta exacto (los muros no se giran a mano).
+  facingFor(def, x, z, yaw = null) {
+    if (def.line) return Number.isFinite(yaw) ? yaw : 0;
+    return cardinalYaw(Number.isFinite(yaw) ? yaw : Math.atan2(-x, -z));
   }
 
   // Lo que depende sólo del lugar (yacimiento, territorio, choques, terreno). "self": un edificio
   // que se está moviendo, que no choca consigo mismo.
-  siteProblem(def, x, z, self = null) {
+  siteProblem(def, x, z, self = null, yaw = null) {
     if (def.deposit && !depositAt(this, def.deposit, x, z)) return `Aquí no hay yacimiento de ${GOOD_NAMES[def.deposit]}: busca las manchas del color del mineral`;
     const radius = radiusOf(this);
     if (Math.hypot(x, z) > radius) return `Fuera del territorio de la aldea (${radius} m; se amplía con la edad y comprando territorio)`;
@@ -1988,6 +1994,14 @@ export class ColonySim {
     for (const zone of this.zones) {
       if (rectDistance(zone, x, z) < r + 0.5) return 'Choca con la zona de acopio';
     }
+    // Entradas: nada tapa la de este edificio y este edificio no tapa la de ningún otro.
+    const facing = this.facingFor(def, x, z, yaw);
+    const others = this.buildings.filter((o) => o !== self && !o.removed && !(self && o.x === self.x && o.z === self.z));
+    const props = this.obstacles.filter((o) => o.kind !== 'building');
+    const blockedAccess = accessProblem(def, x, z, facing, others, props);
+    if (blockedAccess) return blockedAccess;
+    const entrance = entranceOf(def, x, z, facing);
+    if (entrance && this.heightAt(entrance.approach.x, entrance.approach.z) <= 0.8) return 'La entrada da al agua';
     const h = this.heightAt(x, z);
     if (h <= 0.8) return 'No se puede construir en el agua';
     let lo = h;
@@ -2259,7 +2273,7 @@ export class ColonySim {
   build(typeId, x, z, yaw = null) {
     const def = BUILDINGS[typeId];
     if (!def || !this.camp) return { problem: 'No se puede construir eso' };
-    const problem = this.buildProblem(def, x, z);
+    const problem = this.buildProblem(def, x, z, yaw);
     if (problem) return { problem };
     if (this.remote) {
       this.remote('build', [typeId, x, z, Number.isFinite(yaw) ? yaw : null]);
@@ -2267,7 +2281,7 @@ export class ColonySim {
     }
     for (const [k, n] of Object.entries(buildCostOf(def, this.age))) this.takeStock(k, n);
     // Los muros no se giran a mano: un tramo suelto queda a lo largo del eje X (los trazados por línea traen su ángulo).
-    const facing = def.line ? 0 : Number.isFinite(yaw) ? yaw : Math.atan2(-x, -z);
+    const facing = this.facingFor(def, x, z, yaw);
     const b = this.createBuilding(def, x, z, facing, 0, 0, buildLevelFor(def, this.age));
     this.emit('changed');
     return { building: b };
@@ -2328,15 +2342,15 @@ export class ColonySim {
   }
 
   // Por qué no se puede mover "b" a (x, z), o null.
-  moveProblem(b, x, z) {
+  moveProblem(b, x, z, yaw = null) {
     if (!b || b.removed) return 'Ese edificio ya no existe';
-    return this.siteProblem(b.def, x, z, b);
+    return this.siteProblem(b.def, x, z, b, Number.isFinite(yaw) ? yaw : b.yaw);
   }
 
   // Mover un edificio: queda igual (nivel, obra, dotación) en otro sitio y sin coste. Recibe un id
   // nuevo para que todas las copias lo redibujen en su sitio.
   moveBuilding(b, x, z, yaw = null) {
-    const problem = this.moveProblem(b, x, z);
+    const problem = this.moveProblem(b, x, z, yaw);
     if (problem) return problem;
     if (this.remote) {
       this.remote('moveBuilding', [b.id, x, z, Number.isFinite(yaw) ? yaw : null]);
@@ -2344,7 +2358,7 @@ export class ColonySim {
     }
     const old = { workers: [...b.workers], residents: this.colonists.filter((c) => c.home === b.id), orders: this.colonists.filter((c) => c.order?.kind === 'build' && c.order.building === b.id) };
     this.detachBuilding(b);
-    const nb = this.createBuilding(b.def, x, z, Number.isFinite(yaw) ? yaw : b.yaw, b.done ? 0 : b.progress, b.produced, b.level);
+    const nb = this.createBuilding(b.def, x, z, this.facingFor(b.def, x, z, Number.isFinite(yaw) ? yaw : b.yaw), b.done ? 0 : b.progress, b.produced, b.level);
     nb.gate = b.gate;
     Object.assign(nb, { upgrading: b.upgrading, store: b.store, cycle: b.cycle, cycleActive: b.cycleActive, priority: b.priority, paused: b.paused, buildTime: b.buildTime });
     for (const w of old.workers) {
@@ -2375,7 +2389,7 @@ export class ColonySim {
       clearRadius: def.line ? 0.4 : def.footprint + 0.8,
       detailRadius: 0,
       dirtColor: (ground.details ? ground : BIOMES.grassland).dirt,
-      resourceClear: def.line ? def.footprint + 0.5 : def.footprint + 3,
+      resourceClear: resourceClearOf(def),
     });
     this.heights.clear();
 
@@ -2399,6 +2413,8 @@ export class ColonySim {
         const n = this.def.levels[this.level - 1].name;
         return this.gate ? `Portón (${n.toLowerCase()})` : n;
       },
+      entrance: entranceOf(def, x, z, yaw), // puerta o punto de trabajo y su franja de acceso (sim/access.js)
+      accessIssue: null, // por qué la entrada está bloqueada (si lo está): lo calcula refreshObstacles
       gate: false, // un tramo de muro convertido en portón: se puede atravesar
       priority: 'normal', // prioridad de la obra (baja, normal, alta)
       paused: false, // obra pausada por el jugador
@@ -2812,8 +2828,46 @@ export class ColonySim {
       ...(this.age >= 2 ? [{ x: TOTEM_SPOT.x, z: TOTEM_SPOT.z, r: 0.9, kind: 'prop' }] : []),
       ...this.buildings.filter((b) => !b.gate).map((b) => ({ x: b.x, z: b.z, r: b.def.footprint, kind: 'building', line: !!b.def.line })),
       // Objetos del centro que aparecen con la edad (no se pisan ni se construye encima).
-      ...centerProps(this.age, this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint }))).map((p) => ({ x: p.x, z: p.z, r: p.r, kind: 'prop' })),
+      // (los objetos del centro tampoco aparecen sobre la entrada de un edificio)
+      ...centerProps(this.age, [...this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint })), ...this.buildings.filter((b) => b.entrance).map((b) => ({ x: (b.entrance.zone.x0 + b.entrance.zone.x1) / 2, z: (b.entrance.zone.z0 + b.entrance.zone.z1) / 2, r: 2.4 }))]).map((p) => ({ x: p.x, z: p.z, r: p.r, kind: 'prop' })),
     ];
+    this.computeAccessIssues();
+  }
+
+  // ---- Accesos ----------------------------------------------------------------------------
+
+  // ¿Cae este punto en la franja de acceso de algún edificio? (no se planta, no crecen árboles, no se deja nada)
+  accessBlocked(x, z) {
+    for (const b of this.buildings) if (b.entrance && pointInRect(b.entrance.zone, x, z)) return true;
+    return false;
+  }
+
+  // Marca los edificios cuya entrada quedó bloqueada (construcciones antiguas o un objeto que apareció después).
+  // No se toca nada solo: se señala y el jugador lo resuelve moviendo o demoliendo.
+  computeAccessIssues() {
+    const props = this.obstacles.filter((o) => o.kind !== 'building');
+    let changed = false;
+    for (const b of this.buildings) {
+      let issue = null;
+      const e = b.entrance;
+      if (e) {
+        for (const o of this.buildings) {
+          if (o === b || o.removed) continue;
+          const hit = o.def.line ? circleHitsRect(e.zone, o.x, o.z, o.def.footprint) : rectsOverlap(e.zone, footprintRect(o.def, o.x, o.z));
+          if (hit) {
+            issue = `La entrada está bloqueada por ${o.name}`;
+            break;
+          }
+        }
+        if (!issue && props.some((p) => circleHitsRect(e.zone, p.x, p.z, p.r))) issue = 'La entrada está bloqueada por un objeto de la aldea';
+        if (!issue && this.heightAt(e.approach.x, e.approach.z) <= 0.8) issue = 'La entrada da al agua';
+      }
+      if (b.accessIssue !== issue) {
+        b.accessIssue = issue;
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   // ---- Guardado ---------------------------------------------------------------------------

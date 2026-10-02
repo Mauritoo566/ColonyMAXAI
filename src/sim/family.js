@@ -143,6 +143,8 @@ export function assignHomes(colony) {
 export function homeOf(colony, c) {
   const house = c.home != null ? colony.building(c.home) : null;
   if (house && usable(house)) {
+    // Se entra por la puerta de la casa (donde espera quien llega), no por el lado que mira al centro.
+    if (house.entrance) return { x: house.x, z: house.z, top: 4.6, door: house.entrance.approach };
     const d = Math.hypot(house.x, house.z) || 1;
     const r = house.def.footprint + 0.9;
     return { x: house.x, z: house.z, top: 4.6, door: { x: house.x - (house.x / d) * r, z: house.z - (house.z / d) * r } };

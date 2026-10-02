@@ -161,7 +161,7 @@ export function chooseTask(colony, c, env) {
     if (water) add(base * distanceFactor(dist(c, water)), { type: 'drink', source: 'water', spot: water });
     for (const b of colony.buildings) {
       // Del recolector de lluvia sólo se bebe si tiene agua juntada.
-      if (b.def.id === 'well' && b.done && (!levelOf(b).rainOnly || b.store >= 1)) add(base * distanceFactor(dist(c, b)) * 1.1, { type: 'drink', source: 'well', building: b });
+      if (b.def.id === 'well' && b.done && !b.accessIssue && (!levelOf(b).rainOnly || b.store >= 1)) add(base * distanceFactor(dist(c, b)) * 1.1, { type: 'drink', source: 'well', building: b });
     }
     if (stock.water >= 1) add(base * distanceFactor(dist(c, storage)), { type: 'drink', source: 'stock' });
   }
@@ -492,8 +492,11 @@ function release(spot) {
   return 'failed';
 }
 
-// Punto del borde de un edificio del lado del colono.
+// Dónde se acerca un colono a un edificio. Uno terminado se usa por su entrada (puerta o punto de trabajo,
+// ver sim/access.js): nadie atraviesa las paredes ni entra por donde no hay puerta. Una obra, en cambio, se
+// trabaja desde el lado por el que se llega.
 function edgeOf(b, c) {
+  if (b.done && b.entrance) return b.entrance.approach;
   const a = Math.atan2(c.z - b.z, c.x - b.x);
   const r = b.def.footprint + 0.9;
   return { x: b.x + Math.cos(a) * r, z: b.z + Math.sin(a) * r };
@@ -506,6 +509,12 @@ function runWork(colony, c, task, dt, env) {
   const def = b.def;
 
   const level = levelOf(b);
+  // Entrada bloqueada (partidas antiguas o algo que apareció después): no insiste, lo dice y espera.
+  if (b.accessIssue && b.entrance) {
+    task.noAccess = true;
+    b.status = b.accessIssue;
+    return busy(task, dt, 20) ? 'done' : 'running';
+  }
   // Con el almacén lleno no tiene sentido traer más: espera (y avisa en la ficha).
   if (colony.isFull(def.stock) && task.phase !== 'returning') {
     task.noResource = true;
@@ -716,6 +725,7 @@ export function taskActivity(colony, c, task) {
     case 'work': {
       const def = task.building.def;
       if (def.kind) return task.building.status ?? (walking ? `Va a su puesto: ${task.building.name}` : `Trabajando en: ${task.building.name}`);
+      if (task.noAccess) return 'Espera: la entrada de su puesto está bloqueada';
       if (task.storeFull) return 'Espera: el almacén está lleno';
       if (task.noResource) return def.id === 'well' ? 'Espera a que llueva' : def.noResourceText;
       if (def.id === 'well') {

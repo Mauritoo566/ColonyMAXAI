@@ -1936,6 +1936,15 @@ canvas.is-harvesting {
   border-color: var(--accent);
 }
 
+.building-label.is-issue {
+  border-color: #ff9a3c;
+  color: #ffd9a8;
+}
+
+.access-warning {
+  color: #ffb066;
+}
+
 .building-label-name {
   font: 700 12px/1.1 var(--font-display);
   letter-spacing: 0.02em;

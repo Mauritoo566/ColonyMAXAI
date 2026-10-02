@@ -5,6 +5,7 @@ import { levelModel, frameMesh, material } from './buildingModels.js';
 import { BUILDINGS, levelOf } from './sim/buildingTypes.js';
 import { buildLevelFor } from './sim/progression.js';
 import { DEPOSIT_COLORS } from './sim/economy.js';
+import { entranceOf, halfOf, ACCESS_DEPTH, footprintRect, rectsOverlap } from './sim/access.js';
 
 // Vista y controles de los edificios. Los edificios en sí (obras, trabajadores, mejoras)
 // son de la simulación (sim/colony.js); aquí se dibujan con su modelo y su etiqueta, se
@@ -20,6 +21,44 @@ const LABEL_DISTANCE = 260; // metros: lo que pide atención se ve así de lejos
 const LABEL_NEAR = 70; // y lo demás sólo así de cerca
 const LABEL_MAX = 12;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
+
+// Marcas sobre el suelo de un edificio: su huella (las casillas que ocupa), la franja de acceso que hay que dejar
+// libre delante de la puerta y una flecha que dice hacia dónde mira. Se dibuja en el espacio del edificio, así que
+// gira con él. Verde/celeste si está bien; rojo/naranja si algo lo impide (sim/access.js).
+const OVERLAY_COLORS = { foot: '#5fe08a', footBad: '#ff5a4f', zone: '#4cc9f0', zoneBad: '#ffa23a', arrow: '#ffffff' };
+function createAccessOverlay() {
+  const group = new THREE.Group();
+  group.name = 'acceso';
+  group.visible = false;
+  const plane = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  const material = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
+  const foot = new THREE.Mesh(plane, material(OVERLAY_COLORS.foot, 0.22));
+  const zone = new THREE.Mesh(plane, material(OVERLAY_COLORS.zone, 0.3));
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.3, 3).rotateX(Math.PI / 2), material(OVERLAY_COLORS.arrow, 0.9));
+  for (const m of [foot, zone, arrow]) m.renderOrder = 5;
+  group.add(foot, zone, arrow);
+  return {
+    group,
+    // def: tipo; problem: texto del problema de colocación (o null); issue: entrada bloqueada de uno ya puesto (o null).
+    set(def, problem = null, issue = null) {
+      const e = entranceOf(def, 0, 0, 0);
+      const h = halfOf(def.footprint);
+      group.visible = !def.line;
+      if (def.line) return;
+      const accessBad = !!issue || /entrada/i.test(problem ?? '');
+      foot.scale.set(h * 2, 1, h * 2);
+      foot.position.set(0, 0.5, 0);
+      foot.material.color.set(problem && !accessBad ? OVERLAY_COLORS.footBad : OVERLAY_COLORS.foot);
+      zone.visible = arrow.visible = !!e;
+      if (!e) return;
+      zone.scale.set(e.width, 1, ACCESS_DEPTH);
+      zone.position.set(0, 0.55, h + ACCESS_DEPTH / 2);
+      zone.material.color.set(accessBad ? OVERLAY_COLORS.zoneBad : OVERLAY_COLORS.zone);
+      arrow.position.set(0, 0.9, h + 1.4);
+      arrow.material.color.set(accessBad ? OVERLAY_COLORS.zoneBad : OVERLAY_COLORS.arrow);
+    },
+  };
+}
 
 export class BuildingSystem {
   // pickColonist(x, y): el colono bajo el puntero (tiene prioridad sobre los edificios).
@@ -54,6 +93,14 @@ export class BuildingSystem {
     this.ghostRing.position.y = 0.3;
     this.ghost.visible = false;
     scene.add(this.ghost);
+    // Entradas ajenas que el edificio en vista previa taparía: se marcan en naranja sobre el terreno.
+    this.conflictGroup = new THREE.Group();
+    this.conflictGroup.visible = false;
+    scene.add(this.conflictGroup);
+    this.conflictPlane = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    this.conflictMaterial = new THREE.MeshBasicMaterial({ color: OVERLAY_COLORS.zoneBad, transparent: true, opacity: 0.45, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
+    this.ghostAccess = createAccessOverlay();
+    this.selectedAccess = createAccessOverlay();
     // Manchas de los yacimientos (sólo se ven al colocar una mina).
     this.deposits = new THREE.Group();
     this.deposits.visible = false;
@@ -200,6 +247,7 @@ export class BuildingSystem {
     const r = this.placing.footprint + 0.4;
     this.ghostRing.scale.setScalar(r);
     this.ghost.add(this.ghostRing);
+    this.ghost.add(this.ghostAccess.group);
     this.canvas.classList.add('is-placing');
     this.showDeposits(this.placing.deposit);
     this.onChange?.();
@@ -232,6 +280,7 @@ export class BuildingSystem {
     this.hideLine();
     this.candidate = null;
     this.ghost.visible = false;
+    this.conflictGroup.visible = false;
     this.canvas.classList.remove('is-placing');
     this.showDeposits(null);
     this.onChange?.();
@@ -262,7 +311,31 @@ export class BuildingSystem {
       const s = this.sim.wallSnapPiece(def, gx, gz, this.moving?.id ?? null);
       if (s) { cx = s.x; cz = s.z; cyaw = s.yaw; }
     }
-    this.candidate = { x: cx, z: cz, yaw: cyaw, problem: this.moving ? this.sim.moveProblem(this.moving, cx, cz) : this.sim.buildProblem(this.placing, cx, cz) };
+    this.candidate = { x: cx, z: cz, yaw: cyaw, problem: this.moving ? this.sim.moveProblem(this.moving, cx, cz, cyaw) : this.sim.buildProblem(this.placing, cx, cz, cyaw) };
+  }
+
+  // Marca las franjas de acceso de otros edificios que el de la vista previa taparía.
+  showConflicts(c) {
+    const group = this.conflictGroup;
+    const sim = this.sim;
+    const def = this.moving ? this.moving.def : this.placing;
+    const mine = c && c.problem && def && !def.line ? footprintRect(def, c.x, c.z) : null;
+    const hits = mine ? sim.buildings.filter((b) => b !== this.moving && b.entrance && rectsOverlap(b.entrance.zone, mine)) : [];
+    group.visible = hits.length > 0;
+    while (group.children.length < hits.length) group.add(new THREE.Mesh(this.conflictPlane, this.conflictMaterial));
+    group.children.forEach((m, i) => {
+      const b = hits[i];
+      m.visible = !!b;
+      if (!b) return;
+      const z = b.entrance.zone;
+      m.scale.set(z.x1 - z.x0, 1, z.z1 - z.z0);
+      m.position.set((z.x0 + z.x1) / 2, sim.heightAt((z.x0 + z.x1) / 2, (z.z0 + z.z1) / 2) - sim.camp.height + 0.6, (z.z0 + z.z1) / 2);
+      m.renderOrder = 5;
+    });
+    if (group.visible) {
+      group.position.copy(sim.camp.position);
+      group.quaternion.copy(sim.camp.quaternion);
+    }
   }
 
   // Final de la línea: con Mayús se ajusta a 8 direcciones.
@@ -331,6 +404,8 @@ export class BuildingSystem {
     model.material.opacity = 0.55;
     model.material.depthWrite = false;
     this.ghost.add(model);
+    this.ghost.add(this.ghostAccess.group);
+    this.ghostAccess.key = null;
   }
 
   place({ x, z }) {
@@ -468,11 +543,16 @@ export class BuildingSystem {
     this.selected = b;
     this.selectRing.removeFromParent();
     this.rangeRing.removeFromParent();
+    this.selectedAccess.group.removeFromParent();
     const view = this.viewOf(b);
     if (view) {
       view.label.classList.add('is-selected');
       this.selectRing.scale.setScalar(b.def.footprint + 0.8);
       view.object.add(this.selectRing);
+      if (!b.isStore && b.entrance) {
+        this.selectedAccess.key = null;
+        view.object.add(this.selectedAccess.group);
+      }
       if (b.def.range) {
         this.rangeRing.scale.setScalar(b.def.range);
         view.object.add(this.rangeRing);
@@ -520,9 +600,25 @@ export class BuildingSystem {
         this.ghost.position.copy(dir).multiplyScalar(RADIUS + sim.heightAt(c.x, c.z));
         this.ghost.quaternion.copy(sim.camp.quaternion).multiply(this.tmpQuat.setFromAxisAngle(Y_AXIS, c.yaw ?? Math.atan2(-c.x, -c.z)));
         this.ghostRing.material.color.set(c.problem ? '#ff5a4f' : '#5fe08a');
+        this.showConflicts(c);
+        // Huella, franja de acceso y flecha de la puerta (se ven al girar con R y explican el conflicto).
+        const key = `${(this.moving ?? this.placing).def?.id ?? this.placing.id}|${c.problem ?? ''}`;
+        if (this.ghostAccess.key !== key) {
+          this.ghostAccess.key = key;
+          this.ghostAccess.set((this.moving ?? this.placing).def ?? this.placing, c.problem);
+        }
       }
     }
     for (const e of this.entries.values()) this.updateVisual(e);
+    // La entrada del edificio elegido: celeste si está libre, naranja si algo la bloquea.
+    const sel = this.selected;
+    if (sel && !sel.isStore && sel.entrance) {
+      const key = `${sel.id}|${sel.accessIssue ?? ''}`;
+      if (this.selectedAccess.key !== key) {
+        this.selectedAccess.key = key;
+        this.selectedAccess.set(sel.def, null, sel.accessIssue);
+      }
+    }
     this.updateLabels();
   }
 
@@ -530,6 +626,7 @@ export class BuildingSystem {
   labelOf(b) {
     const lv = levelOf(b);
     const needed = this.sim.crewNeeded(b);
+    if (b.accessIssue) return '⚠ Entrada bloqueada';
     if (typeof lv.capacity === 'object') return 'Almacén';
     if (lv.housing != null) {
       const r = this.sim.residents(b);
@@ -555,7 +652,7 @@ export class BuildingSystem {
       const dist = this.camera.position.distanceTo(p);
       const selected = this.selected === b;
       const needed = b.isStore ? 0 : this.sim.crewNeeded(b);
-      const attention = !b.isStore && (!b.done || !!b.status || (needed > 0 && b.workers.length < needed));
+      const attention = !b.isStore && (!b.done || !!b.status || !!b.accessIssue || (needed > 0 && b.workers.length < needed));
       const rank = selected ? 3 : attention && dist < LABEL_DISTANCE ? 2 : dist < LABEL_NEAR ? 1 : 0;
       if (!rank) continue;
       p.project(this.camera);
@@ -569,6 +666,7 @@ export class BuildingSystem {
       const label = view.label;
       label.hidden = false;
       label.classList.toggle('is-minor', !s.selected && !s.attention);
+      label.classList.toggle('is-issue', !!b.accessIssue);
       label.style.zIndex = String(s.rank);
       const sub = label.querySelector('.building-label-sub');
       const bar = label.querySelector('.building-label-bar');

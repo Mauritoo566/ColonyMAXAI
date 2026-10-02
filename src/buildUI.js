@@ -575,7 +575,7 @@ export class BuildUI {
     // Clave para no redibujar si nada cambió.
     const site = b.done ? null : colony.siteInfo(b);
     const siteKey = site ? [site.state, site.why, (site.ids ?? []).join(), (site.ordered ?? []).join(), b.priority, b.paused, colony.colonists.map((c) => (c.growth ?? 1) < 1 || c.soldier ? '' : c.id).join('.')].join('~') : '';
-    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, upgradeProblem, stored, b.gate, est?.lines[0], (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), Math.floor(colony.stock.tree_seed ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, b.accessIssue, upgradeProblem, stored, b.gate, est?.lines[0], (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), Math.floor(colony.stock.tree_seed ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -701,6 +701,7 @@ export class BuildUI {
       </header>
       <div class="cp-body">
         <p class="reason">${level.desc}</p>
+        ${b.accessIssue ? `<p class="reason access-warning"><strong>⚠ ${escapeHtml(b.accessIssue)}.</strong> Los colonos no pueden usarlo bien. Muévelo con «Mover» o quita lo que tapa la puerta (los caminos sí pueden pasar por delante).</p>` : ''}
         ${
           b.upgrading
             ? `<section class="cp-section">

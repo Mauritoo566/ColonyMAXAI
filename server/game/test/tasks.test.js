@@ -248,10 +248,11 @@ const site = (sim, id, x, z) => {
   const sim = colony();
   const r = sim.build('stockpile', 24, 12, Math.PI / 2);
   assert.ok(Math.abs(r.building.yaw - Math.PI / 2) < 1e-9, 'yaw elegido');
-  assert.ok(Math.abs(sim.build('stockpile', -24, 12).building.yaw - Math.atan2(24, -12)) < 1e-9, 'sin yaw mira al centro');
+  const quarter = (a) => Math.round(a / (Math.PI / 2)) * (Math.PI / 2);
+  assert.ok(Math.abs(sim.build('stockpile', -24, 12).building.yaw - quarter(Math.atan2(24, -12))) < 1e-9, 'sin yaw mira al centro, siempre en un cuarto de vuelta');
   assert.equal(sim.applyCommand('build', ['stockpile', 24, -20, 'giro']), true, 'un yaw inválido se ignora');
   const b = sim.buildings.find((o) => Math.abs(o.x - 24) < 1e-6 && Math.abs(o.z + 20) < 1e-6);
-  assert.ok(Math.abs(b.yaw - Math.atan2(-24, 20)) < 1e-9);
+  assert.ok(Math.abs(b.yaw - quarter(Math.atan2(-24, 20))) < 1e-9);
   const keep = sim.buildings[sim.buildings.length - 1];
   assert.equal(sim.moveBuilding(keep, 40, 12, Math.PI), null);
   const moved = sim.buildings.find((o) => Math.abs(o.x - 40) < 1e-6);
