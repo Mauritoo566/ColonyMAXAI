@@ -89,8 +89,11 @@ export const TREES = ['broadleaf', 'pine', 'jungleTree', 'acacia', 'palm'];
 const SPOT_KINDS = {
   food: ['berryBush', 'mushrooms'],
   wood: ['broadleaf', 'pine', 'jungleTree', 'acacia', 'palm', 'sticks'],
-  stone: ['stone', 'flint'],
+  stone: ['stone', 'flint', 'pebbles'],
 };
+// Rocas grandes: se pican con herramientas (Edad de Piedra en adelante). En Primitiva la
+// piedra sale de piedrecitas sueltas (como los palos con la madera).
+export const BIG_ROCKS = ['stone'];
 const KIND_OF_TYPE = {};
 for (const [kind, ids] of Object.entries(SPOT_KINDS)) for (const id of ids) KIND_OF_TYPE[id] = kind;
 
@@ -104,8 +107,9 @@ export function scanSite(dir, seed, radii = [75, SPOT_RADIUS]) {
   const span = SPOT_RADIUS / RADIUS;
   const kinds = {};
   for (const [kind, ids] of Object.entries(SPOT_KINDS)) for (const id of ids) kinds[id] = kind;
-  // Antes de la Edad de Piedra los árboles no se recogen: sólo cuentan los palos del suelo.
-  const typeIndex = RESOURCE_TYPES.map((t) => (TREES.includes(t.id) ? null : kinds[t.id] || null));
+  // Antes de la Edad de Piedra los árboles y las rocas grandes no se recogen: sólo cuentan
+  // los palos y las piedrecitas sueltas del suelo.
+  const typeIndex = RESOURCE_TYPES.map((t) => (TREES.includes(t.id) || BIG_ROCKS.includes(t.id) ? null : kinds[t.id] || null));
   const origin = new THREE.Vector3().copy(dir).normalize().multiplyScalar(RADIUS + naturalSurfaceHeight(dir));
   const up = new THREE.Vector3().copy(dir).normalize();
   const out = radii.map(() => ({ food: 0, wood: 0, stone: 0 }));
@@ -1228,7 +1232,7 @@ export class ColonySim {
         const d = Math.hypot(p.x, p.z);
         if (d > SPOT_RADIUS || d < minDistance) continue;
         const type = RESOURCE_TYPES[tile.type[k]].id;
-        spots.push({ key, index: k, kind, type, tree: TREES.includes(type), stick: type === 'sticks', x: p.x, z: p.z, readyAt: 0, taken: null });
+        spots.push({ key, index: k, kind, type, tree: TREES.includes(type), bigRock: BIG_ROCKS.includes(type), stick: type === 'sticks', x: p.x, z: p.z, readyAt: 0, taken: null });
       }
     }
   }
@@ -1602,7 +1606,7 @@ export class ColonySim {
       this.toLocal(p.set(tile.pos[k * 3], tile.pos[k * 3 + 1], tile.pos[k * 3 + 2]), p);
       const type = RESOURCE_TYPES[tile.type[k]].id;
       const kind = KIND_OF_TYPE[type] || 'food';
-      this.spots.push({ key: SPROUT_KEY, index: k, kind, type, tree: TREES.includes(type), stick: type === 'sticks', x: p.x, z: p.z, readyAt: this.sprouts[k]?.readyAt ?? 0, taken: null });
+      this.spots.push({ key: SPROUT_KEY, index: k, kind, type, tree: TREES.includes(type), bigRock: BIG_ROCKS.includes(type), stick: type === 'sticks', x: p.x, z: p.z, readyAt: this.sprouts[k]?.readyAt ?? 0, taken: null });
     }
     this.emit('resources');
   }
@@ -1640,9 +1644,10 @@ export class ColonySim {
     return null;
   }
 
-  // ¿Se puede recoger este sitio ahora? Los árboles sólo desde la Edad de Piedra (antes: palos del suelo).
+  // ¿Se puede recoger este sitio ahora? Los árboles y las rocas grandes sólo desde la Edad de
+  // Piedra (antes: palos del suelo y piedrecitas sueltas).
   usable(s) {
-    return !s.tree || this.age >= 2;
+    return (!s.tree && !s.bigRock) || this.age >= 2;
   }
 
   // El recurso libre de un tipo más cercano a un punto (o null).

@@ -26,7 +26,7 @@ export const GUIDES = {
         id: 'materials',
         kind: 'learned',
         title: 'Recoger materiales',
-        text: 'Con «Recolectar» y el filtro «Madera» señala una zona con palos y ramas caídos en el suelo (los árboles en pie no se talan hasta la Edad de Piedra). No hay plantas de fibra aparte: la fibra llega sola junto con los palos y con las bayas. No hace falta ninguna herramienta.',
+        text: 'Con «Recolectar» y el filtro «Madera» señala una zona con palos y ramas caídos en el suelo (los árboles en pie no se talan hasta la Edad de Piedra). Lo mismo con el filtro «Piedra»: se juntan piedrecitas sueltas, no las rocas grandes. No hay plantas de fibra aparte: la fibra llega sola junto con los palos y con las bayas. No hace falta ninguna herramienta.',
         check: (c) => ({ done: c.learned.has('zone_marked') || (made(c, 'wood') >= 12 && made(c, 'fiber') >= 4), note: `${Math.min(made(c, 'wood'), 12)}/12 de madera recogida` }),
         action: 'Abrir Recolectar',
       },

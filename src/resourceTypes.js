@@ -89,4 +89,7 @@ export const RESOURCE_TYPES = [
   // Palos y ramas caídos: se recogen del suelo sin herramientas (es la madera de la Edad Primitiva).
   // Va al final de la lista para no cambiar dónde está todo lo demás en el mundo.
   { id: 'sticks', name: 'Palos y ramas caídos', gives: 'Madera y fibra', scale: [0.8, 1.3], clustered: true, biomes: { forest: 90, taiga: 70, jungle: 60, swamp: 30, grassland: 28, savanna: 14, steppe: 8, tundra: 8, mountain: 6, desert: 3 }, maxDistance: 260 },
+  // Piedrecitas sueltas del suelo: la piedra de la Edad Primitiva (antes de picar piedras grandes).
+  // Misma densidad que "stone" (que en Primitiva no se puede tocar). Al final de la lista por lo mismo que "sticks".
+  { id: 'pebbles', name: 'Piedrecitas sueltas', gives: 'Piedra', scale: [0.5, 0.9], clustered: true, biomes: { mountain: 24, tundra: 12, desert: 8, steppe: 6, grassland: 4, forest: 3, taiga: 4, savanna: 4, snow: 4, beach: 2 }, maxDistance: 1200 },
 ];

@@ -605,7 +605,7 @@ const HARVEST = {
   wood: { skill: 'woodcutting', time: 16, verb: 'Recogiendo ramas y leña', noun: 'madera' },
   stone: { skill: 'mining', time: 16, verb: 'Recogiendo piedras sueltas', noun: 'piedra' },
 };
-const HARVEST_YIELD = { berryBush: { food: 3, fiber: 1 }, mushrooms: { food: 2 }, sticks: { wood: 2, fiber: 1 }, stone: { stone: 3 }, flint: { stone: 2 } };
+const HARVEST_YIELD = { berryBush: { food: 3, fiber: 1 }, mushrooms: { food: 2 }, sticks: { wood: 2, fiber: 1 }, stone: { stone: 3 }, flint: { stone: 2 }, pebbles: { stone: 3 } };
 
 function harvestYield(spot) {
   return HARVEST_YIELD[spot.type] ?? (spot.kind === 'wood' ? { wood: 4, fiber: 1 } : { [spot.kind]: 1 });

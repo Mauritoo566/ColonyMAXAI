@@ -392,7 +392,7 @@ const place = (sim, id) => {
 {
   const sim = fresh();
   const [near, far] = scanSite(dir, 777);
-  for (const kind of ['food', 'wood', 'stone']) assert.equal(far[kind], sim.spots.filter((s) => s.kind === kind && !s.tree).length, `el conteo previo de ${kind} coincide con la colonia`);
+  for (const kind of ['food', 'wood', 'stone']) assert.equal(far[kind], sim.spots.filter((s) => s.kind === kind && !s.tree && !s.bigRock).length, `el conteo previo de ${kind} coincide con la colonia`);
   assert.ok(near.food <= far.food && near.wood <= far.wood);
   console.log(`✓ el aviso previo cuenta recursos reales: en 75 m ${near.food}/${near.wood}/${near.stone}`);
 }

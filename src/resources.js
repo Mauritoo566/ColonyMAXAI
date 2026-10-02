@@ -117,6 +117,12 @@ const MODELS = {
         p.add(new THREE.OctahedronGeometry(r, 0), '#3b3a3c', mat(x, r * 0.5, z, 0.4, x * 3, 0.2));
       }
     },
+  pebbles: (p) => {
+      // Un puñado de piedras chicas tiradas en el suelo (no el montón grande de "stone").
+      for (const [x, z, r] of [[0, 0, 0.3], [0.35, 0.15, 0.22], [-0.3, 0.2, 0.25], [0.1, -0.35, 0.18]]) {
+        p.add(new THREE.DodecahedronGeometry(r, 0), '#8b877f', mat(x, r * 0.5, z, 0.2, x * 2, 0));
+      }
+    },
   sticks: (p) => {
       // Unos palos y ramas tirados en el suelo, cruzados, con alguna hoja seca.
       for (const [x, z, len, a] of [[0, 0, 1.7, 0.2], [0.25, 0.3, 1.4, 1.2], [-0.2, 0.15, 1.2, 2.4], [0.1, -0.3, 1.5, 0.8]]) {

@@ -105,6 +105,7 @@ export function generateCampGrove(dirX, dirY, dirZ, biome, seed) {
     ...Array(10).fill('mushrooms'),
     ...Array(16).fill('stone'),
     ...Array(5).fill('flint'),
+    ...Array(16).fill('pebbles'),
     ...Array(95).fill('sticks'),
   ];
   // Base tangente en el campamento (metros -> dirección).
