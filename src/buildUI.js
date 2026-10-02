@@ -614,6 +614,7 @@ export class BuildUI {
         </section>
         <section class="cp-section">
           <h3>Producción</h3>
+          ${def.range ? `<div class="stat-line"><span>Radio de búsqueda</span><strong>${def.range} m</strong></div>` : ''}
           ${recipeHtml}
           ${estimateHtml}
           ${b.cycle != null && level.recipe ? `<div class="bar bar--thick" style="--bar:var(--accent)"><i style="width:${Math.round(b.cycle * 100)}%"></i></div>` : ''}

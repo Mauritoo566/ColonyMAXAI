@@ -67,6 +67,14 @@ export class BuildingSystem {
     this.selectRing.rotation.x = -Math.PI / 2;
     this.selectRing.position.y = 0.25;
 
+    // Aro grande: el radio donde el trabajador busca recursos (tala, recolección, cantería).
+    this.rangeRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.985, 1, 64),
+      new THREE.MeshBasicMaterial({ color: '#5fc8e0', transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    this.rangeRing.rotation.x = -Math.PI / 2;
+    this.rangeRing.position.y = 0.2;
+
     sim.on('camp', () => {
       this.stopPlacing();
       this.sync();
@@ -457,11 +465,16 @@ export class BuildingSystem {
     this.viewOf(this.selected)?.label.classList.remove('is-selected');
     this.selected = b;
     this.selectRing.removeFromParent();
+    this.rangeRing.removeFromParent();
     const view = this.viewOf(b);
     if (view) {
       view.label.classList.add('is-selected');
       this.selectRing.scale.setScalar(b.def.footprint + 0.8);
       view.object.add(this.selectRing);
+      if (b.def.range) {
+        this.rangeRing.scale.setScalar(b.def.range);
+        view.object.add(this.rangeRing);
+      }
     }
     this.onSelect?.(b);
   }

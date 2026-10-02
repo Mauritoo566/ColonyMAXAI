@@ -78,7 +78,9 @@ const MAX_STEPS_PER_UPDATE = 80; // tope de pasos de simulación por llamada (a 
 const SPOT_RADIUS = 230; // metros: recursos que los colonos conocen alrededor del campamento
 const CAMP_CLEAR = 45; // alrededor del campamento no hay recursos naturales (resources.js)
 const REGROW_SECONDS = 1.5 * DAY_LENGTH_SECONDS; // las bayas y setas vuelven a crecer en día y medio
-const MAX_SPROUTS = 50; // vegetación nueva que puede brotar con la lluvia
+const SAPLING_GROW_SECONDS = 0.75 * DAY_LENGTH_SECONDS; // un árbol plantado tarda en crecer
+const SEED_CHANCE = 0.45; // al talar un árbol, probabilidad de que caigan semillas y nazca uno nuevo
+const MAX_SPROUTS = 50; // vegetación nueva que puede brotar con la lluvia o nacer de una semilla
 const SPROUT_EVERY = 25; // segundos de juego entre brotes con lluvia fuerte
 const ASSIGN_EVERY = 1; // segundos entre repasos de trabajadores libres
 // Qué recursos naturales sirven para qué.
@@ -89,6 +91,8 @@ const SPOT_KINDS = {
   wood: ['broadleaf', 'pine', 'jungleTree', 'acacia', 'palm', 'sticks'],
   stone: ['stone', 'flint'],
 };
+const KIND_OF_TYPE = {};
+for (const [kind, ids] of Object.entries(SPOT_KINDS)) for (const id of ids) KIND_OF_TYPE[id] = kind;
 
 // Recursos naturales REALES alrededor de un lugar (antes de fundar): sale de la misma generación que usa
 // la colonia al fundarse (baldosas del mundo + arboleda del campamento). Devuelve cuántos sitios de comida,
@@ -1587,7 +1591,8 @@ export class ColonySim {
   }
 
   // Rehace la baldosa de brotes y añade los puntos de recolección nuevos (los brotes sólo
-  // se agregan al final, así que los ya conocidos conservan su índice).
+  // se agregan al final, así que los ya conocidos conservan su índice). Sirve tanto para la
+  // vegetación que brota con la lluvia como para los árboles que nacen de una semilla.
   refreshSprouts() {
     const tile = tileFromItems(this.sprouts);
     this.sproutTile = tile.count ? tile : null;
@@ -1595,9 +1600,44 @@ export class ColonySim {
     const p = new THREE.Vector3();
     for (let k = known; k < tile.count; k++) {
       this.toLocal(p.set(tile.pos[k * 3], tile.pos[k * 3 + 1], tile.pos[k * 3 + 2]), p);
-      this.spots.push({ key: SPROUT_KEY, index: k, kind: 'food', type: RESOURCE_TYPES[tile.type[k]].id, x: p.x, z: p.z, readyAt: 0, taken: null });
+      const type = RESOURCE_TYPES[tile.type[k]].id;
+      const kind = KIND_OF_TYPE[type] || 'food';
+      this.spots.push({ key: SPROUT_KEY, index: k, kind, type, tree: TREES.includes(type), stick: type === 'sticks', x: p.x, z: p.z, readyAt: this.sprouts[k]?.readyAt ?? 0, taken: null });
     }
     this.emit('resources');
+  }
+
+  // Al talar un árbol a veces caen semillas: nace uno nuevo de la misma especie cerca,
+  // que tarda en crecer antes de poder talarse. El trabajador no hace un viaje aparte: es
+  // parte del mismo talado.
+  plantSapling(spot, gameTime) {
+    if (this.sprouts.length >= MAX_SPROUTS) return false;
+    const typeIndex = RESOURCE_TYPES.findIndex((t) => t.id === spot.type);
+    if (typeIndex < 0) return false;
+    const type = RESOURCE_TYPES[typeIndex];
+    const p = new THREE.Vector3();
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 3 + Math.random() * 7;
+      const x = spot.x + Math.cos(a) * r;
+      const z = spot.z + Math.sin(a) * r;
+      if (!this.walkable(x, z, 1.2) || this.blockedByBuilding(x, z)) continue;
+      this.toDirection(x, z, p);
+      const h = surfaceHeight(p);
+      this.sprouts.push({
+        typeIndex,
+        d: [p.x, p.y, p.z],
+        h,
+        yaw: Math.random() * Math.PI * 2,
+        scale: type.scale[0] + Math.random() * (type.scale[1] - type.scale[0]),
+        tint: 0.85 + Math.random() * 0.3,
+        rank: 0,
+        readyAt: gameTime + SAPLING_GROW_SECONDS,
+      });
+      this.refreshSprouts();
+      return true;
+    }
+    return false;
   }
 
   // ¿Se puede recoger este sitio ahora? Los árboles sólo desde la Edad de Piedra (antes: palos del suelo).
@@ -1719,6 +1759,7 @@ export class ColonySim {
       if (!set) this.removed.set(spot.key, (set = new Set()));
       set.add(spot.index);
       this.emit('resources');
+      if (spot.tree && Math.random() < SEED_CHANCE) this.plantSapling(spot, gameTime);
     }
   }
 
