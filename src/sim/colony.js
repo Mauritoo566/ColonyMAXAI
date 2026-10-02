@@ -19,7 +19,7 @@ import { updateFamily, updateImmigration, immigrationBlocker, assignHomes, maxPo
 import { buildBlocker, upgradeBlocker, evolveHouses, buildCostOf, buildLevelFor, limitsFor, radiusOf, expansionBlocker, expansionCost, EXPANSION_STEP } from './progression.js';
 import { GOOD_NAMES } from './goods.js';
 import { centerProps } from './centerLayout.js';
-import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, ROAD_LEVELS, autoRoadPath } from './economy.js';
+import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, ROAD_LEVELS, ROAD_CELL, autoRoadPath } from './economy.js';
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
@@ -83,6 +83,15 @@ const SEED_CHANCE = 0.45; // al talar un árbol, probabilidad de que caigan semi
 const MAX_SPROUTS = 50; // vegetación nueva que puede brotar con la lluvia o nacer de una semilla
 const SPROUT_EVERY = 25; // segundos de juego entre brotes con lluvia fuerte
 const ASSIGN_EVERY = 1; // segundos entre repasos de trabajadores libres
+
+// Edificio a edificio chocan por casillas de la cuadrícula (misma de colocar y de caminos), no
+// por un radio circular: cada uno ocupa de verdad las casillas que le hacen falta según su
+// tamaño (footprint), pegadas sin hueco a las del vecino. Fuera de ahí (terreno, caminos de
+// colono, props) el footprint se sigue usando como radio normal: no hace falta que sea cuadrado.
+function footprintHalf(footprint) {
+  const cells = Math.max(1, Math.round((footprint * 2) / ROAD_CELL));
+  return (cells * ROAD_CELL) / 2;
+}
 // Qué recursos naturales sirven para qué.
 // Árboles: se talan con herramientas (Edad de Piedra en adelante). En Primitiva la madera sale de los palos caídos.
 export const TREES = ['broadleaf', 'pine', 'jungleTree', 'acacia', 'palm'];
@@ -1846,8 +1855,16 @@ export class ColonySim {
     const radius = radiusOf(this);
     if (Math.hypot(x, z) > radius) return `Fuera del territorio de la aldea (${radius} m; se amplía con la edad y comprando territorio)`;
     const r = def.footprint;
+    const half = def.line ? null : footprintHalf(r);
     for (const o of this.obstacles) {
       if (self && o.kind === 'building' && o.x === self.x && o.z === self.z) continue;
+      // Edificio contra edificio (ninguno de los dos un muro): chocan por casillas, pegados
+      // sin hueco de por medio, según cuántas casillas de verdad ocupa cada uno.
+      if (half !== null && o.kind === 'building' && !o.line) {
+        const oh = footprintHalf(o.r);
+        if (Math.abs(x - o.x) < half + oh && Math.abs(z - o.z) < half + oh) return 'Choca con otra construcción';
+        continue;
+      }
       // Los tramos de un muro se pegan entre sí (sin el margen de 0,8 m de los demás edificios).
       const gap = def.line && o.kind === 'building' && o.line ? -0.1 : 0.8;
       if (Math.hypot(x - o.x, z - o.z) < o.r + r + gap) return 'Choca con otra construcción';
