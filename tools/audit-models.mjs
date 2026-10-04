@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { BUILDING_TYPES } from '../src/sim/buildingTypes.js';
 import { levelModel } from '../src/buildingModels.js';
 import { modelSignature, modelDistance, overhang } from '../src/modelAudit.js';
-import { halfOf } from '../src/sim/access.js';
+import { halfFor } from '../src/sim/access.js';
 
 export const MIN_STEP = 0.12; // por debajo, la mejora entre dos niveles seguidos casi no se nota
 export const MIN_TYPES = 0.06; // por debajo, dos tipos distintos del mismo estilo se confunden
@@ -16,7 +16,7 @@ export function auditModels() {
     let prev = null;
     d.levels.forEach((lv, i) => {
       const sig = modelSignature(levelModel(lv.model));
-      const row = { id: d.id, level: i + 1, age: lv.age, model: lv.model, sig, half: halfOf(d.footprint), notes: [], flags: new Set() };
+      const row = { id: d.id, level: i + 1, age: lv.age, model: lv.model, sig, half: halfFor(d), notes: [], flags: new Set() };
       if (prev) {
         row.step = modelDistance(prev.sig, sig);
         if (prev.sig.hash === sig.hash) {

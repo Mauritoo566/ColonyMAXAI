@@ -174,6 +174,16 @@ function wellModel1(p) {
   p.add(new THREE.CylinderGeometry(0.2, 0.16, 0.34, 8), '#98482a', mat(-0.65, 0.17, 0.55));
 }
 
+// Antorcha: un palo hundido en el suelo con piedras en la base y la punta envuelta en trapos y resina. La llama no es parte del modelo:
+// es un efecto animado y con luz (torchFlames.js) que se pone a la altura `flame` del nivel.
+function torchModel1(p) {
+  stick(p, v(0, 0, 0), v(0, 1.45, 0), 0.055, '#6b4a2e', 6);
+  for (const [x, z, s] of [[0.16, 0.05, 1], [-0.1, 0.15, 0.8], [-0.05, -0.16, 0.9], [0.1, -0.12, 0.7]]) p.add(new THREE.IcosahedronGeometry(0.11 * s, 0), '#8a867e', mat(x, 0.07 * s, z));
+  p.add(new THREE.CylinderGeometry(0.1, 0.07, 0.24, 7), '#2a2018', mat(0, 1.5, 0));
+  p.add(new THREE.CylinderGeometry(0.115, 0.115, 0.04, 7), '#c9b48a', mat(0, 1.42, 0));
+  p.add(new THREE.CylinderGeometry(0.115, 0.115, 0.04, 7), '#c9b48a', mat(0, 1.55, 0));
+}
+
 // Pila de troncos y cestas (almacén primitivo).
 function stockpileModel1(p) {
   for (let row = 0; row < 3; row++) {
@@ -270,7 +280,7 @@ export function buildMesh(fn, ...args) {
   return mesh;
 }
 
-const MODELS = { gathererModel2, woodcutterModel2, quarryModel2, wellModel2, gathererModel1, woodcutterModel1, quarryModel1, wellModel1, stockpileModel1, stockpileModel2, houseModel1, houseModel2 };
+const MODELS = { torchModel1, gathererModel2, woodcutterModel2, quarryModel2, wellModel2, gathererModel1, woodcutterModel1, quarryModel1, wellModel1, stockpileModel1, stockpileModel2, houseModel1, houseModel2 };
 
 // Los modelos se arman una sola vez por nombre y variante y se comparten: dibujar cien casas iguales reutiliza la
 // misma geometría (y el mismo material). Por eso no se libera la geometría de un modelo al quitarlo: releaseModel.

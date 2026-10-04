@@ -18,7 +18,7 @@
 //   defense, garrison                       puntos de defensa y soldados que aloja
 //   trade, expansions, speed, ...           efectos propios del tipo (ver cada uno)
 // Campos del tipo: id, category, job, skill, icon, cost, buildTime, footprint, workers,
-// requires (para construirlo), tech, deposit (necesita un yacimiento), kind, limitGroup.
+// requires (para construirlo), tech, deposit (necesita un yacimiento), kind, limitGroup, small (adorno: sin casilla ni entrada).
 
 const L = (age, name, desc, model, extra = {}) => ({ age, name, desc, model, ...extra });
 
@@ -253,6 +253,26 @@ add({
     L(6, 'Comedor de tablones', 'Una nave de tablones con ventanas, cocina con campana y alacenas: se come rápido y bien.', 'gen:hall:6', { seats: 16, mealTime: 10, mood: 12, upgradeCost: { planks: 24, cut_stone: 14 } }),
     L(8, 'Comedor de ladrillo', 'Salón de ladrillo con barra de servicio y cocina industrial.', 'gen:hall:8', { seats: 24, mealTime: 9, mood: 14, upgradeCost: { bricks: 24, planks: 16 } }),
     L(10, 'Comedor moderno', 'Comedor colectivo con cocina central y salón acristalado.', 'gen:hall:10', { seats: 36, mealTime: 8, mood: 16, upgradeCost: { concrete: 20, steel: 8 } }),
+  ],
+});
+
+// ---------------------------------------------------------------------------------------
+// Decoración: adornos sueltos (small: true). No ocupan una casilla de 4 m: miden lo que miden, se ponen uno a uno y
+// pegados a caminos y edificios (sólo no tapan una entrada). No tienen trabajadores ni entrada.
+//   flame  altura de la llama sobre el suelo (la dibuja torchFlames.js, animada y con luz de noche)
+// ---------------------------------------------------------------------------------------
+
+add({
+  id: 'torch',
+  category: 'decoration',
+  kind: 'decor',
+  icon: 'flame',
+  small: true,
+  cost: { wood: 2, fiber: 1 },
+  buildTime: 8,
+  footprint: 0.5,
+  levels: [
+    L(1, 'Antorcha', 'Un palo hundido en el suelo con la punta envuelta en trapos y resina: arde día y noche y alumbra al oscurecer. Sólo adorno. Se pone una a una, tan cerca de los caminos y las casas como quieras.', 'torchModel1', { flame: 1.55 }),
   ],
 });
 
@@ -918,6 +938,7 @@ export const BUILD_CATEGORIES = [
   { id: 'storage', name: 'Almacenes', icon: 'wood', soon: 'Graneros y depósitos para guardar más recursos.' },
   { id: 'infrastructure', name: 'Infraestructura', icon: 'bolt', soon: 'Agua, energía, transporte y caminos.' },
   { id: 'services', name: 'Servicios', icon: 'coin', soon: 'Comedores, comercio, administración, investigación, salud y enseñanza.' },
+  { id: 'decoration', name: 'Decoración', icon: 'flame', soon: 'Antorchas y adornos para la aldea.' },
   { id: 'military', name: 'Ejército', icon: 'sword', soon: 'Cuarteles, armerías y escuelas militares.' },
   { id: 'defense', name: 'Defensa', icon: 'shield', soon: 'Empalizadas, torres y murallas.' },
 ];

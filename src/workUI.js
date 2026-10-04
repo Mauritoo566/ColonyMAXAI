@@ -76,9 +76,9 @@ export class WorkUI {
       const state = c.order ? '<b class="order-tag">Orden</b> cumple una orden directa' : c.task?.type === 'wander' || !c.task ? esc(c.idle ?? 'Disponible') : c.working ? 'Trabajando' : 'En camino';
       return `<tr>
         <td><button type="button" class="link-btn" data-focus="${c.id}">${esc(c.name)}</button></td>
-        ${[0, 1, 2].map((i) => `<td><select data-who="${c.id}" data-slot="${i}" aria-label="Prioridad ${i + 1}">${SPEC_IDS.map((id) => opt(c, id, spec[i])).join('')}</select></td>`).join('')}
-        <td>${esc(c.activity)}</td>
-        <td>${state}${c.pendingSpec ? ' · <em>cambio pendiente</em>' : ''}</td>
+        ${[0, 1, 2].map((i) => `<td data-label="Prioridad ${i + 1}"><select data-who="${c.id}" data-slot="${i}" aria-label="Prioridad ${i + 1}">${SPEC_IDS.map((id) => opt(c, id, spec[i])).join('')}</select></td>`).join('')}
+        <td data-label="Actividad">${esc(c.activity)}</td>
+        <td data-label="Estado">${state}${c.pendingSpec ? ' · <em>cambio pendiente</em>' : ''}</td>
       </tr>`;
     });
     const covHtml = cov.rows.length

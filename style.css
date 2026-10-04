@@ -2681,7 +2681,16 @@ canvas.is-harvesting {
 .grid-toggle { padding: 4px 10px; border: 1px solid var(--ui-line); border-radius: 7px; background: none; color: var(--ui-muted); font: 700 12px/1 var(--font-display); cursor: pointer; }
 .grid-toggle[aria-pressed='true'] { border-color: var(--accent); color: var(--ui-text); background: rgba(242, 178, 76, 0.16); }
 .build-head { grid-template-columns: 1fr auto; align-items: center; }
-.build-head .build-tabs { grid-column: 1 / -1; }
+.build-head .build-tabs, .build-head .hscroll { grid-column: 1 / -1; }
+/* Barras que se desplazan de lado: flechas a los extremos cuando hay más por ver */
+.hscroll { position: relative; min-width: 0; }
+.hscroll > .build-tabs { grid-column: auto; cursor: grab; }
+.hscroll > .build-tabs.is-dragging { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+.hscroll-btn { position: absolute; top: 0; bottom: 0; width: 26px; border: 0; padding: 0; color: var(--ui-text); font: 700 20px/1 var(--font-display); cursor: pointer; z-index: 1; }
+.hscroll-btn[hidden] { display: none; }
+.hscroll-btn--left { left: 0; border-radius: 9px 0 0 9px; background: linear-gradient(to right, var(--ui-bg-raised) 55%, transparent); }
+.hscroll-btn--right { right: 0; border-radius: 0 9px 9px 0; background: linear-gradient(to left, var(--ui-bg-raised) 55%, transparent); }
+.hscroll-btn:hover { color: var(--accent); }
 
 /* Guía por edades */
 .guide-card { position: fixed; top: calc(62px + var(--safe-top)); left: 50%; transform: translateX(-50%); width: min(380px, calc(100vw - 2 * var(--gap))); padding: 10px 12px; box-sizing: border-box; z-index: 5; max-height: calc(100vh - 260px); overflow-y: auto; overscroll-behavior: contain; }
@@ -2722,6 +2731,23 @@ canvas.is-harvesting {
 
 /* Tabla de trabajo */
 .work-panel { width: min(980px, 100%); }
+/* La ventana de colonos se ve completa: sin desplazamiento horizontal, sólo el vertical. Las columnas se reparten el ancho y el texto largo baja de línea. */
+.work-panel .age-body { overflow-x: hidden; }
+.work-table { table-layout: fixed; }
+.work-table th:nth-child(1) { width: 12%; }
+.work-table th:nth-child(2), .work-table th:nth-child(3), .work-table th:nth-child(4) { width: 16%; }
+.work-table th:nth-child(5) { width: 22%; }
+.work-table th:nth-child(6) { width: 18%; }
+.work-table th, .work-table td { overflow-wrap: anywhere; min-width: 0; }
+.work-table select { min-width: 0; text-overflow: ellipsis; }
+@media (max-width: 720px) {
+  /* En pantallas estrechas cada colono es una tarjeta con sus datos uno bajo otro (nada se sale por los lados). */
+  .work-table, .work-table tbody, .work-table tr, .work-table td { display: block; width: 100%; }
+  .work-table thead { display: none; }
+  .work-table tr { padding: 8px 0; border-top: 1px solid var(--ui-line); }
+  .work-table td { border-top: 0; padding: 3px 6px; }
+  .work-table td[data-label]::before { content: attr(data-label); display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
+}
 .work-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .work-table th { text-align: left; padding: 6px; position: sticky; top: 0; background: var(--ui-bg, #14181f); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
 .work-table td { padding: 5px 6px; border-top: 1px solid var(--ui-line); vertical-align: middle; }

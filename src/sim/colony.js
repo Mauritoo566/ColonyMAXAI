@@ -2344,14 +2344,16 @@ export class ColonySim {
     const radius = radiusOf(this);
     if (Math.hypot(x, z) > radius) return `Fuera del territorio de la aldea (${radius} m; se amplía con la edad y comprando territorio)`;
     const r = def.footprint;
-    const half = def.line ? null : footprintHalf(r);
+    const half = def.line ? null : def.small ? r : footprintHalf(r);
     for (const o of this.obstacles) {
       if (self && o.kind === 'building' && o.x === self.x && o.z === self.z) continue;
       // Edificio contra edificio (ninguno de los dos un muro): chocan por casillas, pegados
-      // sin hueco de por medio, según cuántas casillas de verdad ocupa cada uno.
-      if (half !== null && o.kind === 'building' && !o.line) {
-        const oh = footprintHalf(o.r);
-        if (Math.abs(x - o.x) < half + oh && Math.abs(z - o.z) < half + oh) return 'Choca con otra construcción';
+      // sin hueco de por medio, según cuántas casillas de verdad ocupa cada uno. Un adorno pequeño ocupa sólo lo suyo (y deja
+      // 0,3 m al lado de lo demás); contra otro adorno guarda un par de pasos (abajo).
+      if (half !== null && o.kind === 'building' && !o.line && !(def.small && o.small)) {
+        const oh = o.small ? o.r : footprintHalf(o.r);
+        const slack = def.small || o.small ? 0.3 : 0;
+        if (Math.abs(x - o.x) < half + oh + slack && Math.abs(z - o.z) < half + oh + slack) return 'Choca con otra construcción';
         continue;
       }
       // Los tramos de un muro se pegan entre sí (sin el margen de 0,8 m de los demás edificios).
@@ -2380,7 +2382,8 @@ export class ColonySim {
       lo = Math.min(lo, hk);
       hi = Math.max(hi, hk);
     }
-    if (hi - lo > r * 1.1) return 'El terreno es demasiado empinado';
+    // Un adorno pequeño aguanta más desnivel que un edificio (que se asienta sobre un suelo plano): su radio es de 0,5 m.
+    if (hi - lo > (def.small ? 1.4 : r * 1.1)) return 'El terreno es demasiado empinado';
     return null;
   }
 
@@ -2885,7 +2888,8 @@ export class ColonySim {
     const ground = biomeAt(dir.x, dir.y, dir.z);
     // Aplanar el terreno bajo el edificio y pintar un poco de tierra (la vista regenera
     // los trozos de terreno afectados).
-    const zone = addTerrainZone({
+    // Un adorno pequeño no aplana ni pinta el terreno (cada zona cuesta al dibujar el mundo): sin zona.
+    const zone = def.small ? null : addTerrainZone({
       dir: { x: dir.x, y: dir.y, z: dir.z },
       height,
       // Los muros siguen el terreno: sin nivelar ni pintar tierra (cada tramo a su altura dejaba escalones).
@@ -3330,7 +3334,7 @@ export class ColonySim {
     this.obstacles = [
       ...campObstacles(),
       ...(this.age >= 2 ? [{ x: TOTEM_SPOT.x, z: TOTEM_SPOT.z, r: 0.9, kind: 'prop' }] : []),
-      ...this.buildings.filter((b) => !b.gate).map((b) => ({ x: b.x, z: b.z, r: b.def.footprint, kind: 'building', line: !!b.def.line })),
+      ...this.buildings.filter((b) => !b.gate).map((b) => ({ x: b.x, z: b.z, r: b.def.footprint, kind: 'building', line: !!b.def.line, small: !!b.def.small })),
       // Objetos del centro que aparecen con la edad (no se pisan ni se construye encima).
       // (los objetos del centro tampoco aparecen sobre la entrada de un edificio)
       ...centerProps(this.age, [...this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint })), ...this.buildings.filter((b) => b.entrance).map((b) => ({ x: (b.entrance.zone.x0 + b.entrance.zone.x1) / 2, z: (b.entrance.zone.z0 + b.entrance.zone.z1) / 2, r: 2.4 }))]).map((p) => ({ x: p.x, z: p.z, r: p.r, kind: 'prop' })),

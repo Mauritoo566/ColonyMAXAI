@@ -24,6 +24,7 @@ const SYMBOLS = {
   sword: '<path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M5 19 17 7"/><path fill="currentColor" d="M20.5 3.5 21 8l-3.6 3.6-4.5-4.5L16.5 3.5ZM4 15.5l4.5 4.5-2.2.8L3 17.5Z"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="m8.5 15.5 3 3"/>',
   anvil: '<path fill="currentColor" d="M3 6h14c0 2.6-1.6 4-4 4.4V13h2.5c1 0 1.5.6 1.5 1.5V17H7v-2.5c0-.9.5-1.5 1.5-1.5H11v-2.6C7.6 10 4 8.8 3 6Zm14 0h4c-.4 2-1.8 3.4-4 3.6Z"/>',
   bolt: '<path fill="currentColor" d="M13.5 2 5 13.5h5.5L9.5 22 19 9.5h-5.8Z"/>',
+  flame: '<path fill="currentColor" d="M12 2c1 3.5 5.5 6 5.5 11a5.5 5.5 0 0 1-11 0c0-2.4 1.2-3.9 2.4-5.2.6 2 1.7 2.2 1.9-.5C11 5.2 11.6 3.6 12 2Z"/><path fill="#0c1017" opacity=".35" d="M12 12.5c.7 1.4 2.5 2.4 2.5 4.4a2.5 2.5 0 0 1-5 0c0-1.9 1.9-2.6 2.5-4.4Z"/>',
   train: '<path fill="currentColor" d="M7 3h10a2 2 0 0 1 2 2v10a3 3 0 0 1-3 3l1.5 3h-2l-1-2h-5l-1 2h-2L8 18a3 3 0 0 1-3-3V5a2 2 0 0 1 2-2Z"/><path fill="#0c1017" opacity=".5" d="M7.5 6h9v4h-9Z"/><circle cx="8.8" cy="14.5" r="1.2" fill="#0c1017" opacity=".55"/><circle cx="15.2" cy="14.5" r="1.2" fill="#0c1017" opacity=".55"/>',
 };
 

@@ -14,6 +14,7 @@ import { generateCampGrove, tileFromItems } from './resourceGen.js';
 import { biomeAt } from './biomes.js';
 import { eatingNow } from './sim/dining.js';
 import { addChimneySmoke } from './chimneySmoke.js';
+import { addTorchFlame } from './torchFlames.js';
 
 // Los demás jugadores del mundo: sus campamentos, sus edificios y sus colonos, en vivo.
 // El servidor manda la lista de jugadores (con campamento, edad, población y edificios) y,
@@ -180,6 +181,8 @@ export class OtherCamps {
       mesh.rotation.y = Number.isFinite(b.yaw) ? b.yaw : 0;
       group.add(mesh);
       // El humo de su cocina, igual que lo ve su dueño: sale mientras hay alguien dentro.
+      // Y las antorchas de su aldea arden igual que para su dueño.
+      if (b.t === 'torch' && b.d !== false) addTorchFlame(mesh, BUILDINGS.torch.levels[0].flame, () => true);
       if (b.t === 'dining_hall' && b.d !== false) addChimneySmoke(mesh, () => eatingNow(entry.sim, { x: b.x, z: b.z }) > 0);
     }
   }

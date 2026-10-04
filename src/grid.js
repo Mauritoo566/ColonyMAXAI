@@ -47,9 +47,9 @@ export class GridSystem {
     this.onChange?.();
   }
 
-  // Pega una coordenada (metros del campamento) al centro de su casilla.
-  snap(v) {
-    return this.enabled ? Math.round(v / GRID) * GRID : v;
+  // Pega una coordenada (metros del campamento) al centro de su casilla (o a una malla más fina, para los adornos pequeños).
+  snap(v, step = GRID) {
+    return this.enabled ? Math.round(v / step) * step : v;
   }
 
   build(R, camp) {

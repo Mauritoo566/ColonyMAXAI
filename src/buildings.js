@@ -6,8 +6,9 @@ import { BUILDINGS, levelOf } from './sim/buildingTypes.js';
 import { buildLevelFor } from './sim/progression.js';
 import { eatingNow } from './sim/dining.js';
 import { addChimneySmoke } from './chimneySmoke.js';
+import { addTorchFlame } from './torchFlames.js';
 import { DEPOSIT_COLORS } from './sim/economy.js';
-import { entranceOf, halfOf, ACCESS_DEPTH, footprintRect, rectsOverlap } from './sim/access.js';
+import { entranceOf, halfFor, ACCESS_DEPTH, footprintRect, rectsOverlap } from './sim/access.js';
 
 // Vista y controles de los edificios. Los edificios en sí (obras, trabajadores, mejoras)
 // son de la simulación (sim/colony.js); aquí se dibujan con su modelo y su etiqueta, se
@@ -44,7 +45,7 @@ function createAccessOverlay() {
     // def: tipo; problem: texto del problema de colocación (o null); issue: entrada bloqueada de uno ya puesto (o null).
     set(def, problem = null, issue = null) {
       const e = entranceOf(def, 0, 0, 0);
-      const h = halfOf(def.footprint);
+      const h = halfFor(def);
       group.visible = !def.line;
       if (def.line) return;
       const accessBad = !!issue || /entrada/i.test(problem ?? '');
@@ -298,9 +299,11 @@ export class BuildingSystem {
     const hit = pickSurface(this.raycaster.ray, this.sim.camp.height);
     if (!hit) return;
     const local = this.sim.toLocal(hit.point, this.tmp);
-    // Con la cuadrícula activa el edificio se pega al centro de su casilla.
-    const gx = this.grid ? this.grid.snap(local.x) : local.x;
-    const gz = this.grid ? this.grid.snap(local.z) : local.z;
+    // Con la cuadrícula activa el edificio se pega al centro de su casilla (un adorno pequeño, a una malla de 1 m: se pone donde se quiere).
+    const placingDef = (this.moving ?? this.placing).def ?? this.placing;
+    const step = placingDef.small ? 1 : undefined;
+    const gx = this.grid ? this.grid.snap(local.x, step) : local.x;
+    const gz = this.grid ? this.grid.snap(local.z, step) : local.z;
     this.groundPoint = { x: gx, z: gz };
     // Los muros no se giran: conservan su orientación (o van a lo largo del eje X).
     // Los demás siempre miran al norte de entrada; "turn" sólo suma giros de 90° exactos
@@ -419,6 +422,8 @@ export class BuildingSystem {
       return;
     }
     const { building } = this.sim.build(this.placing.id, x, z, this.candidate?.yaw ?? null);
+    // Los adornos pequeños se ponen uno tras otro: la herramienta sigue activa (Esc para terminar).
+    if (this.placing.small) return;
     this.stopPlacing();
     if (building) this.select(building);
   }
@@ -454,7 +459,7 @@ export class BuildingSystem {
 
   addEntry(b) {
     // El terreno bajo el edificio ya lo aplanó la simulación: hay que redibujarlo.
-    this.terrain.invalidateZone(b.zone);
+    if (b.zone) this.terrain.invalidateZone(b.zone);
     const object = new THREE.Group();
     object.position.copy(b.dir).multiplyScalar(RADIUS + b.height);
     object.quaternion.copy(this.sim.camp.quaternion).multiply(this.tmpQuat.setFromAxisAngle(Y_AXIS, b.yaw));
@@ -463,6 +468,8 @@ export class BuildingSystem {
     object.add(model, frame);
     // La cocina del comedor echa humo de verdad mientras alguien come o bebe dentro.
     if (b.def.id === 'dining_hall') addChimneySmoke(object, () => b.done && !b.removed && eatingNow(this.sim, b) > 0);
+    // La antorcha arde en cuanto está terminada (llama titilante, halo y luz de noche).
+    if (b.def.id === 'torch') addTorchFlame(object, levelOf(b).flame ?? 1.55, () => b.done && !b.removed);
     this.scene.add(object);
 
     const label = document.createElement('button');
@@ -482,7 +489,7 @@ export class BuildingSystem {
     this.scene.remove(e.object);
     releaseModel(e.object);
     e.label.remove();
-    this.terrain.invalidateZone(e.b.zone);
+    if (e.b.zone) this.terrain.invalidateZone(e.b.zone);
     this.entries.delete(e.b.id);
   }
 

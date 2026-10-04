@@ -9,6 +9,7 @@ import { productionEstimate, estimateLine } from './sim/estimates.js';
 import { FOOD_SPOIL_SECONDS, zoneCapacity } from './sim/colony.js';
 import { villageReport } from './sim/report.js';
 import { eatingNow } from './sim/dining.js';
+import { enableHScroll, revealInScroller } from './hscroll.js';
 import { storageKey } from './storage.js';
 import { preserveScroll, keepScroll } from './keepScroll.js';
 import { DAY_LENGTH_SECONDS } from './daynight.js';
@@ -74,6 +75,8 @@ export class BuildUI {
         ${icon(cat.icon)}<span class="build-tab-name">${cat.name}</span>${soon ? '' : `<span class="build-tab-count">${count}</span>`}
       </button>`;
     }).join('');
+    // Las categorías no caben siempre: rueda del ratón, arrastre, flechas, y la elegida queda a la vista.
+    enableHScroll(this.tabs, { arrows: true });
     this.list.innerHTML = BUILDING_TYPES.map(
       (def) => `
       <button type="button" class="build-item" data-build="${def.id}" data-cat="${def.category}" aria-pressed="false">
@@ -303,6 +306,7 @@ export class BuildUI {
     this.collapsed = !id;
     if (id) this.tab = id;
     for (const tab of this.tabs.children) tab.setAttribute('aria-selected', String(!this.collapsed && tab.dataset.cat === this.tab));
+    if (id) revealInScroller(this.tabs, [...this.tabs.children].find((t) => t.dataset.cat === id));
     for (const item of this.list.children) item.hidden = item.dataset.cat !== this.tab || item.dataset.off === '1';
     this.list.hidden = this.collapsed;
     this.bar.classList.toggle('is-collapsed', this.collapsed);

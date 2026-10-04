@@ -19,6 +19,9 @@ export const ACCESS_DEPTH = CELL; // fondo de la franja de acceso
 export const MIN_ACCESS_WIDTH = 2.4; // ancho mínimo para pasar cómodo (puerta ~1 m)
 export const APPROACH = 0.7; // metros más allá de la fachada donde espera quien llega
 
+// Mitad del lado que ocupa un tipo: sus casillas enteras, salvo los adornos pequeños (small), que miden lo que miden.
+export const halfFor = (def) => (def.small ? def.footprint : halfOf(def.footprint));
+
 // Casillas que ocupa un edificio de ese radio: mitad del lado, en metros.
 export function halfOf(footprint) {
   const cells = Math.max(1, Math.round((footprint * 2) / CELL));
@@ -28,7 +31,7 @@ export function halfOf(footprint) {
 // Tipo de entrada de cada edificio: 'door' (puerta con franja reservada), 'open' (estructura abierta: punto de
 // trabajo con franja reservada) o ninguna (muros y postes no tienen acceso).
 const OPEN = new Set(['farm', 'quarry', 'clay_pit', 'copper_mine', 'tin_mine', 'iron_mine', 'coal_mine', 'well', 'water_works', 'boiler', 'power_plant', 'station']);
-const NONE = new Set(['wall', 'pole', 'gate']);
+const NONE = new Set(['wall', 'pole', 'gate', 'torch']);
 
 export function entranceKind(def) {
   if (!def || def.line || NONE.has(def.id)) return null;
@@ -47,7 +50,7 @@ export const rect = (x0, x1, z0, z1) => ({ x0, x1, z0, z1 });
 // La huella de un edificio (null para los muros, que van por tramos redondos).
 export function footprintRect(def, x, z) {
   if (def.line) return null;
-  const h = halfOf(def.footprint);
+  const h = halfFor(def);
   return rect(x - h, x + h, z - h, z + h);
 }
 
@@ -109,6 +112,7 @@ export function accessProblem(def, x, z, yaw, others, props = []) {
 // y la simulación (que decide qué recurso es recolectable): tienen que coincidir o reaparece el "recurso invisible".
 export function resourceClearOf(def) {
   if (def.line) return def.footprint + 0.5;
+  if (def.small) return def.footprint + 1; // un adorno no despeja el monte a su alrededor
   const e = entranceOf(def, 0, 0, 0);
   const far = e ? Math.hypot(halfOf(def.footprint) + ACCESS_DEPTH, e.width / 2) : halfOf(def.footprint) * 1.42;
   return Math.max(def.footprint + 3, far + 0.5);

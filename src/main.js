@@ -19,6 +19,7 @@ import { ColonyView } from './colonists.js';
 import { ColonyUI } from './colonyUI.js';
 import { BuildingSystem } from './buildings.js';
 import { updateSmokes } from './chimneySmoke.js';
+import { initTorchLights, updateTorches } from './torchFlames.js';
 import { BuildUI } from './buildUI.js';
 import { WeatherSystem, WEATHER } from './weather.js';
 import { AgeUI } from './ageUI.js';
@@ -126,6 +127,7 @@ const moon = new THREE.DirectionalLight('#a9bcff', 0.9);
 scene.add(moon);
 const ambient = new THREE.AmbientLight('#5a6c99', 0.55);
 scene.add(ambient);
+initTorchLights(scene); // unas pocas luces que se reparten entre las antorchas más cercanas
 
 const stars = createStars(4000);
 const sky = createSky(skyScene);
@@ -547,6 +549,9 @@ function updateSun(clearance) {
   moon.position.copy(moonUp ? dayNight.moonDirection : sunDir.clone().negate());
 }
 
+// Cuánto de noche es donde se mira (0 día, 1 noche cerrada): las antorchas encienden su luz con ella.
+let nightLevel = 0;
+
 // Color del cielo según la altura del Sol sobre el horizonte en el lugar de la cámara.
 function updateSky(altitude) {
   const sunElevation = controls.dir.dot(dayNight.sunDirection); // 1 = mediodía, <0 = noche
@@ -569,6 +574,7 @@ function updateSky(altitude) {
 
   // De noche sube la luz ambiente y la de la luna para que se siga viendo el paisaje.
   const night = 1 - daylight;
+  nightLevel = night;
   ambient.intensity = 0.45 + 1.1 * night;
   moon.intensity = (0.4 + 1.4 * night) * (0.55 + 0.45 * dayNight.moonIllumination);
 
@@ -814,6 +820,7 @@ renderer.setAnimationLoop(() => {
   lap('colonyView');
   buildings.update();
   updateSmokes(); // humo de las cocinas (sólo mientras hay alguien comiendo dentro)
+  updateTorches(undefined, camera, nightLevel); // llamas de las antorchas (con luz de noche)
   lap('buildings');
   colonyUI.update(delta);
   buildUI.update(delta);
