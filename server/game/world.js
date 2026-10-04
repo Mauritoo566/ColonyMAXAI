@@ -83,8 +83,29 @@ export class World {
     sim.spawnMobs();
     const colony = { playerId, sim, camp, dir, away: null, dirty: true };
     sim.on('changed', () => (colony.dirty = true));
+    // Subir de edad se celebra con fuegos artificiales en esa aldea y un aviso para TODOS los jugadores.
+    sim.on('celebration', (info) => this.celebrate(colony, info));
     this.colonies.set(playerId, colony);
     return colony;
+  }
+
+  // Aviso global de que una aldea subió de edad: lo reciben todos los conectados y cada navegador lanza los fuegos artificiales sobre esa
+  // aldea (con su dirección y altura, para que los vea quien esté mirando por allí).
+  celebrate(colony, info) {
+    const player = this.names.get(colony.playerId) ?? 'Alguien';
+    const msg = {
+      t: 'celebrate',
+      id: colony.playerId,
+      player,
+      village: colony.sim.villageName || null,
+      age: info.age,
+      ageName: info.name,
+      dir: { x: colony.dir.x, y: colony.dir.y, z: colony.dir.z },
+      height: colony.camp.height,
+    };
+    const raw = JSON.stringify(msg);
+    for (const client of this.clients) client.sendRaw(raw);
+    this.log(`${player} (${colony.sim.villageName || 'sin nombre de aldea'}) subió a la ${info.name}`);
   }
 
   // Simula "seconds" segundos de juego de una vez, con el dueño ausente (hasta dos días).
@@ -250,16 +271,15 @@ export class World {
       if (!cache.has(key)) cache.set(key, JSON.stringify(make()));
       return cache.get(key);
     };
-    const pendingStatics = [];
     for (const client of this.clients) {
       const own = this.colonies.get(client.player.id);
       if (own && full) {
-        // Los datos fijos de los nacidos en la colonia sólo se mandan cuando nace alguien.
-        client.sendRaw(once(`full:${own.playerId}`, () => ({ t: 'colony', ...own.sim.snapshot('full', { statics: own.staticsSent !== own.sim.staticsRevision }) })));
-        if (!cache.has(`sent:${own.playerId}`)) {
-          cache.set(`sent:${own.playerId}`, true);
-          pendingStatics.push(own);
-        }
+        // Los datos fijos de los nacidos en la colonia (y los caminos, lo talado...) se mandan cuando cambian Y a cada cliente nuevo: son por
+        // cliente, no por colonia. Si fueran por colonia, quien recarga la página (o abre otra pestaña) no los recibiría y vería una aldea
+        // sin sus nacidos: los trabajos de los nacidos "se perderían" y los nombres de la lista cambiarían.
+        const statics = client.ownStatics !== own.sim.staticsRevision;
+        client.sendRaw(once(`full:${own.playerId}:${statics}`, () => ({ t: 'colony', ...own.sim.snapshot('full', { statics }) })));
+        if (statics) client.ownStatics = own.sim.staticsRevision;
       }
       else if (own && fast) client.sendRaw(once(`fast:${own.playerId}`, () => ({ t: 'fast', ...own.sim.snapshot('fast') })));
       if (others && client.view) {
@@ -276,7 +296,6 @@ export class World {
       }
       if (t % TIME_EVERY === 0) client.sendRaw(once('time', () => ({ t: 'time', elapsed: this.elapsed })));
     }
-    for (const colony of pendingStatics) colony.staticsSent = colony.sim.staticsRevision;
     if (t % PLAYERS_EVERY === 0) this.sendPlayers();
   }
 

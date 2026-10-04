@@ -36,6 +36,8 @@ const grow = (n) => {
   }
 };
 
+const celebrations = [];
+sim.on('celebration', (c) => celebrations.push(c));
 for (let n = 2; n <= MAX_AGE; n++) {
   const req = AGES[n - 1].requires;
   const before = nextAgeStatus(sim);
@@ -64,6 +66,11 @@ for (let n = 2; n <= MAX_AGE; n++) {
   const colonistsBefore = sim.colonists.length;
   assert.equal(sim.advanceAge(), true);
   assert.equal(sim.age, n);
+  // Subir de edad se celebra: un aviso (el servidor lo manda a todos y se lanzan fuegos artificiales) y bienestar para cada colono.
+  assert.equal(celebrations.length, n - 1, 'una celebración por cada edad alcanzada');
+  assert.equal(celebrations.at(-1).age, n);
+  assert.equal(celebrations.at(-1).name, AGES[n - 1].name);
+  for (const c of sim.colonists) assert.ok(c.moodEvents?.some((e) => e.id === 'age' && e.delta > 0), `${c.name} celebra y gana bienestar`);
   for (const [k, v] of Object.entries(req.cost)) assert.equal(stockBefore[k] - sim.stock[k], v, `la ofrenda de ${k} se cobra una vez`);
   assert.equal(sim.buildings.length, buildingsBefore, 'no se pierde ningún edificio');
   assert.equal(sim.colonists.length, colonistsBefore, 'no se pierde ningún colono');

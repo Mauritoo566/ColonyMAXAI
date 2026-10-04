@@ -153,8 +153,10 @@ export function roadMaterials(levelCount) {
     depthWrite: false,
     side: THREE.DoubleSide,
     polygonOffset: true,
-    // Un empujón mínimo contra el parpadeo con el terreno (la cinta ya va ROAD_LIFT por encima): más y se dibuja sobre lo que pisa.
-    polygonOffsetFactor: -1,
+    // Sin "factor": el desplazamiento de profundidad proporcional a la inclinación adelanta la cinta en vistas rasantes y la pinta
+    // por encima de edificios, colonos y árboles que tiene delante. Un camino es un camino: sólo un empujón fijo mínimo contra
+    // el parpadeo con el terreno (que ya queda ROAD_LIFT por debajo).
+    polygonOffsetFactor: 0,
     polygonOffsetUnits: -1,
   }));
 }

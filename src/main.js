@@ -20,6 +20,7 @@ import { ColonyUI } from './colonyUI.js';
 import { BuildingSystem } from './buildings.js';
 import { updateSmokes } from './chimneySmoke.js';
 import { initTorchLights, updateTorches } from './torchFlames.js';
+import { startFireworks, updateFireworks } from './fireworks.js';
 import { BuildUI } from './buildUI.js';
 import { WeatherSystem, WEATHER } from './weather.js';
 import { AgeUI } from './ageUI.js';
@@ -432,6 +433,15 @@ const worldPanel = document.getElementById('world-panel');
 camps.getOthers = () => others.campList(); // no fundar pegado a otro jugador
 others.onPlayers = renderPlayers;
 net.on('players', (m) => others.sync(m.list));
+// Una aldea (la tuya o la de otro jugador) subió de edad: aviso para todos y fuegos artificiales sobre ella.
+net.on('celebrate', (m) => {
+  if (!m.dir || ![m.dir.x, m.dir.y, m.dir.z, m.height].every(Number.isFinite)) return;
+  const mine = m.id === player.playerId;
+  const who = m.village ?? `la aldea de ${m.player}`;
+  const text = mine ? `¡Tu aldea llegó a la ${m.ageName}! Fuegos artificiales y todos los colonos lo celebran.` : `🎆 ${who[0].toUpperCase()}${who.slice(1)} llegó a la ${m.ageName}`;
+  showNotice(text, false, 9000);
+  startFireworks(scene, m.dir, m.height);
+});
 net.on('other', (m) => others.applyColonists(m.id, m));
 worldButton.hidden = false;
 worldButton.addEventListener('click', () => {
@@ -821,6 +831,7 @@ renderer.setAnimationLoop(() => {
   buildings.update();
   updateSmokes(); // humo de las cocinas (sólo mientras hay alguien comiendo dentro)
   updateTorches(undefined, camera, nightLevel); // llamas de las antorchas (con luz de noche)
+  updateFireworks(); // fuegos artificiales de las aldeas que suben de edad
   lap('buildings');
   colonyUI.update(delta);
   buildUI.update(delta);

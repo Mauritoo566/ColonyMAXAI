@@ -1789,10 +1789,12 @@ export class ColonySim {
       this.emit('buildings');
       this.emit('notice', `${evolved === 1 ? 'Una vivienda evolucionó' : `${evolved} viviendas evolucionaron`} con la ${status.next.name}`);
     }
+    // Todos los colonos celebran (bienestar para cada uno) y se avisa para los fuegos artificiales y el aviso global (el servidor).
     for (const c of this.colonists) {
       addLog(c, time, `Celebró la llegada de la ${status.next.name}`);
       addMoodEvent(c, 'age', 25, this.gameTime);
     }
+    this.emit('celebration', { age: status.next.n, name: status.next.name });
     this.emit('changed');
     return true;
   }
@@ -3462,6 +3464,7 @@ export class ColonySim {
         store: b.store,
         worker: b.worker ? b.worker.id : null,
         workers: b.workers.map((w) => w.id),
+        auto: b.workers.map((w) => !!w.jobAuto), // quién estaba por elección de la colonia y quién por orden del jugador
         cycle: b.cycle,
         cycleActive: b.cycleActive,
       })),
@@ -3472,6 +3475,7 @@ export class ColonySim {
   restore(data) {
     if (!this.camp || !data || !(data.version >= 1 && data.version <= SAVE_VERSION) || data.campSeed !== this.camp.seed) return false;
     Object.assign(this.stock, data.stock);
+    const crews = [];
     for (const s of data.buildings || []) {
       const def = BUILDINGS[s.type];
       if (!def) continue;
@@ -3489,17 +3493,24 @@ export class ColonySim {
         b.progress = s.progress;
         b.buildTime = def.buildTime * (1 + b.level * 0.4);
       }
-      const ids = Array.isArray(s.workers) ? s.workers : s.worker != null ? [s.worker] : [];
-      for (const id of ids) {
+      // Al terminarse, createBuilding ya puso a alguien por su cuenta (assignWorker): se suelta, que manda lo guardado. Los puestos se
+      // devuelven DESPUÉS de cargar a los colonos (los nacidos aún no existen aquí) y antes de que la colonia vuelva a elegir.
+      for (const w of b.workers) w.job = null;
+      b.workers = [];
+      crews.push({ b, ids: Array.isArray(s.workers) ? s.workers : s.worker != null ? [s.worker] : [], auto: Array.isArray(s.auto) ? s.auto : [] });
+    }
+    this.restoreColony(data.colony);
+    for (const { b, ids, auto } of crews) {
+      ids.forEach((id, i) => {
         const worker = this.colonists.find((c) => c.id === id);
         if (b.done && worker && !worker.job && b.workers.length < Math.max(1, this.crewNeeded(b))) {
           b.workers.push(worker);
           worker.job = b;
+          worker.jobAuto = !!auto[i];
           b.reason = 'Trabajaba aquí antes.';
         }
-      }
+      });
     }
-    this.restoreColony(data.colony);
     // Partidas anteriores: las viviendas toman el nivel de la edad (no se quita nada).
     evolveHouses(this);
     this.pruneRoads();

@@ -10,7 +10,8 @@ const decalMaterials = new Map();
 function decalMaterial(color) {
   let m = decalMaterials.get(color);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ color, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    // Sin "factor" (ver roadMesh.js): el pavimento queda unos centímetros sobre el suelo y no puede pintarse sobre lo que tiene delante.
+    m = new THREE.MeshStandardMaterial({ color, roughness: 1, polygonOffset: true, polygonOffsetFactor: 0, polygonOffsetUnits: -2 });
     decalMaterials.set(color, m);
   }
   return m;

@@ -269,7 +269,7 @@ export class BuildingSystem {
     this.deposits.quaternion.copy(this.sim.camp.quaternion);
     for (const d of this.sim.deposits) {
       if (d.kind !== kind) continue;
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(d.r, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: DEPOSIT_COLORS[kind], transparent: true, opacity: 0.6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(d.r, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: DEPOSIT_COLORS[kind], transparent: true, opacity: 0.6, depthWrite: false, polygonOffset: true, polygonOffsetFactor: 0, polygonOffsetUnits: -4 }));
       disc.position.set(d.x, this.sim.heightAt(d.x, d.z) - this.sim.camp.height + 0.2, d.z);
       this.deposits.add(disc);
     }
