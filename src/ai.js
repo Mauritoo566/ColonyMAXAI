@@ -14,6 +14,7 @@ import { specOf, spotCategory, WORK_TYPES, waitReason } from './sim/specialties.
 import { SPROUT_KEY } from './resourceGen.js';
 import { stallReason } from './sim/economy.js';
 import { abandonTarget, farSpot, nextJob, cemeteryStatus, plotSpot, nicheSpot, freePlot, freeNiche, urnWanted, placeUrnHome, isCemetery, BURY_SECONDS, EXHUME_SECONDS, URN_SECONDS, TAKE_SECONDS, PLACE_SECONDS, THINK_SECONDS } from './sim/cemetery.js';
+import { TAME_SECONDS } from './sim/stable.js';
 import { hallFor, hallOpen, mealSource, reserveSeat, releaseSeat, leaveHall, finishMeal, finishDrink, URGENT } from './sim/dining.js';
 
 const DAY = DAY_LENGTH_SECONDS;
@@ -213,6 +214,13 @@ export function chooseTask(colony, c, env) {
   if (colony.age < 3 && !c.soldier && !isChild(c) && !env.isNight && Math.min(n.food, n.water, n.rest, n.warmth) > 35 && c.rand() < 0.4) {
     const body = abandonTarget(colony, c);
     if (body) add(0.5 / (1 + dist(c, body) / 120), { type: 'abandon', rec: body, phase: 'fetch' });
+  }
+
+  // Un caballo salvaje con orden de domesticar (el jugador ya pagó las manzanas): algún colono libre va a por él, de día y con lo básico cubierto.
+  // El más cercano lo reserva y los demás no van.
+  if (!c.soldier && !isChild(c) && !env.isNight && Math.min(n.food, n.water, n.rest, n.warmth) > 35) {
+    const horse = colony.pendingTame(c);
+    if (horse) add(0.6 / (1 + dist(c, horse) / 200), { type: 'tame', mobId: horse.id });
   }
 
   // Un jarrón de un ser querido en la estantería del cementerio: la familia puede querer llevárselo a casa. Lo piensa bien: sólo si tiene lo
@@ -747,6 +755,18 @@ export function runTask(colony, c, task, dt, env) {
     case 'urn':
       return runUrn(colony, c, task, dt, env);
 
+    case 'tame': {
+      const horse = colony.mobs.find((o) => o.id === task.mobId);
+      if (!horse || !horse.order || horse.tamed || (horse.order.by != null && horse.order.by !== c.id)) return 'done';
+      horse.order.by = c.id;
+      if (!go(colony, c, task, horse, dt, 1.6)) return 'running';
+      colony.faceTowards(c, horse.x, horse.z, dt);
+      c.working = true;
+      if (!busy(task, dt, TAME_SECONDS)) return 'running';
+      task.delivered = true;
+      return colony.finishTame(horse, c) ? 'done' : 'failed';
+    }
+
     case 'abandon':
       return runAbandon(colony, c, task, dt, env);
 
@@ -1114,6 +1134,11 @@ export function endTask(colony, c, task) {
     } else if (rec.state === 'grave' && task.kind === 'cremate') rec.niche = null;
     rec.claim = null;
   }
+  // Domesticando: si lo deja a medias, el caballo vuelve a esperar a otro colono (las manzanas ya están pagadas).
+  if (task.type === 'tame' && !task.delivered) {
+    const horse = colony.mobs.find((o) => o.id === task.mobId);
+    if (horse?.order?.by === c.id) horse.order.by = null;
+  }
   c.carrying = null;
   // Lo que llevaba no se pierde ni se duplica: se entrega ahora en el almacén.
   if (task.type === 'harvest' && task.load && !task.delivered) {
@@ -1162,6 +1187,8 @@ export function taskActivity(colony, c, task) {
       return walking ? `Va a casa con ${task.partner.name}` : `Espera a ${task.partner.name} en la puerta`;
     case 'guard':
       return walking ? 'Va a su puesto de guardia' : 'Montando guardia';
+    case 'tame':
+      return walking ? 'Va a domesticar un caballo' : 'Domesticando un caballo con manzanas';
     case 'abandon':
       return task.phase === 'fetch' ? `Va a por el cuerpo de ${task.rec.name}` : task.phase === 'drop' ? `Deja el cuerpo de ${task.rec.name} lejos de la aldea` : `Lleva el cuerpo de ${task.rec.name} lejos de la aldea`;
     case 'urn':
@@ -1233,6 +1260,8 @@ export function taskLog(c, task) {
       return `Recolectó ${HARVEST[task.spot.kind].noun} en una zona marcada`;
     case 'plant':
       return 'Plantó una semilla de árbol';
+    case 'tame':
+      return 'Fue a domesticar un caballo';
   }
   return null;
 }

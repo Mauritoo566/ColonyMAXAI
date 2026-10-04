@@ -25,6 +25,7 @@ for (const g of ['food', 'water', 'wood', 'stone', 'fiber']) producedFrom[g] = 1
 producedFrom.coin = Math.min(producedFrom.coin ?? 99, BUILDINGS.market.levels[0].age);
 // No sale de una receta: a veces cae al talar un árbol de verdad (desde la Cabaña del leñador).
 producedFrom.tree_seed = 2;
+producedFrom.apple = 2; // cae a veces al talar un árbol
 
 const costGoods = (cost) => Object.keys(cost ?? {});
 for (const def of BUILDING_TYPES) {

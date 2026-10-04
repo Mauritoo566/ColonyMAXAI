@@ -5,6 +5,7 @@ import { NEEDS, SKILLS, wellbeing, needStatus, completeSkill } from './needs.js'
 import { GENES, gene, genomeCode, lifeExpectancy } from './genes.js';
 import { SPEC_NAMES } from './sim/specialties.js';
 import { MOB_INFO, MOB_STATS, MOB_STATE_TEXT } from './sim/mobs.js';
+import { TAME_COST } from './sim/stable.js';
 
 // Interfaz de la colonia: tarjeta con el bienestar general, lista de colonos y la
 // ficha de cada uno (clic sobre el colono, su nombre o su fila en la lista).
@@ -574,6 +575,22 @@ export class ColonyUI {
     const info = MOB_INFO[m.type];
     const st = MOB_STATS[m.type];
     const mates = m.g != null ? this.colony.mobs.filter((o) => o.g === m.g).length : 1;
+    // Caballos: domesticar con manzanas (se gastan del almacén al pulsar) o, si ya lo está, dónde espera.
+    let tame = '';
+    if (m.type === 'caballo') {
+      const apples = Math.floor(this.colony.stock.apple ?? 0);
+      if (m.tame === 1) tame = '<section class="cp-section"><h3>Domesticado</h3><p class="reason">Espera en el establo. Todavía no tiene función: se elegirá en la armería (montura de guerra o caballo de carga).</p></section>';
+      else if (m.tame === 2) tame = '<section class="cp-section"><h3>Domesticar</h3><p class="reason">Un colono va a domesticarlo. Las manzanas ya se gastaron del almacén.</p></section>';
+      else {
+        const problem = this.colony.tameProblemOf(m);
+        const herd = this.colony.tameableHerd(m).length;
+        const many = herd > 1 ? this.colony.tameCount(m) : 0;
+        tame = `<section class="cp-section"><h3>Domesticar</h3>
+          <button type="button" class="btn" data-tame ${problem ? 'disabled' : ''}>Domesticar = ${TAME_COST} manzanas</button>
+          ${herd > 1 ? `<button type="button" class="btn" data-tame-herd ${many ? '' : 'disabled'}>Domesticar a la manada: ${many} de ${herd} = ${many * TAME_COST} manzanas</button>` : ''}
+          <p class="reason">${problem ? escapeHtml(problem) : `Tienes ${apples} manzanas en el almacén: se gastan ${TAME_COST} al pulsar y un colono libre va a domesticarlo.`}</p></section>`;
+      }
+    }
     const html = `
       <header class="cp-head">
         <span class="bp-icon">${st.hostile ? '⚠' : '🐾'}</span>
@@ -591,11 +608,14 @@ export class ColonyUI {
           <div class="stat-line"><span>${st.hostile ? 'Amenaza' : 'Utilidad'}</span><strong>${escapeHtml(info.gives)}</strong></div>
           <div class="stat-line"><span>Distancia a la fogata</span><strong>${Math.round(Math.hypot(m.x, m.z))} m</strong></div>
         </section>
+        ${tame}
       </div>`;
     if (this.mobShown !== html) {
       this.mobShown = html;
       keepScroll(this.panel, () => (this.panel.innerHTML = html));
       this.panel.querySelector('[data-close]').addEventListener('click', () => this.view.selectMob(null));
+      this.panel.querySelector('[data-tame]')?.addEventListener('click', () => this.colony.tameHorse(m.id));
+      this.panel.querySelector('[data-tame-herd]')?.addEventListener('click', () => this.colony.tameHerd(m.id));
     }
   }
 

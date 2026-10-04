@@ -257,6 +257,27 @@ add({
 });
 
 // ---------------------------------------------------------------------------------------
+// Establo (desde la Edad III): aquí esperan los caballos salvajes que el jugador domestica con manzanas (3 por caballo, que se gastan del
+// almacén al dar la orden). Un colono libre va, lo doma y el caballo queda en un hueco junto al establo hasta que se elija para qué sirve.
+//   stalls  huecos para caballos (sim/stable.js)
+// ---------------------------------------------------------------------------------------
+
+add({
+  id: 'horse_stable',
+  category: 'production',
+  kind: 'stable',
+  icon: 'leaf',
+  cost: { wood: 30, stone: 4, fiber: 6 },
+  buildTime: 70,
+  footprint: 3.4,
+  levels: [
+    L(3, 'Establo', 'Un cobertizo de troncos con un corral. Aquí esperan los caballos domesticados. Para domesticar uno, haz clic en un caballo salvaje: cuesta 3 manzanas del almacén (caen a veces al talar árboles).', 'gen:horsestable:3', { stalls: 4 }),
+    L(5, 'Establo grande', 'Más boxes y un pajar: caben más caballos.', 'gen:horsestable:5', { stalls: 8, upgradeCost: { wood: 30, cut_stone: 8, fiber: 8 } }),
+    L(7, 'Cuadras', 'Cuadras de tablones con comedero y herrería de herraduras.', 'gen:horsestable:7', { stalls: 14, upgradeCost: { planks: 20, cut_stone: 12 } }),
+  ],
+});
+
+// ---------------------------------------------------------------------------------------
 // Cementerio (desde la Edad III; antes, un colono cualquiera carga al muerto y lo deja lejos de la aldea): quien muere queda tirado; el
 // enterrador (Servicios) lo busca, lo carga y lo entierra en una de las tumbas del recinto.
 // Pasado el tiempo de reposo (rest) pasa los restos a cenizas en un jarrón que deja en la estantería del fondo (hueco libre), y la
@@ -836,7 +857,7 @@ military({
   cost: { planks: 24, cut_stone: 14, iron_tools: 2 },
   requires: [{ id: 'barracks', level: 3 }, { id: 'farm' }],
   levels: [
-    L(6, 'Establo', 'Caballos de guerra y pienso: 4 jinetes.', 'gen:barracks:6', { garrison: 4, units: 'cavalry' }),
+    L(6, 'Cuadras de guerra', 'Caballos de guerra y pienso: 4 jinetes.', 'gen:barracks:6', { garrison: 4, units: 'cavalry' }),
     L(8, 'Cuadras mayores', 'Cuadras amplias, picadero y herrería: 8 jinetes.', 'gen:barracks:8', { garrison: 8, units: 'cavalry', upgradeCost: { planks: 24, bricks: 14, iron_tools: 3 } }),
   ],
 });

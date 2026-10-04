@@ -2,6 +2,7 @@
 // resto del estado, así que todos los jugadores cercanos los ven en vivo. Sin Three.js (datos y cuentas).
 // Los modelos están en src/mobs.js. El mundo no depende de tu edad: aparecen por bioma.
 import { addMoodEvent } from '../needs.js';
+import { checkStable } from './stable.js';
 
 export const MOB_TYPES = ['conejo', 'ciervo', 'jabali', 'oveja', 'uro', 'caballo', 'lobo', 'oso'];
 
@@ -134,12 +135,62 @@ function mobGoal(sim, m, dt) {
   return p.pts[p.i];
 }
 
+// Un caballo domesticado: va a su hueco junto al establo y allí se queda, dando algún paso corto de vez en cuando.
+function tamedStep(sim, m, dt) {
+  const st = MOB_STATS[m.type];
+  const home = m.stall ?? { x: m.x, z: m.z };
+  if (m.state === 0) {
+    m.wait = (m.wait ?? 0) - dt;
+    if (m.wait > 0) return;
+    const a = Math.random() * Math.PI * 2;
+    const r = 0.5 + Math.random() * 1.2;
+    m.tx = home.x + Math.cos(a) * r;
+    m.tz = home.z + Math.sin(a) * r;
+    m.state = 1;
+  }
+  const d = Math.hypot(m.tx - m.x, m.tz - m.z);
+  if (d < 0.5) {
+    m.state = 0;
+    m.wait = 3 + Math.random() * 6;
+    return;
+  }
+  const goal = mobGoal(sim, m, dt);
+  const gd = Math.hypot(goal.x - m.x, goal.z - m.z) || 1;
+  const step = Math.min(st.speed * 0.7 * dt, d);
+  let nx = m.x + ((goal.x - m.x) / gd) * step;
+  let nz = m.z + ((goal.z - m.z) / gd) * step;
+  for (const o of sim.obstacles) {
+    const px = nx - o.x;
+    const pz = nz - o.z;
+    const dist = Math.hypot(px, pz);
+    const min = o.r + MOB_RADIUS;
+    if (dist < min && dist > 1e-4) {
+      nx = o.x + (px / dist) * min;
+      nz = o.z + (pz / dist) * min;
+      m.opath = null;
+    }
+  }
+  m.facing = Math.atan2(nx - m.x, nz - m.z);
+  m.x = nx;
+  m.z = nz;
+}
+
 export function updateMobs(sim, dt, isNight) {
   if (!sim.mobs?.length || dt > 2) return;
   const rand = Math.random;
   for (const m of sim.mobs) {
     const st = MOB_STATS[m.type];
     m.cd = Math.max(0, m.cd - dt);
+    if (m.order || m.tamed) checkStable(sim, m);
+    // Esperando al colono que lo va a domesticar: se queda quieto. Ya domesticado: vive junto al establo.
+    if (m.order) {
+      m.state = 0;
+      continue;
+    }
+    if (m.tamed) {
+      tamedStep(sim, m, dt);
+      continue;
+    }
     // Hostiles: de noche (o los osos siempre que haya hambre cerca) buscan al colono más cercano al descubierto.
     let target = null;
     if (st.hostile && !sim.absent && (isNight || m.type === 'oso')) {
@@ -179,7 +230,7 @@ export function updateMobs(sim, dt, isNight) {
     }
     // Los seguidores acompañan a su líder (los lobos también cazan en manada).
     if (!fleeing && !target && m.g != null && !m.leader) {
-      const lead = sim.mobs.find((o) => o.g === m.g && o.leader);
+      const lead = sim.mobs.find((o) => o.g === m.g && o.leader && !o.tamed && !o.order);
       if (lead && Math.hypot(lead.x - m.x, lead.z - m.z) > 6) {
         m.tx = lead.x + m.ox;
         m.tz = lead.z + m.oz;
@@ -280,7 +331,7 @@ export const MOB_INFO = {
   jabali: { name: 'Jabalí', text: 'Manso mientras nadie lo moleste. Va en pequeños grupos por el bosque.', gives: 'Carne (cuando se pueda cazar).' },
   oveja: { name: 'Oveja salvaje', text: 'Rebaño numeroso que pasta tranquilo.', gives: 'Carne y lana (cuando se pueda cazar o domesticar).' },
   uro: { name: 'Uro', text: 'Bovino salvaje de gran tamaño. Se mueve en rebaños.', gives: 'Carne y cuero (cuando se pueda cazar).' },
-  caballo: { name: 'Caballo salvaje', text: 'Veloz; recorre la pradera en manadas.', gives: 'Transporte (cuando se pueda domesticar).' },
+  caballo: { name: 'Caballo salvaje', text: 'Veloz; recorre la pradera en manadas.', gives: 'Se puede domesticar con manzanas (hace falta un establo).' },
   lobo: { name: 'Lobo', text: 'Caza en manada, sobre todo de noche. Ataca a quien esté al descubierto y teme al fuego.', gives: 'Peligro: 7 de daño por golpe.' },
   oso: { name: 'Oso', text: 'Solitario y fuerte. Ataca a los colonos que se acercan, de día o de noche. Teme al fuego.', gives: 'Peligro: 14 de daño por golpe.' },
 };

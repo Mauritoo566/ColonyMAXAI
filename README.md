@@ -359,3 +359,7 @@ La simulación de la colonia está separada de lo que se dibuja: `src/sim/` no u
 ## Follaje
 
 Pasto, pasto alto, helechos, arbustos y flores cubren el suelo alrededor de lo que se mira (`src/foliage.js`). Para no dar lag: sólo existe a menos de 150 m y a poca altura, se genera por trozos de 24 m anclados al mundo (igual para todos) con tope de 3 ms por fotograma, son 8 `InstancedMesh` (8 llamadas de dibujo), el viento y el encogerse con la distancia van en el sombreador, y la densidad baja con la calidad gráfica. No sale en agua, pendientes fuertes, claros de aldea ni caminos. El árbol plantado: el tope de brotes plantados sube a 300.
+
+## Establo y caballos
+
+Desde la Edad III se construye el **Establo** (huecos para 4, 8 y 14 caballos por nivel; el antiguo "Establo" militar se llama ahora *Cuadras de guerra*). Al talar árboles cae a veces una **manzana** (fruta nueva, 12 %). Al hacer clic en un caballo salvaje aparece **Domesticar = 3 manzanas** (o la manada entera, hasta donde alcancen manzanas y huecos): las manzanas se gastan del almacén al pulsar, un colono libre va a domesticarlo y el caballo queda esperando en un hueco junto al establo, sin función todavía (se elegirá en la armería). Si el establo desaparece, las manzanas pendientes se devuelven y los caballos vuelven a ser salvajes. Todo en el servidor (`src/sim/stable.js`) y se guarda con la colonia.

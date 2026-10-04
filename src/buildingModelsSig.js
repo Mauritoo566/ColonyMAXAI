@@ -662,6 +662,48 @@ export function cemeteryYard(p, tier) {
   if (tier >= 9) box(p, 7.2, 0.1, 1.5, GLASS, 0, wallH + 0.55, -3.0);
 }
 
+// Establo: un cobertizo abierto por delante, con boxes separados por tablones, un comedero en cada uno, pacas de heno y un cercado al frente.
+// A mayor edad, más boxes, mejores materiales y una cuadra cerrada con tejas. Los caballos esperan en el patio, junto al edificio.
+export function horseStable(p, tier) {
+  const c = pal(tier);
+  const boxes = tier >= 7 ? 4 : tier >= 5 ? 3 : 2;
+  const w = 1.5 + boxes * 1.2;
+  const d = 2.6;
+  const wood = tier >= 5 ? '#8a5a34' : '#7a4f2e';
+  box(p, w + 0.4, 0.14, d + 0.4, tier >= 7 ? '#8f8a7c' : '#6a5a40', 0, 0.07, 0); // suelo de tierra y paja
+  // Muro del fondo y laterales de troncos.
+  const H = tier >= 7 ? 2.6 : 1.9;
+  for (let i = 0; i < 6; i++) box(p, w, H / 6, 0.22, i % 2 ? wood : '#6b4a2e', 0, 0.25 + (i * H) / 6, -d / 2 + 0.11);
+  for (const s of [-1, 1]) for (let i = 0; i < 6; i++) box(p, 0.22, H / 6, d, i % 2 ? wood : '#6b4a2e', (s * (w - 0.22)) / 2, 0.25 + (i * H) / 6, 0);
+  // Tejado a dos aguas que cubre el cobertizo y asoma un poco al frente.
+  gable(p, w + 0.5, d + 0.7, 1.0, c.roof, H + 0.28, wood);
+  // Boxes: tablones divisorios y un comedero (con heno) en cada uno.
+  for (let i = 1; i < boxes; i++) {
+    const x = -w / 2 + (i * w) / boxes;
+    box(p, 0.12, 1.1, d * 0.75, wood, x, 0.6, -d * 0.12);
+    box(p, 0.16, 1.5, 0.16, '#5a3a22', x, 0.75, d / 2 - 0.2);
+  }
+  for (let i = 0; i < boxes; i++) {
+    const x = -w / 2 + ((i + 0.5) * w) / boxes;
+    box(p, 0.7, 0.28, 0.32, '#5a3a22', x, 0.28, -d / 2 + 0.55);
+    box(p, 0.6, 0.12, 0.24, '#d8c060', x, 0.38, -d / 2 + 0.55);
+  }
+  // Pacas de heno y un cubo junto a la entrada lateral.
+  for (const [x, y] of [[w / 2 + 0.45, 0.2], [w / 2 + 0.45, 0.6], [w / 2 + 1.0, 0.2]]) box(p, 0.7, 0.36, 0.5, '#d8c060', x, y, -0.3);
+  barrel(p, -w / 2 - 0.5, 0, 0.9, '#7a5230', 0.7);
+  // Cercado bajo al frente con un hueco: los caballos salen y entran por el centro.
+  const z = d / 2 + 0.55;
+  for (let x = -w / 2; x <= w / 2 + 0.01; x += 0.9) if (Math.abs(x) > 0.7) box(p, 0.12, 0.85, 0.12, wood, x, 0.43, z);
+  for (const s of [-1, 1]) box(p, w / 2 - 0.55, 0.07, 0.07, wood, s * (0.7 + (w / 2 - 0.55) / 2), 0.7, z);
+  if (tier >= 5) chimney(p, w / 2 - 0.5, H + 0.5, -d / 2 + 0.6, 0.9, c.base);
+  if (tier >= 7) {
+    for (const x of [-w / 2 - 0.1, w / 2 + 0.1]) box(p, 0.3, 2.2, 0.3, c.wall, x, 1.1, d / 2 + 0.2);
+    box(p, 0.9, 0.7, 0.9, wood, 0, H + 1.5, 0); // linterna de ventilación sobre la cumbrera
+    box(p, 1.1, 0.12, 1.1, c.roof, 0, H + 1.9, 0);
+    for (let i = 0; i < boxes; i++) window_(p, -w / 2 + ((i + 0.5) * w) / boxes, 1.3, -d / 2 + 0.24, GLASS, 0.4, 0.4);
+  }
+}
+
 // Recolectores y leñadores de las edades avanzadas.
 export function gathererMark(p) {
   // Cajas de fruta, un secadero y un toldo.

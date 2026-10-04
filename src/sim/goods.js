@@ -13,6 +13,7 @@ export const GOODS = [
   { id: 'grain', name: 'grano', icon: 'grain', color: '#e0c25a', age: 2, group: 'raw', use: 'Se hornea en pan o se muele en harina.' },
   { id: 'vegetables', name: 'verduras', icon: 'food', color: '#7ab547', age: 2, group: 'food', use: 'Alimenta a los colonos.' },
   { id: 'tree_seed', name: 'semilla de árbol', icon: 'leaf', color: '#8a6a3a', age: 2, group: 'seed', use: 'Cae a veces al talar un árbol. Los colonos la plantan solos en su tiempo libre y nace el árbol propio de ese bioma.' },
+  { id: 'apple', name: 'manzanas', icon: 'food', color: '#d9473a', age: 2, group: 'food', use: 'Fruta (frutas y verduras). Cae a veces al talar un árbol. Sirve para domesticar caballos: 3 por cada uno.' },
   { id: 'clay', name: 'arcilla', icon: 'clay', color: '#b86a44', age: 2, group: 'raw', use: 'Cerámica y ladrillos.' },
   { id: 'copper', name: 'cobre', icon: 'ore', color: '#c8743c', age: 3, group: 'raw', use: 'Con estaño se funde en bronce; después, electrónica.' },
   { id: 'tin', name: 'estaño', icon: 'ore', color: '#9fb0b8', age: 3, group: 'raw', use: 'Aleación del bronce.' },

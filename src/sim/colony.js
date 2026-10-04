@@ -26,6 +26,7 @@ import { entranceOf, accessProblem, halfOf, pointInRect, rectsOverlap, circleHit
 import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, ROAD_LEVELS, ROAD_CELL, ROAD_LIFT, autoRoadPath } from './economy.js';
 import { pushSample } from '../interp.js';
 import { decideRun, RUN_FACTOR } from './running.js';
+import { orderTame, tameProblem, herdOf, affordable, pendingTame, finishTame, serializeTamed, restoreTamed } from './stable.js';
 import { recordDeath, serializeDead, restoreDead, viewDead, urnsAtHome, stenchAt, seesBody, SAW_BODY, SAW_COOLDOWN } from './cemetery.js';
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, armyReport, militaryPower } from './military.js';
@@ -90,6 +91,7 @@ const SPOT_RADIUS = 230; // metros: recursos que los colonos conocen alrededor d
 const CAMP_CLEAR = 45; // alrededor del campamento no hay recursos naturales (resources.js)
 const REGROW_SECONDS = 1.5 * DAY_LENGTH_SECONDS; // las bayas y setas vuelven a crecer en día y medio
 const SAPLING_GROW_SECONDS = 0.75 * DAY_LENGTH_SECONDS; // un árbol plantado tarda en crecer
+const APPLE_CHANCE = 0.12; // al talar un árbol, probabilidad de que caiga una manzana (sirve para domesticar caballos)
 const SEED_CHANCE = 0.45; // al talar un árbol, probabilidad de que caigan semillas y nazca uno nuevo
 const MAX_SPROUTS = 50; // vegetación espontánea viva a la vez (lluvia, ramas y piedras del suelo)
 const MAX_PLANTED = 300; // árboles plantados (por colonos o replantados por el leñador) vivos a la vez; no gastan el cupo de lo espontáneo
@@ -476,11 +478,51 @@ export class ColonySim {
     return mobThreat(this, c);
   }
 
+  // ---- Caballos: domesticar con manzanas (sim/stable.js) ----------------------------------------------------------
+  // Por qué no se puede domesticar este caballo (null = se puede). Vale en el navegador: sólo lee.
+  tameProblemOf(m) {
+    return tameProblem(this, m);
+  }
+
+  // Los de la manada de este caballo que se pueden domesticar (todavía salvajes).
+  tameableHerd(m) {
+    return herdOf(this, m);
+  }
+
+  tameCount(m) {
+    return affordable(this, this.tameableHerd(m).length);
+  }
+
+  tameHorse(id) {
+    if (this.remote) return this.remote('tameHorse', [id]);
+    const m = this.mobs.find((o) => o.id === id);
+    return !!m && orderTame(this, m) === null;
+  }
+
+  // Da la orden por todos los de su manada que alcancen (el elegido primero, luego los más cercanos a él).
+  tameHerd(id) {
+    if (this.remote) return this.remote('tameHerd', [id]);
+    const m = this.mobs.find((o) => o.id === id);
+    if (!m) return false;
+    const group = herdOf(this, m).sort((a, b) => (a === m ? -1 : b === m ? 1 : Math.hypot(a.x - m.x, a.z - m.z) - Math.hypot(b.x - m.x, b.z - m.z)));
+    let done = 0;
+    for (const h of group) if (orderTame(this, h) === null) done++;
+    return done > 0;
+  }
+
+  pendingTame(c) {
+    return pendingTame(this, c);
+  }
+
+  finishTame(m, c) {
+    return finishTame(this, m, c);
+  }
+
   // Copia en el navegador de los animales que manda el servidor (se crean, mueven o quitan por id).
   applyMobs(rows) {
     const byId = new Map(this.mobs.map((m) => [m.id, m]));
     const seen = new Set();
-    for (const [id, ti, x, z, facing, state] of rows) {
+    for (const [id, ti, x, z, facing, state, tame, g] of rows) {
       const type = MOB_TYPES[ti];
       if (!type) continue;
       seen.add(id);
@@ -495,6 +537,8 @@ export class ColonySim {
       m.facing = facing;
       pushSample(m, x, z, facing);
       m.state = state;
+      m.tame = tame ?? 0;
+      m.g = g != null && g >= 0 ? g : null;
     }
     if (this.mobs.some((m) => !seen.has(m.id))) this.mobs = this.mobs.filter((m) => seen.has(m.id));
   }
@@ -2366,6 +2410,10 @@ export class ColonySim {
         this.produce('tree_seed', 1);
         this.emit('notice', 'Al talar cayeron semillas: los colonos las plantarán solos');
       }
+      if (spot.tree && Math.random() < APPLE_CHANCE) {
+        this.produce('apple', 1);
+        this.emit('notice', 'Al talar cayó una manzana: sirve para domesticar caballos');
+      }
     }
   }
 
@@ -3491,6 +3539,7 @@ export class ColonySim {
         removed: this.serializeRemoved(),
         sprouts: this.sprouts,
         dead: serializeDead(this.dead),
+        tamed: serializeTamed(this.mobs),
         marked: this.spots.filter((s) => s.marked && !s.gone).map((s) => [s.key, s.index]),
         zones: this.zones,
         outdoor: this.outdoor,
@@ -3628,6 +3677,10 @@ export class ColonySim {
         const c = this.colonist(args[0]);
         return !!c && this.setSpec(c, args[1]);
       }
+      case 'tameHorse':
+        return Number.isInteger(args[0]) && this.tameHorse(args[0]);
+      case 'tameHerd':
+        return Number.isInteger(args[0]) && this.tameHerd(args[0]);
       case 'learn':
         return typeof args[0] === 'string' && this.learn(args[0]);
       case 'discover':
@@ -3714,7 +3767,7 @@ export class ColonySim {
   snapshot(part = 'full', { statics = true } = {}) {
     const r2 = (v) => Math.round(v * 100) / 100;
     const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0) | (c.sitting === 'ground' ? 256 : 0) | (c.sitting === 'bench' ? 512 : 0) | (c.running ? 1024 : 0) | (c.carrying === 'body' ? 2048 : 0) | (c.carrying === 'urn' ? 4096 : 0);
-    const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state]);
+    const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state, m.tamed ? 1 : m.order ? 2 : 0, m.g ?? -1]);
     if (part === 'fast') {
       // gameTime: la hora de juego de esta colonia, para que quien la mira vea crecer los brotes plantados igual que su dueño.
       const out = { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]), mobs: mobsRows(), gameTime: r2(this.gameTime) };
@@ -4079,6 +4132,7 @@ export class ColonySim {
     this.defeat = data.defeat && typeof data.defeat.cause === 'string' ? { cause: data.defeat.cause, day: String(data.defeat.day ?? ''), last: String(data.defeat.last ?? '') } : null;
     this.deaths = Array.isArray(data.deaths) ? data.deaths.filter((d) => d && typeof d.name === 'string').slice(-20) : [];
     this.dead = restoreDead(data.dead);
+    restoreTamed(this.mobs, data.tamed);
     this.autoRoads = data.autoRoads !== false;
     const keys = (list) => new Set((Array.isArray(list) ? list : []).filter((k) => typeof k === 'string' && /^-?\d+,-?\d+$/.test(k)));
     this.autoRoadKeys = new Set([...keys(data.autoRoadKeys)].filter((k) => this.roads.has(k)));
