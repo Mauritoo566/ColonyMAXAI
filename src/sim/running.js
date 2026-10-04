@@ -3,11 +3,11 @@
 // corre aunque ya esté cansado, hasta quedar sin aliento. Datos y reglas puras (sin Three.js ni DOM).
 
 import { hasTrait } from '../needs.js';
-import { threatDistance } from './mobs.js';
+import { huntedDistance } from './mobs.js';
 
 export const RUN_FACTOR = 1.7; // velocidad al correr frente a caminar
-export const FEAR_DISTANCE = 14; // metros a un animal hostil a partir de los cuales hay miedo de verdad
-const FEAR_KEEP = 20; // y deja de tenerlo al alejarse de esto (histéresis: no empieza y para a cada paso)
+export const FEAR_DISTANCE = 22; // metros a un animal que lo está cazando a partir de los cuales hay miedo de verdad
+const FEAR_KEEP = 28; // y deja de tenerlo al alejarse de esto (histéresis: no empieza y para a cada paso)
 const START_REST = 30; // para echar a correr por una necesidad hace falta estar descansado
 const KEEP_REST = 14; // y se sigue corriendo hasta quedarse con esto
 const FEAR_REST = 6; // con miedo se corre hasta casi caer rendido
@@ -36,9 +36,10 @@ export function decideRun(colony, c, env) {
   const remaining = Math.hypot(going.tx - c.x, going.tz - c.z);
   if (remaining < (running ? KEEP_FAR : START_FAR) * (running ? 1 : 0.6)) return null; // para llegar a pocos pasos no compensa
 
-  // Miedo: un animal hostil muy cerca. Corre aunque esté cansado; los soldados no se asustan así.
+  // Miedo con razón: un animal que de verdad lo está cazando ahora (no uno que pasea). Corre aunque esté cansado; los soldados
+  // no se asustan así.
   if (!c.soldier) {
-    const d = threatDistance(colony, c);
+    const d = huntedDistance(colony, c);
     if (d < (running ? FEAR_KEEP : FEAR_DISTANCE)) {
       if (rest > FEAR_REST) return 'tiene miedo';
       c.windedUntil = env.gameTime + WINDED_SECONDS;

@@ -8,7 +8,7 @@ import { WeatherState } from '../../../src/sim/weather.js';
 import { BUILDINGS } from '../../../src/sim/buildingTypes.js';
 import { naturalSurfaceHeight } from '../../../src/elevation.js';
 import { chooseTask, runTask, endTask } from '../../../src/ai.js';
-import { hallOpen, seatsOf, diners } from '../../../src/sim/dining.js';
+import { hallOpen, seatsOf, diners, eatingNow } from '../../../src/sim/dining.js';
 import { defImplemented, maxLevelFor } from '../../../src/sim/progression.js';
 
 const dir = new THREE.Vector3(-0.8984470605519815, 0.4271785546817849, 0.10154487582091702).normalize();
@@ -64,8 +64,16 @@ assert.ok(maxLevelFor(BUILDINGS.dining_hall, 10) >= 5, 'sube de nivel con las ed
   let result = 'running';
   for (let t = 0; t < 120 && result === 'running'; t += DT) {
     result = step(sim, c);
-    if (c.inside) inside = true;
+    if (c.inside && !inside) {
+      inside = true;
+      // El cartel dice la verdad, también en el navegador (donde no hay tareas): 1 dentro ahora.
+      const kept = c.task;
+      c.task = null;
+      assert.equal(eatingNow(sim, b), 1, 'cuenta al que está dentro aunque no se conozca su tarea');
+      c.task = kept;
+    }
   }
+  assert.equal(eatingNow(sim, b), 0, 'al salir ya no cuenta');
   assert.equal(result, 'done');
   assert.ok(inside, 'estuvo dentro del comedor');
   assert.equal(c.inside, false, 'al terminar sale');

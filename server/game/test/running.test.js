@@ -8,6 +8,7 @@ import { WeatherState } from '../../../src/sim/weather.js';
 import { naturalSurfaceHeight } from '../../../src/elevation.js';
 import { updateNeeds, RUN_REST_COST } from '../../../src/needs.js';
 import { decideRun, RUN_FACTOR } from '../../../src/sim/running.js';
+import { updateMobs } from '../../../src/sim/mobs.js';
 
 const dir = new THREE.Vector3(-0.8984470605519815, 0.4271785546817849, 0.10154487582091702).normalize();
 function colony() {
@@ -78,14 +79,20 @@ const going = (c, task, tx, tz) => {
   assert.match(decideRun(sim, c, { gameTime: env.gameTime + 60 }) ?? '', /sed/, 'pasado el rato, sí');
 }
 
-// 4) Miedo: un animal hostil cerca. Corre aunque esté cansado (hasta casi caer rendido); un soldado no.
+// 4) Miedo con razón: sólo si un animal lo está cazando de verdad. Corre aunque esté cansado (hasta casi caer rendido); un soldado no.
 {
   const sim = colony();
   const c = sim.colonists[0];
   c.x = 0;
   c.z = 0;
   going(c, { type: 'warm' }, 30, 0);
-  sim.mobs = [{ id: 1, type: 'lobo', x: 8, z: 0, facing: 0, state: 0, hp: 10, cd: 0 }];
+  // Un lobo cerca pero que pasea (no lo caza): no hay razón para el miedo.
+  sim.mobs = [{ id: 1, type: 'lobo', x: 8, z: 0, facing: 0, state: 1, hp: 10, cd: 0, target: null }];
+  c.needs.rest = 60;
+  assert.equal(decideRun(sim, c, env), null, 'un hostil que pasea y no lo caza no da miedo');
+  // Lo está cazando: ahora sí.
+  sim.mobs[0].state = 2;
+  sim.mobs[0].target = c.id;
   const wolf = sim.mobs[0].type;
   c.needs.rest = 15; // cansado
   assert.equal(decideRun(sim, c, env), 'tiene miedo', `con miedo corre aunque esté cansado (${wolf})`);
@@ -96,8 +103,11 @@ const going = (c, task, tx, tz) => {
   c.soldier = { unit: 'x' };
   assert.equal(decideRun(sim, c, env), null, 'un soldado no huye así');
   c.soldier = null;
-  sim.mobs[0].x = 60; // lejos
+  sim.mobs[0].x = 80; // lejos
   assert.equal(decideRun(sim, c, env), null, 'lejos del animal camina');
+  sim.mobs[0].x = 8;
+  sim.mobs[0].target = 999; // va a por otro colono
+  assert.equal(decideRun(sim, c, env), null, 'si va a por otro, él no corre');
 }
 
 // 5) Cuesta: más cansancio y más sed, y más velocidad.
@@ -124,9 +134,9 @@ const going = (c, task, tx, tz) => {
 {
   const sim = colony();
   const c = sim.colonists[0];
-  c.x = 12;
+  c.x = 26; // fuera del círculo de la fogata (los hostiles no cazan dentro)
   c.z = 0;
-  sim.mobs = [{ id: 1, type: 'lobo', x: 22, z: 0, facing: 0, state: 0, hp: 10, cd: 0 }];
+  sim.mobs = [{ id: 1, type: 'oso', x: 40, z: 0, facing: 0, state: 0, wait: 5, tx: 40, tz: 0, cd: 0, target: null }];
   const rest0 = c.needs.rest;
   let ran = false;
   for (let t = 0; t < 20; t += 0.5) {
@@ -134,7 +144,7 @@ const going = (c, task, tx, tz) => {
     sim.update(0.5, { timeScale: 1, isNight: false, timeLabel: () => 'd' });
     if (c.running) ran = true;
   }
-  assert.ok(ran, 'huyó corriendo');
+  assert.ok(ran, 'huyó corriendo del oso que lo cazaba');
   assert.ok(c.needs.rest < rest0 - 1, `y se cansó (${rest0} -> ${c.needs.rest.toFixed(1)})`);
   c.running = true;
   const row = sim.snapshot('fast').colonists.find((r) => r[0] === c.id);

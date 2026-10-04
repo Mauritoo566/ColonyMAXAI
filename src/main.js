@@ -18,6 +18,7 @@ import { ColonySim } from './sim/colony.js';
 import { ColonyView } from './colonists.js';
 import { ColonyUI } from './colonyUI.js';
 import { BuildingSystem } from './buildings.js';
+import { updateSmokes } from './chimneySmoke.js';
 import { BuildUI } from './buildUI.js';
 import { WeatherSystem, WEATHER } from './weather.js';
 import { AgeUI } from './ageUI.js';
@@ -812,6 +813,7 @@ renderer.setAnimationLoop(() => {
   colonyView.update(delta, delta);
   lap('colonyView');
   buildings.update();
+  updateSmokes(); // humo de las cocinas (sólo mientras hay alguien comiendo dentro)
   lap('buildings');
   colonyUI.update(delta);
   buildUI.update(delta);

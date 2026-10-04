@@ -288,7 +288,7 @@ add({
   icon: 'people',
   cost: { bricks: 40, planks: 24, steel: 4 },
   buildTime: 110,
-  footprint: 3.6,
+  footprint: 2.8, // 1 casilla: su modelo cabe en 4 m (antes reservaba 2×2)
   autoLevel: true,
   requires: [{ id: 'water_works' }, { id: 'admin' }], // más gente exige agua canalizada y administración
   levels: [
@@ -475,6 +475,7 @@ workshop({
 workshop({
   id: 'powder_mill',
   job: 'Pólvora',
+  footprint: 2.8, // 1 casilla: su modelo cabe en 4 m (antes reservaba 2×2)
   skill: 'crafting',
   icon: 'powder',
   cost: { planks: 16, cut_stone: 16, iron_tools: 2 },
@@ -544,6 +545,7 @@ workshop({
 workshop({
   id: 'electronics_factory',
   job: 'Electrónica',
+  footprint: 2.8, // 1 casilla: su modelo cabe en 4 m (antes reservaba 2×2)
   skill: 'engineering',
   icon: 'chip',
   cost: { concrete: 30, steel: 16, machinery: 4 },

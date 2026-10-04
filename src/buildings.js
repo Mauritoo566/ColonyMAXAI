@@ -5,6 +5,7 @@ import { levelModel, frameMesh, material, modelVariant, releaseModel } from './b
 import { BUILDINGS, levelOf } from './sim/buildingTypes.js';
 import { buildLevelFor } from './sim/progression.js';
 import { eatingNow } from './sim/dining.js';
+import { addChimneySmoke } from './chimneySmoke.js';
 import { DEPOSIT_COLORS } from './sim/economy.js';
 import { entranceOf, halfOf, ACCESS_DEPTH, footprintRect, rectsOverlap } from './sim/access.js';
 
@@ -460,6 +461,8 @@ export class BuildingSystem {
     const model = levelModel(levelOf(b).model, modelVariant(b.x, b.z, b.def.id, b.level));
     const frame = frameMesh(b.def.footprint);
     object.add(model, frame);
+    // La cocina del comedor echa humo de verdad mientras alguien come o bebe dentro.
+    if (b.def.id === 'dining_hall') addChimneySmoke(object, () => b.done && !b.removed && eatingNow(this.sim, b) > 0);
     this.scene.add(object);
 
     const label = document.createElement('button');

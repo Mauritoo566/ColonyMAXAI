@@ -571,14 +571,13 @@ export function stockpileMark(p, tier) {
   }
 }
 
-// Comedor: chimenea de la cocina con humo, mesas largas con bancos en el costado, un caldero con leña y, según la edad,
+// Comedor: chimenea de la cocina (el humo es real: lo anima chimneySmoke.js mientras alguien come), mesas largas con bancos en el costado, un caldero con leña y, según la edad,
 // toldo, cartel, ventanas de servicio, extractor y salón acristalado. Nunca delante: ahí están la puerta y su acceso.
 export function diningMark(p, tier) {
   const c = pal(tier);
   const wood = tier >= 6 ? '#9a7446' : '#8a643c';
-  // Cocina: chimenea que sobresale del tejado y una nubecita de humo.
+  // Cocina: chimenea que sobresale del tejado (su boca está en CHIMNEY de chimneySmoke.js: x -1,4 · y 4,4 · z -0,9).
   chimney(p, -1.4, 2.7, -0.9, 1.7, tier >= 8 ? '#a8a29a' : '#8a8478', 0.5);
-  for (const [dy, r] of [[4.7, 0.22], [5.15, 0.3], [5.65, 0.38]]) p.add(new THREE.SphereGeometry(r, 6, 4), '#d8d8d4', mat(-1.4, dy, -0.9));
   // Dos mesas largas con bancos a cada lado, en el costado derecho.
   for (const z of [-1.1, 0.5]) {
     box(p, 0.9, 0.08, 1.5, wood, 2.95, 0.85, z);

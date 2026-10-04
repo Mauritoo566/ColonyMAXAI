@@ -2654,9 +2654,10 @@ export class ColonySim {
     return false;
   }
 
-  findObstaclePath(ax, az, bx, bz) {
+  // radius: margen del cuerpo (un animal es más ancho que un colono).
+  findObstaclePath(ax, az, bx, bz, radius = COLONIST_RADIUS + 0.08) {
     const S = 0.5; // celdas de 0,5 m: así pasa por pasillos estrechos entre un tronco y una pila de leña
-    const R = COLONIST_RADIUS + 0.08;
+    const R = radius;
     const free = (ix, iz) => {
       const x = ix * S;
       const z = iz * S;
@@ -2720,7 +2721,7 @@ export class ColonySim {
         let at = { x: ax, z: az };
         for (let i = 0; i < nodes.length; i++) {
           const next = nodes[i + 1] ?? { x: bx, z: bz };
-          if (this.lineBlocked(at.x, at.z, next.x, next.z, 0.05)) {
+          if (this.lineBlocked(at.x, at.z, next.x, next.z, radius - COLONIST_RADIUS - 0.03)) {
             out.push(nodes[i]);
             at = nodes[i];
           }

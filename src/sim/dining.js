@@ -21,8 +21,10 @@ export function diners(colony, b) {
 
 export const seatsOf = (b) => levelOf(b)?.seats ?? 0;
 
-// Cuántos están comiendo dentro ahora (los que ya entraron).
-export const eatingNow = (colony, b) => colony.colonists.filter((c) => c.inside && c.task?.source === 'hall' && c.task.building === b).length;
+// Cuántos están dentro ahora comiendo o bebiendo. Se cuenta por lo que se ve (dentro del edificio, donde entran: en su centro), no por
+// su tarea: la copia del navegador no tiene las tareas (corren en el servidor) y diría siempre 0.
+export const INSIDE_RADIUS = 1.5;
+export const eatingNow = (colony, b) => colony.colonists.filter((c) => c.inside && Math.hypot(c.x - b.x, c.z - b.z) < INSIDE_RADIUS).length;
 
 // ¿Hay un comedor terminado y con la entrada libre? Entonces el consumo es ahí y el aguatero lleva el agua al almacén.
 export const hallOpen = (colony) => colony.buildings.some((b) => isHall(b) && b.done && !b.removed && !b.accessIssue);

@@ -34,6 +34,7 @@ const BIOME_MOBS = {
 
 const FIRE_SAFE = 14; // metros: los hostiles no se acercan a la fogata
 const HIT_EVERY = 1.4;
+const MOB_RADIUS = 0.6; // metros que guarda un animal de los obstáculos
 const MAX_ROAM = 230;
 
 // Manadas y rebaños: casi todos viven en grupo con un líder al que siguen (los osos van solos).
@@ -99,12 +100,38 @@ export function mobThreat(sim, c) {
   return false;
 }
 
-// Distancia al animal hostil más cercano (Infinity si no hay): para saber si un colono tiene miedo de verdad.
-export function threatDistance(sim, c) {
+// Distancia al animal que de verdad está cazando a este colono ahora (Infinity si ninguno): sólo así hay un peligro real que
+// justifique el miedo. Un hostil que pasea lejos, o de día (los lobos sólo cazan de noche), no cuenta: no persigue a nadie.
+export function huntedDistance(sim, c) {
   let best = Infinity;
   if (sim.absent || !sim.mobs?.length) return best;
-  for (const m of sim.mobs) if (MOB_STATS[m.type].hostile) best = Math.min(best, Math.hypot(m.x - c.x, m.z - c.z));
+  for (const m of sim.mobs) if (m.state === 2 && m.target === c.id && MOB_STATS[m.type].hostile) best = Math.min(best, Math.hypot(m.x - c.x, m.z - c.z));
   return best;
+}
+
+// Hacia dónde ir para llegar a (m.tx, m.tz) rodeando lo que haya en medio: el destino si el camino está libre, o el siguiente
+// punto de una ruta planeada (como los colonos). Sin esto un animal que quería pasar al otro lado de un edificio se quedaba
+// empujando contra él. Si no hay ruta, lo reintenta pasados unos segundos (no recalcula a cada paso).
+function mobGoal(sim, m, dt) {
+  m.pathWait = Math.max(0, (m.pathWait ?? 0) - dt);
+  let p = m.opath;
+  if (p && (p.obs !== sim.obstacles || Math.hypot(p.tx - m.tx, p.tz - m.tz) > 2)) p = m.opath = null;
+  if (!p) {
+    if (!sim.lineBlocked(m.x, m.z, m.tx, m.tz, 0.15)) return { x: m.tx, z: m.tz };
+    if (m.pathWait > 0) return { x: m.tx, z: m.tz };
+    const pts = sim.findObstaclePath(m.x, m.z, m.tx, m.tz, MOB_RADIUS + 0.1);
+    if (!pts) {
+      m.pathWait = 3;
+      return { x: m.tx, z: m.tz };
+    }
+    p = m.opath = { obs: sim.obstacles, tx: m.tx, tz: m.tz, pts, i: 0 };
+  }
+  while (p.i < p.pts.length - 1 && Math.hypot(p.pts[p.i].x - m.x, p.pts[p.i].z - m.z) < 1.2) p.i++;
+  if (p.i >= p.pts.length - 1) {
+    m.opath = null;
+    return { x: m.tx, z: m.tz };
+  }
+  return p.pts[p.i];
 }
 
 export function updateMobs(sim, dt, isNight) {
@@ -208,8 +235,11 @@ export function updateMobs(sim, dt, isNight) {
       continue;
     }
     const speed = st.speed * (m.state === 2 ? 1 : fleeing ? 1 : m.g != null && !m.leader ? 0.9 : 0.6) * dt;
-    let nx = m.x + (dx / d) * Math.min(speed, d);
-    let nz = m.z + (dz / d) * Math.min(speed, d);
+    // Rodea lo que haya en medio (edificios, muros, troncos) en vez de empujar contra ello.
+    const goal = mobGoal(sim, m, dt);
+    const gd = Math.hypot(goal.x - m.x, goal.z - m.z) || 1;
+    let nx = m.x + ((goal.x - m.x) / gd) * Math.min(speed, d);
+    let nz = m.z + ((goal.z - m.z) / gd) * Math.min(speed, d);
     // Los hostiles no entran en el círculo de la fogata; todos rodean edificios y muros.
     if (st.hostile && Math.hypot(nx, nz) < FIRE_SAFE) {
       m.state = 0;
@@ -221,7 +251,7 @@ export function updateMobs(sim, dt, isNight) {
       const px = nx - o.x;
       const pz = nz - o.z;
       const dist = Math.hypot(px, pz);
-      const min = o.r + 0.6;
+      const min = o.r + MOB_RADIUS;
       if (dist < min) {
         blocked = true;
         if (dist > 1e-4) {
@@ -238,7 +268,8 @@ export function updateMobs(sim, dt, isNight) {
     m.facing = Math.atan2(nx - m.x, nz - m.z);
     m.x = nx;
     m.z = nz;
-    if (blocked && m.state === 1) m.wait = 0; // elige otro rumbo
+    if (blocked) m.opath = null; // algo lo desvió: replanea
+    if (blocked && m.state === 1 && !m.opath && m.pathWait > 0) m.wait = 0; // sin ruta: elige otro rumbo
   }
 }
 

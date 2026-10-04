@@ -51,11 +51,11 @@ Generada con `node tools/audit-models.mjs --md`. Una fila por tipo y nivel: la e
 | stockpile | 8 | 8 | `gen:hall:8:stockpile` | 2028 | 7.3×3.8×4.4 | 4×4 | sobresale 1.6 m de su huella |
 | stockpile | 9 | 9 | `gen:hall:9:stockpile` | 2460 | 7.3×3.8×5.5 | 4×4 | sobresale 1.6 m de su huella |
 | stockpile | 10 | 10 | `gen:hall:10:stockpile` | 2568 | 7.3×3.8×5.5 | 4×4 | mejora poco visible (0.07); sobresale 1.6 m de su huella |
-| dining_hall | 1 | 2 | `gen:hall:2:dining_hall` | 2310 | 7.1×6.0×3.8 | 8×8 | — |
-| dining_hall | 2 | 4 | `gen:hall:4:dining_hall` | 2538 | 7.1×6.0×3.9 | 8×8 | — |
-| dining_hall | 3 | 6 | `gen:hall:6:dining_hall` | 2838 | 7.1×6.0×4.3 | 8×8 | — |
-| dining_hall | 4 | 8 | `gen:hall:8:dining_hall` | 3132 | 7.1×6.0×4.3 | 8×8 | — |
-| dining_hall | 5 | 10 | `gen:hall:10:dining_hall` | 3204 | 7.5×6.0×4.3 | 8×8 | mejora poco visible (0.08) |
+| dining_hall | 1 | 2 | `gen:hall:2:dining_hall` | 1986 | 7.1×4.4×3.8 | 8×8 | — |
+| dining_hall | 2 | 4 | `gen:hall:4:dining_hall` | 2214 | 7.1×4.4×3.9 | 8×8 | — |
+| dining_hall | 3 | 6 | `gen:hall:6:dining_hall` | 2514 | 7.1×4.4×4.3 | 8×8 | — |
+| dining_hall | 4 | 8 | `gen:hall:8:dining_hall` | 2808 | 7.1×4.4×4.3 | 8×8 | — |
+| dining_hall | 5 | 10 | `gen:hall:10:dining_hall` | 2880 | 7.5×4.4×4.3 | 8×8 | mejora poco visible (0.08) |
 | house | 1 | 1 | `houseModel1` | 1014 | 4.2×3.8×4.2 | 4×4 | — |
 | house | 2 | 2 | `houseModel2` | 3072 | 5.2×5.2×5.2 | 4×4 | — |
 | house | 3 | 3 | `gen:house:3:house` | 1122 | 4.4×3.5×3.7 | 4×4 | — |
@@ -66,9 +66,9 @@ Generada con `node tools/audit-models.mjs --md`. Una fila por tipo y nivel: la e
 | house | 8 | 8 | `gen:house:8:house` | 1320 | 4.4×6.1×3.8 | 4×4 | — |
 | house | 9 | 9 | `gen:house:9:house` | 216 | 4.1×4.5×4.3 | 4×4 | — |
 | house | 10 | 10 | `gen:house:10:house` | 324 | 4.2×5.1×4.5 | 4×4 | — |
-| apartment | 1 | 8 | `gen:block:8:apartment` | 828 | 4.7×6.0×3.7 | 8×8 | — |
-| apartment | 2 | 9 | `gen:block:9:apartment` | 1440 | 4.7×10.1×3.7 | 8×8 | — |
-| apartment | 3 | 10 | `gen:block:10:apartment` | 2412 | 3.9×16.1×3.5 | 8×8 | — |
+| apartment | 1 | 8 | `gen:block:8:apartment` | 828 | 4.7×6.0×3.7 | 4×4 | — |
+| apartment | 2 | 9 | `gen:block:9:apartment` | 1440 | 4.7×10.1×3.7 | 4×4 | — |
+| apartment | 3 | 10 | `gen:block:10:apartment` | 2412 | 3.9×16.1×3.5 | 4×4 | — |
 | smelter | 1 | 3 | `gen:smelter:3:smelter` | 660 | 5.1×3.1×3.1 | 8×8 | — |
 | smelter | 2 | 5 | `gen:smelter:5:smelter` | 792 | 5.1×3.1×3.3 | 8×8 | — |
 | smelter | 3 | 8 | `gen:smelter:8:smelter` | 936 | 5.1×5.3×3.3 | 8×8 | — |
@@ -98,8 +98,8 @@ Generada con `node tools/audit-models.mjs --md`. Una fila por tipo y nivel: la e
 | textile | 2 | 8 | `gen:workshop:8:textile` | 1404 | 5.0×6.1×4.1 | 8×8 | — |
 | precision_shop | 1 | 7 | `gen:workshop:7:precision_shop` | 1698 | 5.0×3.9×4.1 | 8×8 | — |
 | precision_shop | 2 | 9 | `gen:workshop:9:precision_shop` | 1692 | 5.1×5.9×4.1 | 8×8 | — |
-| powder_mill | 1 | 7 | `gen:mill:7:powder_mill` | 1428 | 4.6×2.4×3.8 | 8×8 | — |
-| powder_mill | 2 | 9 | `gen:mill:9:powder_mill:1` | 1632 | 4.9×3.0×4.6 | 8×8 | — |
+| powder_mill | 1 | 7 | `gen:mill:7:powder_mill` | 1428 | 4.6×2.4×3.8 | 4×4 | — |
+| powder_mill | 2 | 9 | `gen:mill:9:powder_mill:1` | 1632 | 4.9×3.0×4.6 | 4×4 | — |
 | steel_mill | 1 | 8 | `gen:factory:8:steel_mill` | 1260 | 6.7×6.6×4.4 | 8×8 | — |
 | steel_mill | 2 | 10 | `gen:factory:10:steel_mill` | 1344 | 6.7×5.0×4.4 | 8×8 | — |
 | brick_kiln | 1 | 8 | `gen:kiln:8:brick_kiln` | 828 | 4.5×6.2×3.3 | 8×8 | — |
@@ -108,7 +108,7 @@ Generada con `node tools/audit-models.mjs --md`. Una fila por tipo y nivel: la e
 | factory | 2 | 10 | `gen:factory:10:factory` | 624 | 5.7×3.6×3.8 | 8×8 | — |
 | concrete_plant | 1 | 9 | `gen:factory:9:concrete_plant` | 1272 | 6.0×5.6×3.8 | 8×8 | — |
 | concrete_plant | 2 | 10 | `gen:factory:10:concrete_plant` | 1272 | 6.0×4.6×3.8 | 8×8 | — |
-| electronics_factory | 1 | 10 | `gen:factory:10:electronics_factory` | 918 | 5.0×5.0×3.8 | 8×8 | — |
+| electronics_factory | 1 | 10 | `gen:factory:10:electronics_factory` | 918 | 5.0×5.0×3.8 | 4×4 | — |
 | water_works | 1 | 5 | `gen:well:5:water_works` | 648 | 5.4×3.4×3.5 | 8×8 | — |
 | water_works | 2 | 9 | `gen:well:9:water_works:1` | 852 | 5.4×3.4×4.0 | 8×8 | — |
 | boiler | 1 | 8 | `gen:boiler:8:boiler` | 360 | 4.2×5.6×2.8 | 4×4 | — |
