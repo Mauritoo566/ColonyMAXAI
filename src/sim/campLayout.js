@@ -42,19 +42,30 @@ export const STORAGE = { angle: 1.0, dist: 8 };
 export const BANNER = { angle: 4.1, dist: 6.5 };
 export const BENCH_ANGLES = [0.4, 0.4 + Math.PI / 2, 0.4 + Math.PI, 0.4 + (3 * Math.PI) / 2];
 export const BENCH_DIST = 4.4;
-export const GROUND_SEATS = 10; // sitios en el suelo, repartidos en círculo junto a la fogata
-export const GROUND_SEAT_DIST = 3;
+export const GAP_SEAT_DIST = 3.3; // en el hueco entre dos troncos, mirando a la fogata
+export const OUTER_SEATS = 8; // en el suelo, en un anillo fuera de los troncos (aún dentro del calor de la fogata)
+export const OUTER_SEAT_DIST = 6;
 export const BENCH_SEAT_OFFSET = 0.8; // cada tronco tiene dos asientos, a este lado y al otro del centro
 
 // Asientos junto a la fogata: { x, z, kind: 'ground' | 'bench', approach } (approach: dónde se
-// espera antes de sentarse; en los troncos, el lado de la fogata). El sitio ocupado
-// ("taken") lo anota la simulación.
+// espera antes de sentarse; en los troncos, el lado de fuera, porque entre el tronco y la fogata
+// sólo queda una franja de ~0,4 m). El sitio ocupado ("taken") lo anota la simulación.
 export function fireSeats() {
   const seats = [];
-  for (let i = 0; i < GROUND_SEATS; i++) {
-    const a = ((i + 0.5) / GROUND_SEATS) * Math.PI * 2;
-    const x = Math.cos(a) * GROUND_SEAT_DIST;
-    const z = Math.sin(a) * GROUND_SEAT_DIST;
+  // Huecos entre troncos: el ángulo justo en medio de dos troncos contiguos.
+  for (const a of BENCH_ANGLES) {
+    const phi = Math.PI / 2 - a - Math.PI / 4;
+    const x = Math.cos(phi) * GAP_SEAT_DIST;
+    const z = Math.sin(phi) * GAP_SEAT_DIST;
+    seats.push({ x, z, kind: 'ground', approach: { x, z }, taken: null });
+  }
+  // Anillo exterior; se omiten los sitios que ocupan otros objetos del campamento (almacén, estandarte...).
+  const obstacles = campObstacles();
+  for (let i = 0; i < OUTER_SEATS; i++) {
+    const phi = ((i + 0.5) / OUTER_SEATS) * Math.PI * 2;
+    const x = Math.cos(phi) * OUTER_SEAT_DIST;
+    const z = Math.sin(phi) * OUTER_SEAT_DIST;
+    if (obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 0.9)) continue;
     seats.push({ x, z, kind: 'ground', approach: { x, z }, taken: null });
   }
   for (const a of BENCH_ANGLES) {
@@ -64,7 +75,7 @@ export function fireSeats() {
     for (const side of [-1, 1]) {
       const x = rx * BENCH_DIST + Math.cos(a) * side * BENCH_SEAT_OFFSET;
       const z = rz * BENCH_DIST - Math.sin(a) * side * BENCH_SEAT_OFFSET;
-      seats.push({ x, z, kind: 'bench', approach: { x: x - rx * 1.4, z: z - rz * 1.4 }, taken: null });
+      seats.push({ x, z, kind: 'bench', approach: { x: x + rx * 1.5, z: z + rz * 1.5 }, taken: null });
     }
   }
   return seats;

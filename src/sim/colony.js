@@ -997,7 +997,7 @@ export class ColonySim {
     let best = null;
     let bestScore = -Infinity;
     for (const s of seats) {
-      if (!free(s) || skip.includes(s)) continue;
+      if (!free(s) || skip.includes(s) || !this.walkable(s.approach.x, s.approach.z, COLONIST_RADIUS - 0.05)) continue; // (un edificio nuevo puede tapar el sitio)
       let spread = 4;
       for (const o of sitting) spread = Math.min(spread, Math.hypot(o.x - s.x, o.z - s.z));
       const score = spread + (s.kind === 'bench' ? 0.8 : 0) - 0.08 * Math.hypot(s.x - c.x, s.z - c.z) + c.rand() * 0.3;
@@ -1014,11 +1014,17 @@ export class ColonySim {
   // Devuelve 'arrived', 'moving' o 'stuck'. Un colono es un obstáculo móvil: se rodea, se le cede el paso por una regla
   // estable (quien tiene el número menor pasa; el otro se aparta a su derecha y afloja) y, si algo lo frena de verdad, se
   // prueba apartarse, buscar un hueco, recalcular la ruta y, sólo al final, se da por atascado (la tarea se suspende).
-  walk(c, tx0, tz0, dt, stopDistance = 0.6) {
+  walk(c, tx0, tz0, dt, stopDistance = 0.6, direct = false) {
     // Con muros en medio se va por los portones (ruta por waypoints).
     const wp = this.pathTarget(c, tx0, tz0);
     if (wp && !(wp.x === tx0 && wp.z === tz0)) {
       const r = this.walk(c, wp.x, wp.z, dt, 1.2);
+      return r === 'arrived' ? 'moving' : r;
+    }
+    // Con un obstáculo (tronco, fogata, edificio) justo en medio se rodea por una ruta planeada.
+    const op = direct ? null : this.obstacleTarget(c, tx0, tz0);
+    if (op) {
+      const r = this.walk(c, op.x, op.z, dt, 0.6, true);
       return r === 'arrived' ? 'moving' : r;
     }
     c.walking = true;
@@ -2588,6 +2594,143 @@ export class ColonySim {
     const pt = p.pts[p.i];
     if (p.i >= p.pts.length - 1 && !this.wallBetween(c.x, c.z, tx, tz, cells)) {
       c.path = null;
+      return null;
+    }
+    return pt;
+  }
+
+  // ---- Rodear obstáculos (troncos, fogata, atrezo, edificios) ----------------------------------
+  // Evitar sólo localmente (moveToward) deja a un colono pegado a un tronco o a un edificio cuando su destino queda justo
+  // detrás. Si la línea recta está bloqueada se planea una ruta (A* en celdas de 1 m) que lo rodea.
+
+  // ¿Un obstáculo corta el segmento a-b? (con el margen del cuerpo; "extra" deja holgura al planear)
+  lineBlocked(ax, az, bx, bz, extra = 0) {
+    const dx = bx - ax;
+    const dz = bz - az;
+    const l2 = dx * dx + dz * dz || 1e-9;
+    for (const o of this.obstacles) {
+      const t = Math.max(0, Math.min(1, ((o.x - ax) * dx + (o.z - az) * dz) / l2));
+      const px = ax + dx * t - o.x;
+      const pz = az + dz * t - o.z;
+      const min = o.r + COLONIST_RADIUS + extra - 0.03; // quien ya está en el borde no cuenta como dentro
+      if (px * px + pz * pz < min * min) return true;
+    }
+    return false;
+  }
+
+  findObstaclePath(ax, az, bx, bz) {
+    const S = 0.5; // celdas de 0,5 m: así pasa por pasillos estrechos entre un tronco y una pila de leña
+    const R = COLONIST_RADIUS + 0.08;
+    const free = (ix, iz) => {
+      const x = ix * S;
+      const z = iz * S;
+      for (const o of this.obstacles) {
+        const dx = x - o.x;
+        const dz = z - o.z;
+        if (dx * dx + dz * dz < (o.r + R) ** 2) return false;
+      }
+      return this.heightAt(x, z) > 0.6;
+    };
+    const near = (x, z) => {
+      const ix = Math.round(x / S);
+      const iz = Math.round(z / S);
+      for (let r = 0; r < 10; r++) {
+        let best = null;
+        let bd = Infinity;
+        for (let dx = -r; dx <= r; dx++) {
+          for (let dz = -r; dz <= r; dz++) {
+            if (Math.max(Math.abs(dx), Math.abs(dz)) !== r || !free(ix + dx, iz + dz)) continue;
+            const d = Math.hypot((ix + dx) * S - x, (iz + dz) * S - z);
+            if (d < bd) {
+              bd = d;
+              best = [ix + dx, iz + dz];
+            }
+          }
+        }
+        if (best) return best;
+      }
+      return null;
+    };
+    const start = near(ax, az);
+    const goal = near(bx, bz);
+    if (!start || !goal) return null;
+    const pad = 28; // celdas (14 m) de margen alrededor de la caja que une salida y destino
+    const minX = Math.min(start[0], goal[0]) - pad;
+    const maxX = Math.max(start[0], goal[0]) + pad;
+    const minZ = Math.min(start[1], goal[1]) - pad;
+    const maxZ = Math.max(start[1], goal[1]) + pad;
+    const key = (ix, iz) => (ix + 4096) * 8192 + (iz + 4096);
+    const open = [[0, start[0], start[1]]];
+    const g = new Map([[key(...start), 0]]);
+    const from = new Map();
+    const memo = new Map();
+    const isFree = (ix, iz) => {
+      const k = key(ix, iz);
+      let v = memo.get(k);
+      if (v === undefined) memo.set(k, (v = free(ix, iz)));
+      return v;
+    };
+    let guard = 0;
+    while (open.length && guard++ < 14000) {
+      let best = 0;
+      for (let i = 1; i < open.length; i++) if (open[i][0] < open[best][0]) best = i;
+      const [, ix, iz] = open.splice(best, 1)[0];
+      if (ix === goal[0] && iz === goal[1]) {
+        const nodes = [];
+        for (let k = key(ix, iz); k !== undefined; k = from.get(k)) nodes.push({ x: (Math.floor(k / 8192) - 4096) * S, z: ((k % 8192) - 4096) * S });
+        nodes.reverse();
+        // Quitar puntos intermedios con visión directa (ruta natural, con algo de holgura).
+        const out = [];
+        let at = { x: ax, z: az };
+        for (let i = 0; i < nodes.length; i++) {
+          const next = nodes[i + 1] ?? { x: bx, z: bz };
+          if (this.lineBlocked(at.x, at.z, next.x, next.z, 0.05)) {
+            out.push(nodes[i]);
+            at = nodes[i];
+          }
+        }
+        out.push({ x: bx, z: bz });
+        return out;
+      }
+      const gc = g.get(key(ix, iz));
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const nx = ix + dx;
+        const nz = iz + dz;
+        if (nx < minX || nx > maxX || nz < minZ || nz > maxZ || !isFree(nx, nz)) continue;
+        if (dx && dz && (!isFree(ix + dx, iz) || !isFree(ix, iz + dz))) continue; // sin cortar esquinas
+        const cost = gc + (dx && dz ? 1.414 : 1);
+        const k = key(nx, nz);
+        if (cost < (g.get(k) ?? Infinity)) {
+          g.set(k, cost);
+          from.set(k, key(ix, iz));
+          open.push([cost + Math.hypot(goal[0] - nx, goal[1] - nz), nx, nz]);
+        }
+      }
+    }
+    return null;
+  }
+
+  // Siguiente punto al que ir para llegar a (tx, tz) rodeando obstáculos; null = ir en línea recta.
+  obstacleTarget(c, tx, tz) {
+    let p = c.opath;
+    if (p && (p.obs !== this.obstacles || Math.hypot(p.tx - tx, p.tz - tz) > 1.5)) p = c.opath = null;
+    if (!p) {
+      // Un destino dentro de un obstáculo (el borde de un edificio, por ejemplo) no se planea: se va derecho como antes.
+      if (!this.lineBlocked(c.x, c.z, tx, tz) || !this.walkable(tx, tz, COLONIST_RADIUS - 0.05)) return null;
+      const pts = this.findObstaclePath(c.x, c.z, tx, tz);
+      if (!pts) return null;
+      p = c.opath = { obs: this.obstacles, tx, tz, pts, i: 0 };
+    }
+    while (p.i < p.pts.length - 1 && Math.hypot(p.pts[p.i].x - c.x, p.pts[p.i].z - c.z) < 0.9) p.i++;
+    if (p.i >= p.pts.length - 1) {
+      // Último tramo: si ya se ve el destino se va derecho; si no (lo desvió algo), se replanea.
+      c.opath = null;
+      return null;
+    }
+    // Si el siguiente punto dejó de verse (lo empujaron), se replanea.
+    const pt = p.pts[p.i];
+    if (this.lineBlocked(c.x, c.z, pt.x, pt.z)) {
+      c.opath = null;
       return null;
     }
     return pt;
