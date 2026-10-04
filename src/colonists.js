@@ -296,7 +296,7 @@ export class ColonyView {
       this.labelsRoot.appendChild(label);
       // x, z, facing: dónde se dibuja; sigue con suavidad a la simulación (que por la red
       // llega a saltos, varias veces por segundo).
-      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, clothed: c.clothed, outfitKey: outfit.key, build, growth: c.growth ?? 1, hearts: [], heartTimer: 0, x: c.x, z: c.z, facing: c.facing });
+      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, sit: 0, sitKind: null, clothed: c.clothed, outfitKey: outfit.key, build, growth: c.growth ?? 1, hearts: [], heartTimer: 0, x: c.x, z: c.z, facing: c.facing });
     }
     this.refreshClothes();
     this.refreshTotem();
@@ -559,6 +559,18 @@ export class ColonyView {
       object.quaternion.multiply(this.tmp.lie.setFromAxisAngle(X_AXIS, -Math.PI / 2));
       object.position.addScaledVector(world.normalize(), 0.25);
     }
+    // Sentado junto a la fogata: se baja la cadera hasta el suelo (0,02 m de margen) o hasta lo alto del
+    // tronco (0,65 m) y las piernas se extienden (suelo) o cuelgan algo adelantadas (tronco).
+    // El paso entre estar de pie y sentado es gradual (e.sit va de 0 a 1).
+    const sitting = !!c.sitting && !lying;
+    if (sitting) e.sitKind = c.sitting;
+    e.sit += ((sitting ? 1 : 0) - e.sit) * Math.min(1, animDelta * 8);
+    if (e.sit < 0.01) e.sit = 0;
+    if (e.sit > 0) {
+      const hip = 0.84 * object.scale.y;
+      const drop = e.sitKind === 'bench' ? hip - 0.75 : hip - 0.1 - 0.02;
+      object.position.addScaledVector(world.normalize(), -drop * e.sit);
+    }
 
     const ud = object.userData;
     // De lejos se dibuja una versión simple y no se anima (con aldeas grandes ahorra miles de piezas).
@@ -573,9 +585,15 @@ export class ColonyView {
     if (far) return;
     const { body, armL, armR, legL, legR } = ud;
     const swing = Math.sin(e.phase) * 0.65 * e.moving;
-    legL.rotation.x = swing;
-    legR.rotation.x = -swing;
-    if (c.working) {
+    // Piernas: sentado en el suelo, estiradas hacia delante; en un tronco, colgando un poco adelantadas.
+    const legPose = e.sitKind === 'bench' ? -0.8 : -Math.PI / 2;
+    legL.rotation.x = swing * (1 - e.sit) + legPose * e.sit;
+    legR.rotation.x = -swing * (1 - e.sit) + legPose * e.sit;
+    if (e.sit > 0.5) {
+      // Las manos descansan sobre las rodillas.
+      armL.rotation.x = -0.45;
+      armR.rotation.x = -0.45;
+    } else if (c.working) {
       // Trabajando: los dos brazos golpean hacia delante (talar, picar, recoger).
       e.workPhase += animDelta * 7;
       const hit = -1.2 - Math.sin(e.workPhase) * 0.9;

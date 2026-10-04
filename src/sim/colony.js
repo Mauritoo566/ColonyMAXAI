@@ -987,6 +987,29 @@ export class ColonySim {
     return null;
   }
 
+  // Reserva un asiento junto a la fogata (suelo o tronco): prefiere el que deja más lejos a los ya
+  // sentados, para que se repartan alrededor, algo mejor si es un tronco y poco el que queda lejos.
+  // Devuelve null si no queda ninguno libre.
+  pickSeat(c, skip = []) {
+    const seats = this.layout.seats;
+    const free = (s) => !s.taken || s.taken === c || !this.colonists.includes(s.taken);
+    const sitting = seats.filter((s) => !free(s));
+    let best = null;
+    let bestScore = -Infinity;
+    for (const s of seats) {
+      if (!free(s) || skip.includes(s)) continue;
+      let spread = 4;
+      for (const o of sitting) spread = Math.min(spread, Math.hypot(o.x - s.x, o.z - s.z));
+      const score = spread + (s.kind === 'bench' ? 0.8 : 0) - 0.08 * Math.hypot(s.x - c.x, s.z - c.z) + c.rand() * 0.3;
+      if (score > bestScore) {
+        bestScore = score;
+        best = s;
+      }
+    }
+    if (best) best.taken = c;
+    return best;
+  }
+
   // Camina hacia (tx, tz) esquivando obstáculos y a los demás colonos.
   // Devuelve 'arrived', 'moving' o 'stuck'. Un colono es un obstáculo móvil: se rodea, se le cede el paso por una regla
   // estable (quien tiene el número menor pasa; el otro se aparta a su derecha y afloja) y, si algo lo frena de verdad, se
@@ -1236,6 +1259,7 @@ export class ColonySim {
   step(c, dt, env) {
     c.walking = false;
     c.working = false;
+    c.sitting = null; // 'ground' | 'bench' mientras se calienta sentado (lo fija la tarea cada paso)
     c.waiting = false;
     c.moveTick = false;
     c.thinkTimer -= dt;
@@ -3446,7 +3470,7 @@ export class ColonySim {
   // cuando nace alguien; después no hace falta repetirlos).
   snapshot(part = 'full', { statics = true } = {}) {
     const r2 = (v) => Math.round(v * 100) / 100;
-    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0);
+    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0) | (c.sitting === 'ground' ? 256 : 0) | (c.sitting === 'bench' ? 512 : 0);
     const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state]);
     if (part === 'fast') {
       const out = { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]), mobs: mobsRows() };
@@ -3601,6 +3625,7 @@ export class ColonySim {
       c.loving = !!(f & 16);
       c.inside = !!(f & 32);
       c.outdoorSleep = !!(f & 64);
+      c.sitting = f & 512 ? 'bench' : f & 256 ? 'ground' : null;
       if (c.clothed !== !!(f & 8)) {
         c.clothed = !!(f & 8);
         this.emit('clothes');

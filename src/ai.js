@@ -424,11 +424,56 @@ export function runTask(colony, c, task, dt, env) {
     }
 
     case 'warm': {
-      if (!task.spot) {
-        const a = Math.atan2(c.z, c.x) + (c.rand() - 0.5) * 0.6;
-        task.spot = { x: Math.cos(a) * 3.3, z: Math.sin(a) * 3.3 };
+      if (task.seat === undefined) {
+        // Se reparte alrededor de la fogata: un sitio libre en el suelo o en un tronco (endTask lo libera).
+        task.seat = colony.pickSeat(c, task.badSeats);
+        if (task.seat) task.spot = task.seat;
       }
-      if (!go(colony, c, task, task.spot, dt, 0.8)) return 'running';
+      const seat = task.seat;
+      if (!seat) {
+        // Sin sitio libre: de pie junto al fuego, como antes.
+        if (!task.spot) {
+          const a = Math.atan2(c.z, c.x) + (c.rand() - 0.5) * 0.6;
+          task.spot = { x: Math.cos(a) * 3.3, z: Math.sin(a) * 3.3 };
+        }
+        if (!go(colony, c, task, task.spot, dt, 0.8)) return 'running';
+        colony.faceTowards(c, 0, 0, dt);
+        return n.warmth >= 88 ? 'done' : 'running';
+      }
+      if (!task.seated) {
+        if (!task.atApproach) {
+          if (!go(colony, c, task, seat.approach, dt, 0.5)) {
+            // No llega a ese sitio (tráfico u obstáculos): prueba con otro antes de rendirse.
+            if (task.failed && (task.badSeats?.length ?? 0) < 3) {
+              (task.badSeats ??= []).push(seat);
+              seat.taken = null;
+              task.failed = false;
+              task.failWhy = undefined;
+              task.seat = undefined;
+              task.spot = undefined;
+              c.progress = null;
+              c.blocked = 0;
+            }
+            return 'running';
+          }
+          task.atApproach = true;
+        }
+        // Último tramo: se acomoda en el sitio (sobre el tronco no hay paso: se sube sin chocar).
+        const d = Math.hypot(seat.x - c.x, seat.z - c.z);
+        const step = 1.4 * dt;
+        colony.faceTowards(c, 0, 0, dt);
+        if (d > step) {
+          c.x += ((seat.x - c.x) / d) * step;
+          c.z += ((seat.z - c.z) / d) * step;
+          c.walking = true;
+          c.moveTick = true;
+          return 'running';
+        }
+        c.x = seat.x;
+        c.z = seat.z;
+        task.seated = true;
+      }
+      c.sitting = seat.kind;
       colony.faceTowards(c, 0, 0, dt);
       return n.warmth >= 88 ? 'done' : 'running';
     }
@@ -733,7 +778,8 @@ export function taskActivity(colony, c, task) {
     case 'guard':
       return walking ? 'Va a su puesto de guardia' : 'Montando guardia';
     case 'warm':
-      return walking ? 'Va a calentarse al fuego' : 'Calentándose junto al fuego';
+      if (walking) return 'Va a calentarse al fuego';
+      return c.sitting === 'bench' ? 'Sentado en un tronco, calentándose' : c.sitting === 'ground' ? 'Sentado junto al fuego, calentándose' : 'Calentándose junto al fuego';
     case 'dress':
       return walking ? 'Tiene frío: va a buscar ropa' : 'Poniéndose ropa de pieles';
     case 'chat':
