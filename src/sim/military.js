@@ -1,20 +1,18 @@
 // Ejército y defensas: reclutamiento desde la población civil, equipo, mantenimiento diario,
-// mejoras de soldados, capacidad militar (soldados + defensas) e incursiones abstractas.
+// mejoras de soldados y capacidad militar (soldados + defensas).
 // Reglas: recluta quien trabaja o está libre (deja su puesto), cada edificio militar tiene su
 // guarnición, el ejército no pasa del 40 % de los adultos y todo cuesta equipo, recursos y
-// mantenimiento. Las incursiones sólo ocurren con el dueño conectado, tras unos días de
-// protección, y nunca destruyen edificios ni dañan colonos: como mucho se pierden recursos.
+// mantenimiento. No hay incursiones ni otros eventos que no existan en el mundo: lo que pasa se ve (animales, otros jugadores).
 
 import { DAY_LENGTH_SECONDS } from '../daynight.js';
 import { levelOf } from './buildingTypes.js';
 import { GOOD_NAMES } from './goods.js';
 import { UNITS, UNITS_BY_ID, upgradeOf, matchup } from './units.js';
-import { addLog, addMoodEvent } from '../needs.js';
+import { addLog } from '../needs.js';
 
 const DAY = DAY_LENGTH_SECONDS;
 const name = (k) => GOOD_NAMES[k] ?? k;
 export const ARMY_SHARE = 0.4; // máximo de adultos que pueden estar en el ejército
-export const RAID_PROTECTION_DAYS = 6; // sin incursiones los primeros días ni en la edad I
 
 export const soldiers = (colony) => colony.colonists.filter((c) => c.soldier);
 
@@ -162,46 +160,6 @@ export function militaryPower(colony, enemyRole = null) {
     if (u) troops += u.power * (enemyRole ? matchup(u.role, enemyRole) : 1);
   }
   return { troops: Math.round(troops * factor), defense: defensePoints(colony), total: Math.round(troops * factor + defensePoints(colony)) };
-}
-
-// ---- Incursiones (abstractas, sin destrucción) ----------------------------------------------
-
-export function raidKinds(age) {
-  const kinds = ['infantry'];
-  if (age >= 4) kinds.push('ranged');
-  if (age >= 6) kinds.push('cavalry');
-  return kinds;
-}
-
-// Una vez al día: si toca, llega una incursión y se resuelve al instante.
-export function dailyRaid(colony, day) {
-  if (colony.absent || colony.age < 3 || day < RAID_PROTECTION_DAYS) return;
-  if (colony.nextRaidDay == null) colony.nextRaidDay = day + 3 + Math.floor(colony.birthRand() * 3);
-  if (day < colony.nextRaidDay) return;
-  colony.nextRaidDay = day + 3 + Math.floor(colony.birthRand() * 3);
-  const kinds = raidKinds(colony.age);
-  const kind = kinds[Math.floor(colony.birthRand() * kinds.length)];
-  const strength = Math.round((6 + colony.colonists.length * 0.9 + colony.age * 6) * (0.7 + colony.birthRand() * 0.6));
-  const mine = militaryPower(colony, kind).total;
-  const label = { infantry: 'infantería', ranged: 'tiradores', cavalry: 'jinetes' }[kind];
-  if (mine >= strength * 1.5) {
-    colony.emit('notice', `Una banda de ${label} (fuerza ${strength}) vio las defensas y se retiró`);
-  } else if (mine >= strength) {
-    colony.emit('notice', `Rechazaron una incursión de ${label} (fuerza ${strength} contra ${mine})`);
-  } else {
-    const share = Math.min(0.1, ((strength - mine) / strength) * 0.15);
-    const lost = [];
-    for (const k of ['food', 'wood', 'stone', 'coin']) {
-      const n = Math.floor((colony.stock[k] ?? 0) * share);
-      if (n > 0) {
-        colony.takeStock(k, n);
-        lost.push(`${n} de ${name(k)}`);
-      }
-    }
-    for (const c of colony.colonists) addMoodEvent(c, 'raid', -8, colony.gameTime);
-    colony.emit('notice', `Una banda de ${label} (fuerza ${strength}) saqueó la aldea: ${lost.join(', ') || 'se llevaron poco'}. Refuerza el ejército y las defensas`);
-  }
-  colony.emit('changed');
 }
 
 export function armyReport(colony) {

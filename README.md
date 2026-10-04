@@ -131,12 +131,12 @@ El asentamiento pasa de campamento a aldea, pueblo, ciudad y civilización a lo 
 - **Lo paga el jugador:** viviendas nuevas, mejoras de cada edificio, caminos, energía, territorio, tecnologías y soldados.
 - **Producción:** 37 bienes y 51 tipos de edificio con 164 niveles; talleres con recetas, trabajadores, yacimientos de mineral y red de energía (calderas, centrales y postes).
 - **Población:** viviendas, abastecimiento y servicios por umbral; llegan colonos nuevos sólo si hay plazas, reservas y bienestar.
-- **Ejército:** 16 unidades que salen de la población civil, con equipo, mantenimiento y mejoras pagadas; defensas; incursiones sin destrucción; ataques entre jugadores desactivados.
+- **Ejército:** 16 unidades que salen de la población civil, con equipo, mantenimiento y mejoras pagadas; defensas; sin incursiones ni eventos ficticios (todo lo que pasa se ve en el mundo); ataques entre jugadores desactivados.
 - **Interfaz:** barra de edades con requisitos, próximos desbloqueos y por qué algo está bloqueado; panel «Aldea» (población, trabajadores, territorio, almacenamiento, producción y consumo por día) y panel «Ejército».
 - **Documento completo con las tablas por edad:** [`docs/PROGRESION.md`](docs/PROGRESION.md) (se genera con `node tools/gen-progression-doc.mjs`).
 
 ### Ánimo explicado y movimiento entre colonos
-- **Ánimo:** el ánimo de un colono tiende hacia un objetivo (`25 + 0,6 × media(comida, agua, descanso, calor) ± rasgo ± compañía − sin cama`) y se acerca a él a ritmo fijo; los golpes puntuales (celebrar una edad, un saqueo, un ataque, tiempo con la pareja) lo mueven al instante y se recuerdan medio día. La ficha del colono (sección *Ánimo*) muestra la categoría, la tendencia, **qué le pasa** (con la cifra real de cada causa), **qué intenta hacer**, **qué se lo impide** (p. ej. no llega al almacén) y **qué podés hacer** (botones que sólo llevan a verlo, nunca gastan ni construyen). La lista dice «Desanimado: sin cama» en lugar de sólo «desanimado», y los avisos se agrupan («4 colonos no tienen cama»; tocalos para ir a los afectados). Código: `src/sim/wellbeing.js`.
+- **Ánimo:** el ánimo de un colono tiende hacia un objetivo (`25 + 0,6 × media(comida, agua, descanso, calor) ± rasgo ± compañía − sin cama`) y se acerca a él a ritmo fijo; los golpes puntuales (celebrar una edad, el ataque de un animal, tiempo con la pareja) lo mueven al instante y se recuerdan medio día. La ficha del colono (sección *Ánimo*) muestra la categoría, la tendencia, **qué le pasa** (con la cifra real de cada causa), **qué intenta hacer**, **qué se lo impide** (p. ej. no llega al almacén) y **qué podés hacer** (botones que sólo llevan a verlo, nunca gastan ni construyen). La lista dice «Desanimado: sin cama» en lugar de sólo «desanimado», y los avisos se agrupan («4 colonos no tienen cama»; tocalos para ir a los afectados). Código: `src/sim/wellbeing.js`.
 - **Movimiento:** los colonos son obstáculos móviles. Evasión local con prioridad estable (pasa el de número menor, el otro se aparta por su derecha), separación sin atravesar obstáculos, cola cerca del destino, y detección de atasco por **progreso real** hacia el destino con recuperación escalonada (apartarse → hueco libre → recalcular → suspender la tarea con espera creciente de 40/80/160 s). La animación de caminar sigue el desplazamiento real. Con `?debug`: `__dbg.colonist(id)`.
 - **Leñador:** desde la Cabaña (nivel 2) tala árboles y **replanta** lo que tala; el brote se dibuja pequeño y crece (no se puede talar hasta entonces). Los árboles plantados no gastan el cupo de ramas y brotes espontáneos.
 - **Nombre de aldea:** Configuración → *Mi aldea*. Lo ven todos los jugadores sobre tu campamento y en la lista del mundo (junto al nombre de jugador).
@@ -296,7 +296,7 @@ La simulación de la colonia está separada de lo que se dibuja: `src/sim/` no u
 - `src/sim/progression.js` – reglas centrales por edad: límites, requisitos, niveles, territorio y tabla de desbloqueos
 - `src/sim/family.js` – viviendas, población, reproducción, llegada de colonos y servicios por umbral
 - `src/sim/economy.js` – talleres con recetas, energía, yacimientos, comercio, investigación, servicios y caminos
-- `src/sim/military.js` – reclutamiento, mantenimiento, mejoras, defensas e incursiones
+- `src/sim/military.js` – reclutamiento, mantenimiento, mejoras y defensas
 - `src/sim/centerLayout.js`, `names.js`, `report.js` – centro del asentamiento, nombres por edad, resumen de la aldea
 - `src/buildingModelsGen.js`, `center.js`, `outfits.js`, `roads.js`, `icons.js` – modelos generados por edad, centro, ropa y oficios, caminos, iconos
 - `src/villageUI.js`, `militaryUI.js`, `flagUI.js` – paneles de la aldea, del ejército y de la bandera

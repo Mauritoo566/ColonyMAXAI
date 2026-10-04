@@ -219,13 +219,17 @@ export function chooseTask(colony, c, env) {
     // realizable, en la segunda y luego en la tercera (los puestos que alguien eligió a mano valen como última).
     const spec = specOf(colony, c);
     const tierOf = (cat) => spec.indexOf(cat);
-    const jobTier = c.job && c.job.done ? (tierOf(c.job.def.skill) >= 0 ? tierOf(c.job.def.skill) : c.jobAuto ? -1 : 3) : -1;
+    // Un puesto que asignó el jugador a mano es una orden: manda sobre obras, recolección marcada y especialidades.
+    const manualJob = !!(c.job && c.job.done && !c.jobAuto);
+    const jobTier = manualJob ? 0 : c.job && c.job.done ? (tierOf(c.job.def.skill) >= 0 ? tierOf(c.job.def.skill) : c.jobAuto ? -1 : 3) : -1;
     const work = [];
     const addWork = (tier, score, task) => {
       if (tier >= 0) work.push({ tier, score, task });
     };
     for (const b of colony.buildings) {
       if (b.done || b.paused) continue;
+      // Con un puesto asignado a mano sólo lo deja por una obra que el jugador marcó de prioridad alta.
+      if (manualJob && b.priority !== 'high' && !(c.task?.type === 'build' && c.task.building === b)) continue;
       const skill = c.skills.building / 10;
       const mine = c.task?.type === 'build' && c.task.building === b;
       // Cuántos otros ya están en esa obra: se reparten entre las obras en vez de amontonarse.
@@ -241,7 +245,7 @@ export function chooseTask(colony, c, env) {
     // Con el almacén lleno o sin materiales no se queda esperando: hace otra cosa y vuelve cuando se pueda.
     const full = job?.def.stock && colony.isFull(job.def.stock);
     const stalled = job?.status && /Faltan materiales|Sin energ/i.test(job.status) && job.def.kind;
-    if (job && job.done && !full && !stalled) addWork(jobTier, 0.34 * diligence * fine, { type: 'work', building: job, phase: 'start' });
+    if (job && job.done && !full && !stalled) addWork(jobTier, (manualJob ? 0.62 : 0.34) * diligence * fine, { type: 'work', building: job, phase: 'start' });
     // Recolectar lo que el jugador marcó (herramienta de recolección): sólo la categoría de cada sitio.
     const marked = colony.nearestMarked(c.x, c.z, env.gameTime, (sp) => tierOf(spotCategory(sp, colony.age)) >= 0);
     if (marked) {

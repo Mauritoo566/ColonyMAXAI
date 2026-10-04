@@ -10,7 +10,8 @@ import { BUILDINGS } from '../../../src/sim/buildingTypes.js';
 import { naturalSurfaceHeight } from '../../../src/elevation.js';
 import { DAY_LENGTH_SECONDS as DAY } from '../../../src/daynight.js';
 import { pvpProblem, UNITS } from '../../../src/sim/units.js';
-import { payUpkeep, dailyRaid, militaryPower } from '../../../src/sim/military.js';
+import * as military from '../../../src/sim/military.js';
+import { payUpkeep, militaryPower } from '../../../src/sim/military.js';
 
 const dir = new THREE.Vector3(-0.8984470605519815, 0.4271785546817849, 0.10154487582091702).normalize();
 function colony(age, stock = {}) {
@@ -86,29 +87,25 @@ function colony(age, stock = {}) {
   console.log('✓ mantenimiento (rinden la mitad si no cobran) y mejoras pagadas');
 }
 
-// Incursiones: sin protección no ocurren; con defensas se rechazan; sin ellas se pierden recursos, nada más.
+// Sin eventos ficticios: no hay incursiones abstractas; pasan los días y la aldea no pierde nada que no se vea en el mundo.
 {
   const sim = colony(3, {});
-  const buildingsBefore = sim.buildings.length;
-  const colonistsBefore = sim.colonists.length;
+  assert.equal(military.dailyRaid, undefined, 'las incursiones ya no existen');
   const events = [];
   sim.on('notice', (t) => events.push(t));
-  dailyRaid(sim, 2);
-  assert.equal(events.length, 0, 'sin incursiones en los primeros días');
-  sim.absent = true;
-  dailyRaid(sim, 20);
-  assert.equal(events.length, 0, 'nunca con el dueño ausente');
-  sim.absent = false;
-  sim.nextRaidDay = 0;
-  const wood = sim.stock.wood;
-  dailyRaid(sim, 20);
-  assert.equal(events.length, 1);
-  assert.ok(sim.stock.wood <= wood);
-  assert.equal(sim.buildings.length, buildingsBefore);
-  assert.equal(sim.colonists.length, colonistsBefore);
+  sim.stock.wood = 500;
+  sim.stock.food = 500;
+  for (let day = 3; day < 40; day++) {
+    sim.gameTime = day * 360;
+    sim.lastTrainDay = -1;
+    sim.assignTimer = 0;
+    sim.updateBuildings(1, 0);
+  }
+  assert.equal(events.filter((t) => /saque|incursi|banda de/i.test(t)).length, 0, 'ningún aviso de saqueo');
+  assert.ok(sim.stock.wood >= 500 && sim.stock.food >= 500, 'no se pierden recursos por eventos ficticios');
   for (let k = 0; k < 6; k++) sim.createBuilding(BUILDINGS.watchtower, 10 + k * 6, 30, 0, 1, 0, 3);
   assert.ok(militaryPower(sim).defense > 0);
-  console.log('✓ incursiones: protección, sin dueño no ocurren, nada se destruye:', events[0].slice(0, 60));
+  console.log('✓ sin incursiones ni eventos ficticios');
 }
 
 // Reglas de combate entre jugadores: todo rechazado mientras estén desactivadas.

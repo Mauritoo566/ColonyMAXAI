@@ -21,7 +21,6 @@ export const HOMELESS_PENALTY = 14;
 
 export const EVENT_TEXT = {
   age: 'Celebró la llegada de una nueva edad',
-  raid: 'La aldea fue saqueada',
   attack: 'Un animal lo atacó',
   love: 'Pasó un rato con su pareja',
 };

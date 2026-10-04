@@ -201,7 +201,7 @@ export function addLog(c, time, text) {
 
 const clamp = (v) => Math.min(100, Math.max(0, v));
 
-// Un golpe puntual al ánimo (celebración, saqueo, ataque...): se aplica una sola vez, de golpe, y se recuerda un rato
+// Un golpe puntual al ánimo (celebración, ataque de un animal...): se aplica una sola vez, de golpe, y se recuerda un rato
 // (como mucho 4 a la vez) para poder explicarlo; después el ánimo vuelve poco a poco hacia su objetivo.
 export function addMoodEvent(c, id, delta, gameTime) {
   c.needs.mood = clamp(c.needs.mood + delta);

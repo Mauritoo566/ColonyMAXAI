@@ -36,7 +36,7 @@ Criterio: aparecen por bioma y por edad; los pacíficos dan recursos o ambiente,
 | Tigre / león | selva, sabana | II | Caza de noche; ataca a colonos y ganado |
 | Hienas | sabana | II | En manada; roban y acosan |
 | Lobo alfa (jefe de manada) | taiga, tundra | II | Manada coordinada |
-| Bandidos / saqueadores | todos | III | Ya existen como incursiones (`military.js`) |
+| Bandidos / saqueadores | todos | III | Pendiente: sólo cuando existan en el mundo (con modelo y movimiento). Las incursiones abstractas se eliminaron |
 | Tribus rivales NPC | todos | III | Atacan puestos y ganado |
 | Jabalí de guerra / búfalo en estampida | pradera | III | Evento que arrasa campos |
 | Plagas (langostas, ratas) | todos | II | Destruyen reservas de comida (no matan) |

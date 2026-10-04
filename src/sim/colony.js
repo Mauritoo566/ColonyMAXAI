@@ -4,7 +4,7 @@ import { DAY_LENGTH_SECONDS } from '../daynight.js';
 import { AGES, ageInfo, nextAgeStatus } from '../ages.js';
 import { insideRect, rectDistance, upgradeRect } from '../rect.js';
 import { temperature, biomeAt, BIOMES } from '../biomes.js';
-import { nextBand, nextTrend, collectiveAlerts } from './wellbeing.js';
+import { nextBand, nextTrend, collectiveAlerts, EVENT_TEXT } from './wellbeing.js';
 import { cleanVillageName } from './villageName.js';
 import { createProfile, updateNeeds, addMoodEvent, hasTrait, wellbeing, addLog, SKILLS, TRAITS, completeSkill, completeSkills } from '../needs.js';
 import { appearanceFromGenes, gene } from '../genes.js';
@@ -26,7 +26,7 @@ import { entranceOf, accessProblem, halfOf, pointInRect, rectsOverlap, circleHit
 import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, ROAD_LEVELS, ROAD_CELL, ROAD_LIFT, autoRoadPath } from './economy.js';
 import { pushSample } from '../interp.js';
 import { TECHS_BY_ID } from './techs.js';
-import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
+import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
 import { specOf, defaultSpec, validSpec, migrateSpecs, primitiveSplit, coverage, waitReason, isWorker, WORK_TYPES, spotCategory, SPEC_IDS, SPEC_NAMES } from './specialties.js';
 import { MOB_TYPES, spawnMobs, updateMobs, mobThreat } from './mobs.js';
@@ -218,7 +218,6 @@ export class ColonySim {
     this.autoRoadKeys = new Set(); // casillas hechas por la aldea (gratis; mejoran solas con la edad)
     this.roadsOff = new Set(); // casillas que el jugador quitó: no se vuelven a trazar solas
     this.armyUnpaid = false; // las tropas no cobran el mantenimiento: rinden la mitad
-    this.nextRaidDay = null;
     this.deposits = []; // yacimientos de mineral (de la semilla del campamento)
     this.tradeUsed = 0; // comercio del día (valor en monedas) y qué día es
     this.tradeDay = 0;
@@ -594,7 +593,6 @@ export class ColonySim {
     this.clothesLeft = 0;
     this.age = 1;
     this.armyUnpaid = false;
-    this.nextRaidDay = null;
     this.mobs = [];
     this.primitiveMigrated = false;
     this.milestones = new Set(); // hitos conseguidos (p. ej. la primera herramienta de piedra)
@@ -3110,7 +3108,6 @@ export class ColonySim {
         this.lastTrainDay = day;
         trainColonists(this);
         payUpkeep(this);
-        dailyRaid(this, day);
       }
     }
   }
@@ -3391,7 +3388,6 @@ export class ColonySim {
         ageChangedAt: this.ageChangedAt,
         tradeUsed: this.tradeUsed,
         tradeDay: this.tradeDay,
-        nextRaidDay: this.nextRaidDay,
         armyUnpaid: this.armyUnpaid,
         roads: [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]),
         primitiveMigrated: !!this.primitiveMigrated,
@@ -3989,7 +3985,6 @@ export class ColonySim {
     this.ageChangedAt = Number.isFinite(data.ageChangedAt) ? data.ageChangedAt : 0;
     this.tradeUsed = Number.isFinite(data.tradeUsed) ? data.tradeUsed : 0;
     this.tradeDay = Number.isFinite(data.tradeDay) ? data.tradeDay : 0;
-    this.nextRaidDay = Number.isFinite(data.nextRaidDay) ? data.nextRaidDay : null;
     this.armyUnpaid = !!data.armyUnpaid;
     this.roads = new Map((Array.isArray(data.roads) ? data.roads : []).filter((r) => r.length === 3).map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
     this.primitiveMigrated = !!data.primitiveMigrated;
@@ -4036,7 +4031,7 @@ export class ColonySim {
       c.flags = saved.flags || {};
       c.chatCooldown = saved.chatCooldown || 0;
       // Golpes recientes al ánimo (se validan: la partida puede venir de otra versión).
-      const evs = Array.isArray(saved.moodEvents) ? saved.moodEvents.filter((e) => e && typeof e.id === 'string' && Number.isFinite(e.delta) && Number.isFinite(e.at) && this.gameTime - e.at < 0.5 * DAY_LENGTH_SECONDS) : [];
+      const evs = Array.isArray(saved.moodEvents) ? saved.moodEvents.filter((e) => e && typeof e.id === 'string' && Number.isFinite(e.delta) && Number.isFinite(e.at) && e.id in EVENT_TEXT && this.gameTime - e.at < 0.5 * DAY_LENGTH_SECONDS) : [];
       c.moodEvents = evs.length ? evs.slice(0, 4).map((e) => ({ id: e.id, delta: Math.max(-40, Math.min(40, e.delta)), at: Math.min(e.at, this.gameTime) })) : undefined;
       c.clothed = !!saved.clothed;
       if (Number.isFinite(saved.x) && this.walkable(saved.x, saved.z, 0.2)) {

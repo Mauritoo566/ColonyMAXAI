@@ -45,7 +45,7 @@ w('| F2 | Evolución automática: viviendas por edad, vestimenta y oficios, cent
 w('| F3 | Mejoras manuales: niveles por edificio, varios trabajadores, herramientas requeridas | F1 | Alta | Hecho |');
 w('| F4 | Población y expansión: llegada de colonos, viviendas de más capacidad, territorio ampliable, servicios por umbral, transición entre edades | F1–F3 | Media | Hecho |');
 w('| F5 | Cadenas productivas y servicios: recetas, yacimientos, energía, caminos, mercado, investigación, hospital, escuela | F1, F3 | Muy alta | Hecho |');
-w('| F6 | Ejército y defensas: unidades, reclutamiento, equipo, mantenimiento, defensas, incursiones, reglas de combate | F3–F5 | Alta | Hecho |');
+w('| F6 | Ejército y defensas: unidades, reclutamiento, equipo, mantenimiento, defensas, reglas de combate | F3–F5 | Alta | Hecho |');
 w('| F7 | Edades avanzadas, rendimiento con aldeas grandes, edad XI preparada, documentación y pruebas | F1–F6 | Media | Hecho (la edad XI queda preparada pero separada del alcance) |');
 w();
 w('## 3. Evolución automática frente a mejoras manuales');
@@ -136,14 +136,14 @@ w('- **Mantenimiento** diario de comida y, desde edades avanzadas, monedas y car
 w('- **Modernizar** un soldado cuesta la unidad siguiente de su línea (equipo nuevo incluido); no ocurre solo al cambiar de edad.');
 w('- **Defensas** (atalayas, muros, puertas, fuertes) suman puntos de defensa; las que consumen energía sólo valen conectadas.');
 w('- **Capacidad militar** = poder de las tropas (con la ventaja infantería > caballería > tiradores > infantería) + defensas.');
-w('- **Incursiones (PvE):** desde la Edad del Bronce, cada 3 a 5 días tras 6 días de protección, sólo con el dueño conectado. Si la capacidad militar no alcanza la fuerza de la banda, se pierde hasta un 10 % de comida, madera, piedra y monedas; nunca se destruyen edificios ni se hiere a nadie.');
+w('- **Sin incursiones:** no hay saqueos ni otros eventos que no existan en el mundo; sólo pasa lo que se ve (animales, otros jugadores).');
 w(`- **Ataques entre jugadores: desactivados** (\`PVP.enabled = ${PVP.enabled}\`). Reglas definidas para cuando se activen: ${PVP.protectionDays} días de protección inicial, aldeas con el dueño desconectado intocables, máximo ${PVP.maxAgeGap} edad de diferencia y sólo robo de recursos (nunca destrucción).`);
 w();
 w('## 8. Mundo compartido, persistencia y rendimiento');
 w();
 w('- Cada aldea tiene su edad; los visitantes ven sus edificios, niveles, vestimenta y centro con el aspecto correcto (los nacidos o llegados se sincronizan con sus datos fijos).');
 w('- Se guardan edad, colonos (familia, soldados, hogar), edificios (nivel, ciclo, dotación), bienes, tecnologías, territorio, caminos y comercio. Las órdenes se validan en el servidor y se aplican de una en una (sin duplicar por solicitudes repetidas).');
-w('- Durante las desconexiones la colonia sigue simulándose como antes (producción incluida, sin incursiones ni llegadas de colonos).');
+w('- Durante las desconexiones la colonia sigue simulándose como antes (producción incluida, sin llegadas de colonos).');
 w('- Rendimiento: una aldea de 120 colonos y 88 edificios cuesta unos 4 ms por paso de 0,1 s; los colonos lejanos se dibujan con un modelo simple de 2 piezas y sin animar; el estado completo ocupa unos 50–90 KB por segundo con 120 colonos.');
 w();
 w('## 9. Pruebas');

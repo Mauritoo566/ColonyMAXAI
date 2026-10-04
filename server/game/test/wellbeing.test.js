@@ -184,14 +184,14 @@ const quiet = (c) => {
   const c = sim.colonists[0];
   quiet(c);
   sim.gameTime = 1000;
-  addMoodEvent(c, 'raid', -8, 990);
+  addMoodEvent(c, 'attack', -15, 990);
   addMoodEvent(sim.colonists[1], 'attack', -15, 1000 - EVENT_SECONDS - 5);
   const save = JSON.parse(JSON.stringify(sim.serialize()));
   const loaded = colony();
   loaded.restore(save);
   const lc = loaded.colonists.find((x) => x.id === c.id);
   assert.equal(lc.moodEvents?.length, 1);
-  assert.equal(lc.moodEvents[0].id, 'raid');
+  assert.equal(lc.moodEvents[0].id, 'attack');
   assert.equal(loaded.colonists.find((x) => x.id === sim.colonists[1].id).moodEvents, undefined, 'el caducado no vuelve');
   console.log('✓ guardar/cargar conserva el efecto vigente y descarta el caducado');
 }
@@ -201,7 +201,7 @@ const quiet = (c) => {
   const sim = colony();
   const c = sim.colonists[0];
   quiet(c);
-  addMoodEvent(c, 'raid', -8, sim.gameTime);
+  addMoodEvent(c, 'attack', -15, sim.gameTime);
   c.moodTarget = 33;
   c.moodBand = 1;
   c.moodTrend = -1;
@@ -216,7 +216,7 @@ const quiet = (c) => {
   assert.equal(rc.moodBand, 1);
   assert.equal(rc.moodTrend, -1);
   assert.equal(rc.moodFx.homeless, 0.5);
-  assert.equal(rc.moodEvents[0].id, 'raid');
+  assert.equal(rc.moodEvents[0].id, 'attack');
   assert.equal(rc.block.why, 'No logra llegar a su destino');
   assert.deepEqual(diagnose(replica, rc).causes.map((x) => x.id).sort(), diagnose(sim, c).causes.map((x) => x.id).sort(), 'ambos explican lo mismo');
   console.log('✓ la réplica explica lo mismo que el servidor');

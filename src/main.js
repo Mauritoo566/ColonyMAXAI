@@ -308,7 +308,7 @@ function announceNews(date) {
     }
   }
 }
-// Nacimientos, muertes, tecnologías, incursiones, semillas que caen al talar... la
+// Nacimientos, muertes, tecnologías, semillas que caen al talar... la
 // simulación ya los avisa con "notice" desde hace rato; faltaba mostrarlos en pantalla.
 colony.on('notice', (text) => showNotice(text));
 
