@@ -374,6 +374,20 @@ Los caballos domesticados **se resguardan dentro del establo de noche y cuando l
 
 Si hay un camino que lleve hacia donde van (a menos de 10 m de ellos y de su destino, y que no rodee más de un 30 % + 4 m respecto al trayecto directo), los colonos lo toman (`src/sim/roadpath.js`: A* sobre las casillas de camino) y salen de él para el último tramo. Sin camino, o si rodearía demasiado, van por donde quieran. Ir por camino es más rápido: un **3 %** en el de tierra (5 % empedrado, 7 % adoquinado, 10 % asfaltado).
 
+## Herramientas de los colonos
+
+Desde la Edad del Bronce, trabajar con las manos desnudas es más lento (tarda un 25 % más). Cada colono lleva una herramienta (hacha, pico, cuchillo, martillo o azada, según su oficio) hecha del bien de su edad: bronce (Edad III, 15 % menos de tiempo), hierro (IV, 30 %), instrumentos de precisión (VII, 42 %) o electrónica (X, 55 %). Antes del Bronce no se usan.
+
+- Los colonos recogen solos una del almacén (de día, con lo básico cubierto) si su oficio la usa: el del puesto o, si no tiene, la primera de sus especialidades. Se cambia por una mejor sólo si quedan al menos dos de ella (para no dejar sin material las mejoras de edificios).
+- Se desgasta con el trabajo (talar, picar, construir, recolectar, puestos de granja y mina…): bronce 25 min de trabajo, hierro ~67 min, etc. Al llegar a cero se rompe, hay aviso y el colono va a por otra si hay.
+- Acelera también a los puestos de trabajo (granjas, minas, canteras) según las herramientas de su dotación.
+- Se guarda con la partida y llega al navegador. La ficha del colono (pestaña Trabajo) muestra cuál lleva, su desgaste y por qué no tiene.
+- Código en `src/sim/tools.js`; prueba en `server/game/test/tools.test.js`.
+
+## Ficha del colono
+
+Cinco pestañas: **Estado** (salud, bienestar, qué hace ahora, necesidades), **Ánimo** (se esconde en los niños), **Trabajo** (oficio y órdenes, herramienta, habilidades), **Vida** (familia y hogar, ropa, personalidad, biografía, actividad reciente) y **Genes**.
+
 ## Nubes
 
 Las bolitas de las nubes son ahora «abolladas» (coliflor) con la base plana, normales suaves y un degradado de blanco cálido arriba a gris azulado abajo, con los mismos triángulos que antes. Cada cúmulo lleva una torre central más alta, un borde luminoso contra la luz y una «respiración» lenta de cada bolita hecha en el sombreador (sin coste en el procesador).

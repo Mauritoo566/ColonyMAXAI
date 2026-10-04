@@ -478,6 +478,18 @@ summary:focus-visible {
   cursor: pointer;
 }
 
+.cp-tabs--dense {
+  gap: 0;
+  padding: 0 8px;
+  overflow-x: auto;
+}
+
+.cp-tabs--dense .cp-tab {
+  padding: 8px 8px 9px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .cp-tab[aria-selected='true'] {
   color: var(--ui-text);
   border-bottom-color: var(--accent);

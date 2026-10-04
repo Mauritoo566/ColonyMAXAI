@@ -10,6 +10,7 @@ import { GOOD_NAMES, GOODS_BY_ID, TRADE_VALUE } from './goods.js';
 import { TECHS_BY_ID } from './techs.js';
 import { radiusOf } from './progression.js';
 import { rectDistance } from '../rect.js';
+import { toolTime } from './tools.js';
 
 const DAY = DAY_LENGTH_SECONDS;
 const name = (k) => GOOD_NAMES[k] ?? k;
@@ -147,7 +148,11 @@ export function updateProduction(colony, b, dt) {
   let skill = 0;
   for (const w of b.workers) skill += colony.skillOf(w, b.def.skill);
   skill /= Math.max(1, b.workers.length);
-  const speed = Math.min(1, present / Math.max(1, needed)) * (1 / (1.4 - skill * 0.07)) * pf * logisticsBonus(colony, b);
+  // La herramienta de cada trabajador (o su falta) acelera o frena el puesto (granjas, minas, canteras…).
+  let toolSpeed = 0;
+  for (const w of b.workers) toolSpeed += 1 / toolTime(colony, w, b.def.skill);
+  toolSpeed /= Math.max(1, b.workers.length);
+  const speed = Math.min(1, present / Math.max(1, needed)) * (1 / (1.4 - skill * 0.07)) * toolSpeed * pf * logisticsBonus(colony, b);
   b.operating = true;
   b.burning = true;
   b.status = present < needed ? `Falta personal (${present}/${needed}): trabaja más despacio` : pf < 1 ? `Poca energía (${Math.round(pf * 100)} %)` : null;

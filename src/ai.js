@@ -15,6 +15,7 @@ import { SPROUT_KEY } from './resourceGen.js';
 import { stallReason } from './sim/economy.js';
 import { abandonTarget, farSpot, nextJob, cemeteryStatus, plotSpot, nicheSpot, freePlot, freeNiche, urnWanted, placeUrnHome, isCemetery, BURY_SECONDS, EXHUME_SECONDS, URN_SECONDS, TAKE_SECONDS, PLACE_SECONDS, THINK_SECONDS } from './sim/cemetery.js';
 import { TAME_SECONDS } from './sim/stable.js';
+import { toolTime, toolWanted, toolTrade, equipTool, toolName, EQUIP_SECONDS } from './sim/tools.js';
 import { hallFor, hallOpen, mealSource, reserveSeat, releaseSeat, leaveHall, finishMeal, finishDrink, URGENT } from './sim/dining.js';
 
 const DAY = DAY_LENGTH_SECONDS;
@@ -221,6 +222,12 @@ export function chooseTask(colony, c, env) {
   if (!c.soldier && !isChild(c) && !env.isNight && Math.min(n.food, n.water, n.rest, n.warmth) > 35) {
     const horse = colony.pendingTame(c);
     if (horse) add(0.6 / (1 + dist(c, horse) / 200), { type: 'tame', mobId: horse.id });
+  }
+
+  // Sin herramienta (o con una peor que la que hay en el almacén): pasa a recoger una, de día y con lo básico cubierto.
+  if (!c.soldier && !isChild(c) && !env.isNight && Math.min(n.food, n.water, n.rest, n.warmth) > 35) {
+    const good = toolWanted(colony, c);
+    if (good) add(0.55 / (1 + dist(c, storage) / 300), { type: 'equip', good });
   }
 
   // Un jarrón de un ser querido en la estantería del cementerio: la familia puede querer llevárselo a casa. Lo piensa bien: sólo si tiene lo
@@ -801,6 +808,14 @@ export function runTask(colony, c, task, dt, env) {
     case 'tame':
       return runTame(colony, c, task, dt, env);
 
+    case 'equip': {
+      if (toolWanted(colony, c) !== task.good) return 'done'; // ya no hace falta o se acabaron en el almacén
+      if (!go(colony, c, task, colony.layout.storage, dt, 1.4)) return task.failed ? 'failed' : 'running';
+      colony.faceTowards(c, colony.layout.storage.x, colony.layout.storage.z, dt);
+      if (!busy(task, dt, EQUIP_SECONDS)) return 'running';
+      return equipTool(colony, c, task.good) ? 'done' : 'failed';
+    }
+
     case 'abandon':
       return runAbandon(colony, c, task, dt, env);
 
@@ -878,7 +893,7 @@ export function runTask(colony, c, task, dt, env) {
       c.working = true;
       colony.faceTowards(c, b.x, b.z, dt);
       // Trabajo necesario según el edificio; los hábiles construyen más rápido.
-      b.progress = Math.min(1, b.progress + (dt / (b.buildTime ?? b.def.buildTime)) * (0.5 + c.skills.building / 10));
+      b.progress = Math.min(1, b.progress + ((dt / (b.buildTime ?? b.def.buildTime)) * (0.5 + c.skills.building / 10)) / toolTime(colony, c, 'building'));
       if (b.progress >= 1) b.finish?.(c);
       // Punto seguro cada 15 s de obra: ahí puede cambiar de tarea o de especialidad (sin dejar la obra a medias de golpe).
       task.worked = (task.worked ?? 0) + dt;
@@ -1030,7 +1045,7 @@ function runWork(colony, c, task, dt, env) {
     colony.faceTowards(c, b.x, b.z, dt);
     b.status = null;
     const skill = c.skills[def.skill] / 10;
-    if (!busy(task, dt, 60 * (1.4 - skill * 0.7))) return 'running';
+    if (!busy(task, dt, 60 * (1.4 - skill * 0.7) * toolTime(colony, c, def.skill))) return 'running';
     const added = colony.produce(def.stock, level.yield);
     b.produced += added;
     task.delivered = true;
@@ -1063,7 +1078,7 @@ function runWork(colony, c, task, dt, env) {
     colony.faceTowards(c, task.spot.x, task.spot.z, dt);
     const skill = c.skills[def.skill] / 10;
     if (task.spot.gone) return release(task.spot); // alguien se llevó lo último: no se cobra dos veces
-    if (!busy(task, dt, def.workTime * (1.4 - skill * 0.7) * (isLitter(task.spot) ? 1.5 : 1))) return 'running';
+    if (!busy(task, dt, def.workTime * (1.4 - skill * 0.7) * (isLitter(task.spot) ? 1.5 : 1) * toolTime(colony, c, def.skill))) return 'running';
     task.litter = isLitter(task.spot);
     const felled = task.spot;
     colony.consumeSpot(felled, env.gameTime);
@@ -1126,8 +1141,9 @@ function runHarvest(colony, c, task, dt, env) {
   if (task.phase === 'gathering') {
     c.working = true;
     colony.faceTowards(c, spot.x, spot.z, dt);
-    const skill = c.skills[spotCategory(spot, colony.age)] / 10;
-    if (!busy(task, dt, (spot.stick ? 8 : info.time) * (1.4 - skill * 0.7))) return 'running';
+    const cat = spotCategory(spot, colony.age);
+    const skill = c.skills[cat] / 10;
+    if (!busy(task, dt, (spot.stick ? 8 : info.time) * (1.4 - skill * 0.7) * toolTime(colony, c, cat))) return 'running';
     task.load = harvestYield(spot);
     colony.consumeSpot(spot, env.gameTime);
     task.phase = 'returning';
@@ -1234,6 +1250,10 @@ export function taskActivity(colony, c, task) {
       return c.sitting === 'bench' ? 'Sentado en un tronco, calentándose' : c.sitting === 'ground' ? 'Sentado junto al fuego, calentándose' : 'Calentándose junto al fuego';
     case 'dress':
       return walking ? 'Tiene frío: va a buscar ropa' : 'Poniéndose ropa de pieles';
+    case 'equip': {
+      const name = toolName(toolTrade(colony, c) ?? 'building', task.good).toLowerCase();
+      return walking ? `Va al almacén a por ${name}` : `Cogiendo ${name} del almacén`;
+    }
     case 'chat':
       return walking ? `Va a charlar con ${task.partner.name}` : `Charlando con ${task.partner.name}`;
     case 'build':
@@ -1287,6 +1307,8 @@ export function taskLog(c, task) {
       return task.role === 'ask' ? `Fue a buscar a ${task.partner.name}` : `Aceptó ir a casa con ${task.partner.name}`;
     case 'dress':
       return 'Se vistió con ropa de pieles';
+    case 'equip':
+      return 'Recogió una herramienta del almacén';
     case 'build':
       return `Ayudó a ${task.building.upgrading ? 'mejorar' : 'construir'}: ${task.building.name}`;
     case 'work':

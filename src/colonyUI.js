@@ -3,7 +3,8 @@ import { preserveScroll, keepScroll, scrollParent } from './keepScroll.js';
 import { diagnose, mainProblem, BANDS } from './sim/wellbeing.js';
 import { NEEDS, SKILLS, wellbeing, needStatus, completeSkill } from './needs.js';
 import { GENES, gene, genomeCode, lifeExpectancy } from './genes.js';
-import { SPEC_NAMES } from './sim/specialties.js';
+import { SPEC_NAMES, isWorker } from './sim/specialties.js';
+import { TOOL_GOODS, BARE_TIME, toolName, toolTrade, toolNote, toolsMatter } from './sim/tools.js';
 import { MOB_INFO, MOB_STATS, MOB_STATE_TEXT } from './sim/mobs.js';
 import { TAME_COST } from './sim/stable.js';
 
@@ -274,10 +275,12 @@ export class ColonyUI {
         </div>
         <button type="button" class="icon-button" data-close aria-label="Cerrar ficha">${icon('close')}</button>
       </header>
-      <div class="cp-tabs" role="tablist">
+      <div class="cp-tabs cp-tabs--dense" role="tablist">
         <button type="button" class="cp-tab" role="tab" data-tab="estado">Estado</button>
+        <button type="button" class="cp-tab" role="tab" data-tab="animo">Ánimo</button>
+        <button type="button" class="cp-tab" role="tab" data-tab="trabajo">Trabajo</button>
+        <button type="button" class="cp-tab" role="tab" data-tab="vida">Vida</button>
         <button type="button" class="cp-tab" role="tab" data-tab="genes">Genes</button>
-        <button type="button" class="cp-tab" role="tab" data-tab="historia">Historia</button>
       </div>
       <div class="cp-body" data-page="estado">
         <div class="vitals">
@@ -290,12 +293,9 @@ export class ColonyUI {
             <div class="bar"><i></i></div>
           </div>
         </div>
-        <section class="cp-section mood-section" data-mood>
-          <h3>Ánimo</h3>
-          <div class="meter-row"><span class="meter-label" data-mood-band></span><strong class="meter-value" data-mood-value></strong></div>
-          <div class="bar"><i data-mood-bar></i></div>
-          <p class="mood-trend" data-mood-trend></p>
-          <div data-mood-detail></div>
+        <section class="cp-section">
+          <h3>Ahora</h3>
+          <p class="activity-now" data-activity></p>
         </section>
         <section class="cp-section">
           <h3>Necesidades</h3>
@@ -310,14 +310,17 @@ export class ColonyUI {
             ).join('')}
           </ul>
         </section>
-        <section class="cp-section">
-          <h3>Ahora</h3>
-          <p class="activity-now" data-activity></p>
+      </div>
+      <div class="cp-body" data-page="animo" hidden>
+        <section class="cp-section mood-section" data-mood>
+          <h3>Ánimo</h3>
+          <div class="meter-row"><span class="meter-label" data-mood-band></span><strong class="meter-value" data-mood-value></strong></div>
+          <div class="bar"><i data-mood-bar></i></div>
+          <p class="mood-trend" data-mood-trend></p>
+          <div data-mood-detail></div>
         </section>
-        <section class="cp-section">
-          <h3>Familia</h3>
-          <p class="activity-now" data-family></p>
-        </section>
+      </div>
+      <div class="cp-body" data-page="trabajo" hidden>
         <section class="cp-section">
           <h3>Oficio y órdenes</h3>
           <p class="activity-now" data-job></p>
@@ -332,9 +335,11 @@ export class ColonyUI {
             <p class="order-msg" data-order-msg role="status"></p>
           </div>
         </section>
-        <section class="cp-section">
-          <h3>Ropa</h3>
-          <p class="activity-now" data-clothes></p>
+        <section class="cp-section" data-toolbox>
+          <h3>Herramienta</h3>
+          <div class="meter-row"><span class="meter-label" data-tool-name></span><strong class="meter-value" data-tool-wear></strong></div>
+          <div class="bar" data-tool-bar><i></i></div>
+          <p class="activity-now" data-tool-note></p>
         </section>
         <section class="cp-section">
           <h3>Habilidades</h3>
@@ -343,6 +348,30 @@ export class ColonyUI {
               (sk) => `<li class="skill-row"><span>${sk.name}</span><span class="bar"><i style="width:${completeSkill(c, sk.id) * 10}%"></i></span><span>${completeSkill(c, sk.id)}/10</span></li>`,
             ).join('')}
           </ul>
+        </section>
+      </div>
+      <div class="cp-body" data-page="vida" hidden>
+        <section class="cp-section">
+          <h3>Familia y hogar</h3>
+          <p class="activity-now" data-family></p>
+        </section>
+        <section class="cp-section">
+          <h3>Ropa</h3>
+          <p class="activity-now" data-clothes></p>
+        </section>
+        <section class="cp-section">
+          <h3>Personalidad</h3>
+          <ul class="trait-list">
+            ${c.traits.map((t) => `<li class="trait"><strong>${t.name}</strong><span>${t.desc}</span></li>`).join('')}
+          </ul>
+        </section>
+        <section class="cp-section">
+          <h3>Biografía</h3>
+          <p class="bio">${escapeHtml(c.bio)}</p>
+        </section>
+        <section class="cp-section">
+          <h3>Actividad reciente</h3>
+          <ol class="log-list" data-log></ol>
         </section>
       </div>
       <div class="cp-body" data-page="genes" hidden>
@@ -360,22 +389,6 @@ export class ColonyUI {
           }).join('')}
         </ul>
         <p class="gene-note">Esperanza de vida: unos ${lifeExpectancy(c.genome)} años. Los puntos son los dos alelos de cada gen (uno de cada progenitor); la barra, el valor que se expresa.</p>
-      </div>
-      <div class="cp-body" data-page="historia" hidden>
-        <section class="cp-section">
-          <h3>Personalidad</h3>
-          <ul class="trait-list">
-            ${c.traits.map((t) => `<li class="trait"><strong>${t.name}</strong><span>${t.desc}</span></li>`).join('')}
-          </ul>
-        </section>
-        <section class="cp-section">
-          <h3>Biografía</h3>
-          <p class="bio">${escapeHtml(c.bio)}</p>
-        </section>
-        <section class="cp-section">
-          <h3>Actividad reciente</h3>
-          <ol class="log-list" data-log></ol>
-        </section>
       </div>
       <div class="cp-actions">
         <button type="button" class="btn" data-follow aria-pressed="false">${icon('follow')}Seguir con la cámara</button>
@@ -467,6 +480,7 @@ export class ColonyUI {
         : 'Sin ropa (sólo un taparrabos) y no queda ropa en el campamento.';
     if (clothes.textContent !== clothesText) clothes.textContent = clothesText;
 
+    this.refreshTool(c);
     this.refreshMood(c);
     const health = this.panel.querySelector('[data-health]');
     health.querySelector('[data-value]').textContent = `${Math.round(c.health)}%`;
@@ -496,15 +510,44 @@ export class ColonyUI {
     }
   }
 
+  // Herramienta que lleva (sim/tools.js): cuál es, cuánto le queda y cuánto cambia el trabajo.
+  refreshTool(c) {
+    const box = this.panel.querySelector('[data-toolbox]');
+    const trade = toolTrade(this.colony, c);
+    box.hidden = !isWorker(c);
+    if (box.hidden) return;
+    const g = c.tool && TOOL_GOODS[c.tool.id];
+    const name = g ? toolName(trade ?? 'building', c.tool.id) : 'Sin herramienta';
+    const left = g ? Math.max(0, Math.min(100, (c.tool.left / g.life) * 100)) : 0;
+    box.querySelector('[data-tool-name]').textContent = name;
+    box.querySelector('[data-tool-wear]').textContent = g ? `Desgaste ${Math.round(100 - left)}%` : '';
+    const bar = box.querySelector('[data-tool-bar]');
+    bar.hidden = !g;
+    if (g) {
+      setBar(bar.querySelector('i'), left);
+      setTone(box.querySelector('.meter-row'), left);
+    }
+    const effect = g
+      ? `Tarda un ${Math.round((1 - g.time) * 100)} % menos en cada tarea de su oficio.`
+      : toolsMatter(this.colony) && trade
+        ? `Sin herramienta tarda un ${Math.round((BARE_TIME - 1) * 100)} % más en cada tarea.`
+        : '';
+    const text = [toolNote(this.colony, c), effect].filter(Boolean).join(' ');
+    const note = box.querySelector('[data-tool-note]');
+    if (note.textContent !== text) note.textContent = text;
+  }
+
   // Ánimo explicado (sim/wellbeing.js): qué le pasa, qué intenta, qué se lo impide y qué se puede hacer.
   // Sólo se redibuja si cambia el contenido (así no pierde el scroll ni parpadea).
   refreshMood(c) {
-    if ((c.growth ?? 1) < 1) {
-      this.panel.querySelector('[data-mood]').hidden = true;
+    // Un niño no tiene ficha de ánimo: la pestaña se esconde.
+    const child = (c.growth ?? 1) < 1;
+    this.panel.querySelector('[data-tab="animo"]').hidden = child;
+    if (child) {
+      if (this.tab === 'animo') this.showTab('estado');
       return;
     }
     const sec = this.panel.querySelector('[data-mood]');
-    sec.hidden = false;
     const d = diagnose(this.colony, c);
     const bandEl = sec.querySelector('[data-mood-band]');
     if (bandEl.textContent !== d.band.text) bandEl.textContent = d.band.text;

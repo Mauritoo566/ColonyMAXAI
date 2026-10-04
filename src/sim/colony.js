@@ -27,6 +27,7 @@ import { generateDeposits, depositAt, updateProduction, updatePower, applyHospit
 import { pushSample } from '../interp.js';
 import { decideRun, RUN_FACTOR } from './running.js';
 import { RoadMap, roadRoute } from './roadpath.js';
+import { TOOL_GOODS, TOOL_IDS, wearTool } from './tools.js';
 import { orderTame, tameProblem, herdOf, affordable, pendingTame, finishTame, serializeTamed, restoreTamed } from './stable.js';
 import { recordDeath, serializeDead, restoreDead, viewDead, urnsAtHome, stenchAt, seesBody, SAW_BODY, SAW_COOLDOWN } from './cemetery.js';
 import { TECHS_BY_ID } from './techs.js';
@@ -1452,7 +1453,9 @@ export class ColonySim {
 
   practice(c, task, dt) {
     const cat = this.categoryOf(task);
-    if (!cat || c.skills[cat] === undefined) return;
+    if (!cat) return;
+    wearTool(this, c, cat, dt); // la herramienta se gasta con el trabajo
+    if (c.skills[cat] === undefined) return;
     c.xp ??= {};
     c.xp[cat] = (c.xp[cat] ?? 0) + dt;
     // Sube un nivel con ~12 minutos de práctica por nivel actual (máx. 10).
@@ -3548,6 +3551,7 @@ export class ColonySim {
           moodEvents: c.moodEvents,
           chatCooldown: c.chatCooldown,
           clothed: c.clothed,
+          tool: c.tool ? { id: c.tool.id, left: Math.round(c.tool.left) } : null,
           x: c.x,
           z: c.z,
           facing: c.facing,
@@ -3859,6 +3863,7 @@ export class ColonySim {
         health: r2(c.health),
         log: c.log,
         clothed: c.clothed,
+        tl: c.tool ? [TOOL_IDS.indexOf(c.tool.id), Math.round(c.tool.left)] : undefined,
         activity: c.activity,
         job: c.job?.id ?? null,
         sk: SKILLS.map((s) => Math.min(35, this.skillOf(c, s.id)).toString(36)).join(''),
@@ -3966,6 +3971,7 @@ export class ColonySim {
       c.health = row.health;
       c.log = row.log;
       c.activity = row.activity;
+      c.tool = row.tl && TOOL_IDS[row.tl[0]] ? { id: TOOL_IDS[row.tl[0]], left: row.tl[1] } : null;
       if (row.sk) SKILLS.forEach((sk, i) => (c.skills[sk.id] = parseInt(row.sk[i], 36) || c.skills[sk.id]));
       c.growth = row.growth ?? 1;
       c.desire = row.desire ?? 0;
@@ -4204,6 +4210,7 @@ export class ColonySim {
       const evs = Array.isArray(saved.moodEvents) ? saved.moodEvents.filter((e) => e && typeof e.id === 'string' && Number.isFinite(e.delta) && Number.isFinite(e.at) && e.id in EVENT_TEXT && this.gameTime - e.at < 0.5 * DAY_LENGTH_SECONDS) : [];
       c.moodEvents = evs.length ? evs.slice(0, 4).map((e) => ({ id: e.id, delta: Math.max(-40, Math.min(40, e.delta)), at: Math.min(e.at, this.gameTime) })) : undefined;
       c.clothed = !!saved.clothed;
+      c.tool = saved.tool && TOOL_GOODS[saved.tool.id] && Number.isFinite(saved.tool.left) ? { id: saved.tool.id, left: Math.min(saved.tool.left, TOOL_GOODS[saved.tool.id].life) } : null;
       if (Number.isFinite(saved.x) && this.walkable(saved.x, saved.z, 0.2)) {
         c.x = saved.x;
         c.z = saved.z;
