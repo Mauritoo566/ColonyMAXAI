@@ -326,6 +326,9 @@ export class ResourceSystem {
     this.growingUntil = 0; // hasta cuándo queda algún brote creciendo (para redibujar mientras tanto)
     this.lastGrowRebuild = 0;
     this.removed = new Map(); // baldosa -> índices de recursos que ya no están
+    this.clocks = new Map(); // brotes de aldeas ajenas: baldosa -> { t: hora de juego de esa aldea, at: ms reales al recibirla }
+    this.growingOthers = false; // algún brote de otra aldea sigue creciendo (para redibujar mientras tanto)
+    this.lastGrowRebuildMs = 0;
     this.extra = new Map(); // baldosas especiales (arboleda del campamento)
     this.workers = new ResourceWorkers((key, data) => {
       if (this.cache.get(key) === 'pending') {
@@ -374,6 +377,7 @@ export class ResourceSystem {
 
     // Los brotes plantados crecen: se redibujan cada pocos segundos de juego mientras haya alguno creciendo.
     if (this.growingUntil > this.gameTime && this.gameTime - this.lastGrowRebuild >= GROW_REDRAW_SECONDS) this.dirty = true;
+    if (this.growingOthers && performance.now() - this.lastGrowRebuildMs >= GROW_REDRAW_SECONDS * 1000) this.dirty = true;
     // Reconstruir si la cámara se movió lo suficiente o llegaron baldosas nuevas.
     const moved = this.lastCamera.distanceTo(camera.position);
     if (moved > Math.max(15, clearance * 0.06)) this.dirty = true;
@@ -473,6 +477,28 @@ export class ResourceSystem {
     if (changed) this.dirty = true;
   }
 
+  // Hora de juego de una aldea ajena (llega con sus colonos, dos veces por segundo): entre mensajes avanza con el reloj.
+  setClock(key, t) {
+    this.clocks.set(key, { t, at: performance.now() });
+  }
+
+  clockNow(key) {
+    const c = this.clocks.get(key);
+    return c ? c.t + Math.min(2, (performance.now() - c.at) / 1000) : null;
+  }
+
+  // Reemplaza lo quitado de una baldosa especial propia (la arboleda o los brotes del campamento) por lo que dice la
+  // simulación. Reemplaza, no suma: al limpiar el arreglo de brotes sus índices se renumeran, y lo ya talado no puede
+  // quedar visible. (mergeRemoved las ignora a propósito: esas claves se reutilizan en cada campamento visitado.)
+  setRemoved(key, indices) {
+    const next = new Set(indices ?? []);
+    const old = this.removed.get(key);
+    if (old && old.size === next.size && [...next].every((i) => old.has(i))) return;
+    if (next.size) this.removed.set(key, next);
+    else this.removed.delete(key);
+    this.dirty = true;
+  }
+
   // Quita un recurso del mundo (un árbol talado, una piedra picada).
   removeResource(tileKey, index) {
     let set = this.removed.get(tileKey);
@@ -505,7 +531,9 @@ export class ResourceSystem {
 
     const now = this.gameTime;
     let growingUntil = 0;
+    let growingOthers = false;
     this.lastGrowRebuild = now;
+    this.lastGrowRebuildMs = performance.now();
     const nearCount = new Int32Array(RESOURCE_TYPES.length);
     const farCount = new Int32Array(RESOURCE_TYPES.length);
     const nearM = this.near.map((m) => m.instanceMatrix.array);
@@ -516,6 +544,9 @@ export class ResourceSystem {
     for (const t of tiles) {
       const { count, type, pos, basis, tint, rank } = t;
       const gone = removed.get(t.key);
+      // Brotes plantados: con la hora de la aldea propia, o con la de la aldea ajena a la que pertenecen.
+      const own = t.key === SPROUT_KEY;
+      const tnow = own ? now : this.clockNow(t.key);
       for (let k = 0; k < count; k++) {
         if (gone && gone.has(k)) continue; // talado o agotado
         const px = pos[k * 3], py = pos[k * 3 + 1], pz = pos[k * 3 + 2];
@@ -567,10 +598,12 @@ export class ResourceSystem {
         const o = n * 16, b = k * 9;
         // Un brote plantado de la propia aldea todavía no está grande: se dibuja a una fracción de su tamaño.
         let grow = 1;
-        if (t.readyAt && t.key === SPROUT_KEY && t.readyAt[k] > now) {
+        if (t.readyAt && tnow !== null && t.readyAt[k] > tnow) {
           const span = t.readyAt[k] - t.sown[k] || 1;
-          grow = SAPLING_MIN_SCALE + (1 - SAPLING_MIN_SCALE) * Math.min(1, Math.max(0, (now - t.sown[k]) / span));
-          if (t.readyAt[k] > growingUntil) growingUntil = t.readyAt[k];
+          grow = SAPLING_MIN_SCALE + (1 - SAPLING_MIN_SCALE) * Math.min(1, Math.max(0, (tnow - t.sown[k]) / span));
+          if (own) {
+            if (t.readyAt[k] > growingUntil) growingUntil = t.readyAt[k];
+          } else growingOthers = true;
         }
         arr[o] = basis[b] * grow; arr[o + 1] = basis[b + 1] * grow; arr[o + 2] = basis[b + 2] * grow; arr[o + 3] = 0;
         arr[o + 4] = basis[b + 3] * grow; arr[o + 5] = basis[b + 4] * grow; arr[o + 6] = basis[b + 5] * grow; arr[o + 7] = 0;
@@ -596,6 +629,7 @@ export class ResourceSystem {
       apply(this.far[ti], farCount[ti]);
     }
     this.growingUntil = growingUntil;
+    this.growingOthers = growingOthers;
     this.lastCounts = { near: nearCount.reduce((a, b) => a + b, 0), far: farCount.reduce((a, b) => a + b, 0) };
   }
 }

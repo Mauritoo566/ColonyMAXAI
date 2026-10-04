@@ -177,6 +177,9 @@ colony.on('resources', () => {
   resources.mergeRemoved(colony.serializeRemoved());
   resources.setExtraTile(GROVE_KEY, colony.groveTile);
   resources.setExtraTile(SPROUT_KEY, colony.sproutTile);
+  // La arboleda y los brotes propios: lo talado debe verse igual que en el servidor (y que lo ven los demás).
+  resources.setRemoved(GROVE_KEY, colony.removed.get(GROVE_KEY));
+  resources.setRemoved(SPROUT_KEY, colony.removed.get(SPROUT_KEY));
 });
 const militaryUI = new MilitaryUI({ colony, button: document.getElementById('military-button'), panel: document.getElementById('military-panel') });
 militaryUI.onOpen = () => villageUI.toggle(false);

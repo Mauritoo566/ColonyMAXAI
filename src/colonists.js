@@ -617,6 +617,9 @@ export class ColonyView {
         e.heartTimer = 0.55;
         const sprite = new THREE.Sprite(heartMaterial());
         sprite.userData = { age: 0, sway: Math.random() * 6.28 };
+        // Después de los caminos (renderOrder 2) y de la cuadrícula (3): ambos son transparentes y, al dibujarse
+        // después, tapaban el corazón. Sigue probando profundidad, así que los edificios sí lo tapan.
+        sprite.renderOrder = 3.5;
         sprite.scale.setScalar(0.7);
         this.group.add(sprite);
         e.hearts.push(sprite);

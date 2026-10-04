@@ -246,11 +246,11 @@ export function chooseTask(colony, c, env) {
       const near = 1 / (1 + dist(c, marked) / 600);
       addWork(tierOf(spotCategory(marked, colony.age)), (job ? 0.5 : 0.56) * diligence * fine * near, { type: 'harvest', spot: marked, phase: 'going' });
     }
-    // Las semillas de árbol que cayeron al talar las plantan los propios colonos en su tiempo
-    // libre (no hay plantación manual): un lugar libre cerca de la aldea, sin pisar nada.
-    if ((stock.tree_seed ?? 0) >= 1) {
-      const spot = colony.plantSpotFor(c);
-      if (spot) add(0.33 * diligence * fine * distanceFactor(dist(c, spot)), { type: 'plant', spot });
+    // Las semillas de árbol que cayeron al talar las planta sólo el colono que trabaja en una Cabaña del leñador (o
+    // mejor), dentro del radio de acción de su edificio y sin pisar edificios ni caminos. Nadie más planta.
+    if ((stock.tree_seed ?? 0) >= 1 && job && job.done && !job.removed && job.def.replantFrom && job.level >= job.def.replantFrom) {
+      const spot = colony.plantSpotFor(c, job);
+      if (spot) addWork(jobTier, 0.37 * diligence * fine * distanceFactor(dist(c, spot)), { type: 'plant', spot, building: job });
     }
     if (work.length) {
       const best = Math.min(...work.map((w) => w.tier));
@@ -528,7 +528,7 @@ export function runTask(colony, c, task, dt, env) {
       colony.faceTowards(c, task.spot.x, task.spot.z, dt);
       if (!busy(task, dt, 7)) return 'running';
       task.delivered = true;
-      return colony.plantTreeSeed(task.spot.x, task.spot.z, env.gameTime) === null ? 'done' : 'failed';
+      return colony.plantTreeSeed(task.spot.x, task.spot.z, env.gameTime, task.building) === null ? 'done' : 'failed';
     }
 
     case 'harvest':

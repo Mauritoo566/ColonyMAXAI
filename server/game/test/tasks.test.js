@@ -411,7 +411,7 @@ const site = (sim, id, x, z) => {
   assert.equal(cell(Math.round(b.x / 4), Math.round(b.z / 4)), 'Hay algo encima', 'ni el centro');
 }
 
-// Semillas de árbol: no hay plantación manual; las plantan solos los colonos en su tiempo libre.
+// Semillas de árbol: no hay plantación manual y los colonos libres tampoco las plantan (sólo el del leñador: planting.test.js).
 {
   const sim = colony();
   sim.age = 2;
@@ -419,10 +419,8 @@ const site = (sim, id, x, z) => {
   assert.equal(sim.applyCommand('plantTreeSeed', [10, 10]), false, 'la orden manual ya no existe');
   assert.equal(sim.sprouts.length, 0);
   run(sim, 120);
-  assert.ok(sim.stock.tree_seed < 2, `un colono gastó una semilla (${sim.stock.tree_seed})`);
-  assert.ok(sim.sprouts.length >= 1, 'nació un brote');
-  const sprout = sim.sprouts[0];
-  assert.ok(sprout.readyAt > sim.gameTime - 1, 'el árbol plantado todavía tiene que crecer');
+  assert.equal(sim.stock.tree_seed, 2, 'sin un leñador, nadie planta las semillas');
+  assert.equal(sim.sprouts.length, 0, 'no nació ningún brote');
 }
 
 function site_(sim) {

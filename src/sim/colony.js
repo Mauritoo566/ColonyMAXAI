@@ -1927,25 +1927,45 @@ export class ColonySim {
     this.emit('resources');
   }
 
-  // Un lugar donde un colono puede plantar una semilla: cerca de la aldea, libre de edificios,
-  // zona de acopio, caminos y otros árboles. Null si no hay ninguno (o ya hay demasiados brotes).
-  plantSpotFor(c) {
-    if (this.remote || this.plantedSprouts() >= MAX_PLANTED) return null;
-    for (let k = 0; k < 8; k++) {
+  // Un lugar donde el colono de una Cabaña del leñador (o mejor) puede plantar una semilla: dentro del radio de
+  // acción de su edificio, libre de edificios, zona de acopio, caminos y otros árboles. Null si no hay ninguno
+  // (o ya hay demasiados brotes). Sólo en el servidor.
+  plantSpotFor(c, building) {
+    if (this.remote || !building || this.plantedSprouts() >= MAX_PLANTED) return null;
+    const reach = building.def.range ?? 0;
+    const first = (building.def.footprint ?? 3) + 2;
+    if (reach <= first) return null;
+    for (let k = 0; k < 10; k++) {
       const a = c.rand() * Math.PI * 2;
-      const r = CAMP_CLEAR + 4 + c.rand() * 60;
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      if (this.plantProblem(x, z)) continue;
+      const r = first + Math.sqrt(c.rand()) * (reach - first - 1);
+      const x = building.x + Math.cos(a) * r;
+      const z = building.z + Math.sin(a) * r;
+      if (this.plantProblem(x, z, building)) continue;
       return { x, z };
     }
     return null;
   }
 
-  plantProblem(x, z) {
+  // "building": el edificio del que planta (si se indica, el lugar debe estar dentro de su radio de acción).
+  plantProblem(x, z, building = null) {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return 'Lugar no válido';
     if (Math.hypot(x, z) > SPOT_RADIUS) return 'Demasiado lejos de la aldea';
+    if (building && Math.hypot(x - building.x, z - building.z) > (building.def.range ?? 0)) return 'Fuera del radio de acción del leñador';
     return this.resourceSiteProblem(x, z);
+  }
+
+  // ¿Hay un camino pegado a (x, z)? La cinta mide 3,4 m y sigue las curvas entre casillas de 4 m: se mira la casilla y sus
+  // vecinas con un margen para que ningún tronco o brote asome sobre el camino.
+  nearRoad(x, z, margin = 0.8) {
+    if (!this.roads.size) return false;
+    const [cx, cz] = roadCellOf(x, z);
+    for (let ix = cx - 1; ix <= cx + 1; ix++) {
+      for (let iz = cz - 1; iz <= cz + 1; iz++) {
+        if (!this.roads.has(roadKey(ix, iz))) continue;
+        if (Math.abs(x - ix * ROAD_CELL) < ROAD_CELL / 2 + margin && Math.abs(z - iz * ROAD_CELL) < ROAD_CELL / 2 + margin) return true;
+      }
+    }
+    return false;
   }
 
   // Dónde puede nacer un recurso nuevo (brote de lluvia, árbol plantado, ramas o piedras del suelo):
@@ -1956,7 +1976,7 @@ export class ColonySim {
     if (!this.walkable(x, z, 1.2) || this.blockedByBuilding(x, z)) return 'Ahí no se puede';
     if (this.heightAt(x, z) <= 0.8) return 'Es agua';
     if (this.zones.some((zone) => rectDistance(zone, x, z) < 3)) return 'Es la zona de acopio';
-    if (this.roads.has(roadKey(...roadCellOf(x, z)))) return 'Es un camino';
+    if (this.nearRoad(x, z)) return 'Es un camino';
     if (this.accessBlocked?.(x, z)) return 'Es el acceso de un edificio';
     for (const s of this.spots) if (!s.gone && Math.hypot(s.x - x, s.z - z) < 2.5) return 'Ya hay un recurso ahí';
     return null;
@@ -2118,9 +2138,9 @@ export class ColonySim {
   // Un colono planta una semilla de árbol (gastada del almacén): nace el árbol propio del
   // bioma de ese lugar, y tarda en crecer antes de poder talarse. Null si se pudo, o el motivo.
   // Sólo la llaman los colonos (la IA corre en el servidor): no hay plantación manual.
-  plantTreeSeed(x, z, gameTime) {
+  plantTreeSeed(x, z, gameTime, building = null) {
     if ((this.stock.tree_seed ?? 0) < 1) return 'No quedan semillas de árbol';
-    const problem = this.plantProblem(x, z);
+    const problem = this.plantProblem(x, z, building);
     if (problem) return problem;
     if (this.plantedSprouts() >= MAX_PLANTED) return 'Ya hay demasiados árboles plantados esperando a crecer';
     const p = new THREE.Vector3();
@@ -3616,7 +3636,8 @@ export class ColonySim {
     const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0) | (c.sitting === 'ground' ? 256 : 0) | (c.sitting === 'bench' ? 512 : 0);
     const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state]);
     if (part === 'fast') {
-      const out = { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]), mobs: mobsRows() };
+      // gameTime: la hora de juego de esta colonia, para que quien la mira vea crecer los brotes plantados igual que su dueño.
+      const out = { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]), mobs: mobsRows(), gameTime: r2(this.gameTime) };
       // De vez en cuando (statics=true) se agregan también los nacidos (para quien sólo ve
       // "fast", como los visitantes de otra colonia) y los caminos.
       if (statics) {
@@ -3924,7 +3945,9 @@ export class ColonySim {
       }
     }
     if (marksChanged) this.emit('marks');
-    const sproutSig = (list) => `${list?.length ?? 0}:${list?.[0]?.d?.[0]}:${list?.[list.length - 1]?.d?.[0]}`;
+    // Firma de los brotes: largo y todos sus datos que cambian (no sólo el primero y el último: al limpiar el arreglo del servidor
+    // pueden cambiar los del medio y la copia se quedaba con piedras o árboles que ya no existen).
+    const sproutSig = (list) => `${list?.length ?? 0}:${(list ?? []).reduce((a, it, i) => a + (it.d?.[0] ?? 0) * (i + 1) * 1e3 + (it.d?.[2] ?? 0) * 7 + (it.readyAt ?? 0) + (it.typeIndex ?? 0) * 13, 0).toFixed(3)}`;
     if (sproutSig(s.sprouts) !== sproutSig(this.sprouts)) {
       this.sprouts = s.sprouts ?? [];
       this.rebuildSprouts();

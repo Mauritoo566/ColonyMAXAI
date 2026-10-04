@@ -139,6 +139,8 @@ export class OtherCamps {
         res.dirty = true;
       }
     }
+    // La hora de esa colonia: los brotes que plantó crecen con ella, no con la de quien mira.
+    if (Number.isFinite(msg.gameTime)) res.setClock(sproutKey, msg.gameTime);
     if (Array.isArray(msg.sprouts)) {
       res.setExtraTile(sproutKey, msg.sprouts.length ? tileFromItems(msg.sprouts) : null);
       const set = new Set(msg.sproutRemoved ?? []);
@@ -185,6 +187,7 @@ export class OtherCamps {
     for (const k of entry.extraKeys ?? []) {
       this.resources?.setExtraTile(k, null);
       this.resources?.removed.delete(k);
+      this.resources?.clocks.delete(k);
     }
     this.scene.remove(entry.object);
     releaseModel(entry.object);
