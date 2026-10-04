@@ -344,16 +344,16 @@ export function researchProblem(colony, id) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Caminos: casillas de 4 m con un nivel; en ellas se camina más rápido.
+// Caminos: casillas de 4 m con un nivel; en ellas se camina un poco más rápido (un 3 % en el de tierra) y los colonos los prefieren (roadpath.js).
 // ---------------------------------------------------------------------------------------------
 
 export const ROAD_CELL = 4;
 export const ROAD_LIFT = 0.26; // metros que la cinta del camino se dibuja por encima del terreno (quien camina por él sube igual)
 export const ROAD_LEVELS = [
-  { age: 2, name: 'Camino de tierra', cost: { fiber: 1 }, speed: 1.25, color: '#a8845a' },
-  { age: 5, name: 'Camino empedrado', cost: { stone: 2 }, speed: 1.45, color: '#8f8a82' },
-  { age: 7, name: 'Calle adoquinada', cost: { cut_stone: 1 }, speed: 1.6, color: '#7a746a' },
-  { age: 9, name: 'Carretera asfaltada', cost: { concrete: 1 }, speed: 1.9, color: '#3e3e44' },
+  { age: 2, name: 'Camino de tierra', cost: { fiber: 1 }, speed: 1.03, color: '#a8845a' },
+  { age: 5, name: 'Camino empedrado', cost: { stone: 2 }, speed: 1.05, color: '#8f8a82' },
+  { age: 7, name: 'Calle adoquinada', cost: { cut_stone: 1 }, speed: 1.07, color: '#7a746a' },
+  { age: 9, name: 'Carretera asfaltada', cost: { concrete: 1 }, speed: 1.1, color: '#3e3e44' },
 ];
 
 export const roadKey = (ix, iz) => `${ix},${iz}`;

@@ -369,3 +369,7 @@ Desde la Edad III se construye el **Establo** (huecos para 4, 8 y 14 caballos po
 Al domesticarlo, el colono **se sube al caballo y lo lleva montado** hasta su hueco junto al establo (se baja allí; si lo interrumpen, se baja donde esté). Se ve sentado sobre el lomo y el navegador recibe la bandera «montado» (8192).
 
 Los caballos domesticados **se resguardan dentro del establo de noche y cuando llueve** (desaparecen de la vista y siguen ocupando su hueco) y salen al patio de día con buen tiempo.
+
+## Los colonos prefieren los caminos
+
+Si hay un camino que lleve hacia donde van (a menos de 10 m de ellos y de su destino, y que no rodee más de un 30 % + 4 m respecto al trayecto directo), los colonos lo toman (`src/sim/roadpath.js`: A* sobre las casillas de camino) y salen de él para el último tramo. Sin camino, o si rodearía demasiado, van por donde quieran. Ir por camino es más rápido: un **3 %** en el de tierra (5 % empedrado, 7 % adoquinado, 10 % asfaltado).

@@ -26,6 +26,7 @@ import { entranceOf, accessProblem, halfOf, pointInRect, rectsOverlap, circleHit
 import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, ROAD_LEVELS, ROAD_CELL, ROAD_LIFT, autoRoadPath } from './economy.js';
 import { pushSample } from '../interp.js';
 import { decideRun, RUN_FACTOR } from './running.js';
+import { RoadMap, roadRoute } from './roadpath.js';
 import { orderTame, tameProblem, herdOf, affordable, pendingTame, finishTame, serializeTamed, restoreTamed } from './stable.js';
 import { recordDeath, serializeDead, restoreDead, viewDead, urnsAtHome, stenchAt, seesBody, SAW_BODY, SAW_COOLDOWN } from './cemetery.js';
 import { TECHS_BY_ID } from './techs.js';
@@ -218,7 +219,7 @@ export class ColonySim {
     this.defeat = null; // { cause, day } cuando mueren todos
     this.deaths = []; // { name, cause, day }
     this.alertKeys = new Set();
-    this.roads = new Map(); // caminos: casilla -> nivel
+    this.roads = new RoadMap(); // caminos: casilla -> nivel
     this.autoRoads = true; // la aldea traza sola caminos entre sus edificios
     this.autoRoadKeys = new Set(); // casillas hechas por la aldea (gratis; mejoran solas con la edad)
     this.roadsOff = new Set(); // casillas que el jugador quitó: no se vuelven a trazar solas
@@ -661,7 +662,7 @@ export class ColonySim {
     this.defeat = null; // { cause, day } cuando mueren todos
     this.deaths = []; // { name, cause, day }
     this.alertKeys = new Set();
-    this.roads = new Map();
+    this.roads = new RoadMap();
     this.autoRoadKeys = new Set();
     this.roadsOff = new Set();
     this.deposits = [];
@@ -1074,11 +1075,17 @@ export class ColonySim {
   // Devuelve 'arrived', 'moving' o 'stuck'. Un colono es un obstáculo móvil: se rodea, se le cede el paso por una regla
   // estable (quien tiene el número menor pasa; el otro se aparta a su derecha y afloja) y, si algo lo frena de verdad, se
   // prueba apartarse, buscar un hueco, recalcular la ruta y, sólo al final, se da por atascado (la tarea se suspende).
-  walk(c, tx0, tz0, dt, stopDistance = 0.6, direct = false) {
+  walk(c, tx0, tz0, dt, stopDistance = 0.6, direct = false, onRoad = false) {
     // Con muros en medio se va por los portones (ruta por waypoints).
     const wp = this.pathTarget(c, tx0, tz0);
     if (wp && !(wp.x === tx0 && wp.z === tz0)) {
       const r = this.walk(c, wp.x, wp.z, dt, 1.2);
+      return r === 'arrived' ? 'moving' : r;
+    }
+    // Los caminos se prefieren: si hay uno que lleve hacia el destino se va por él (y sólo se sale de él para el último tramo).
+    const rp = direct || onRoad ? null : this.roadTarget(c, tx0, tz0);
+    if (rp) {
+      const r = this.walk(c, rp.x, rp.z, dt, 1.2, false, true);
       return r === 'arrived' ? 'moving' : r;
     }
     // Con un obstáculo (tronco, fogata, edificio) justo en medio se rodea por una ruta planeada.
@@ -1136,6 +1143,7 @@ export class ColonySim {
     if (b > 7 && !c.recalc) {
       c.recalc = true; // recalcular el tramo
       c.path = null;
+      c.rpath = null;
       c.detour = null;
     } else if (b > 3.5 && !c.detour) {
       const spot = this.detourPoint(c, tx0, tz0);
@@ -1179,6 +1187,7 @@ export class ColonySim {
 
   arrive(c) {
     c.walking = false;
+    c.rpath = null;
     c.progress = null;
     c.blocked = 0;
     c.queued = 0;
@@ -2737,6 +2746,25 @@ export class ColonySim {
     return pt;
   }
 
+  // Siguiente punto de la ruta por camino hacia (tx, tz), o null si no hay camino que compense (entonces va por donde quiera). La ruta se
+  // planea una vez por trayecto y se rehace si cambian los caminos o el destino; "none" recuerda que ya se vio que no compensa.
+  roadTarget(c, tx, tz) {
+    if (!this.roads.size) {
+      c.rpath = null;
+      return null;
+    }
+    let p = c.rpath;
+    if (p && (p.rev !== this.roads.rev || Math.hypot(p.tx - tx, p.tz - tz) > 2.5)) p = c.rpath = null;
+    if (!p) {
+      const pts = roadRoute(this.roads, c.x, c.z, tx, tz);
+      p = c.rpath = { rev: this.roads.rev, tx, tz, pts: pts ?? [], i: 0, none: !pts };
+    }
+    if (p.none) return null;
+    while (p.i < p.pts.length && Math.hypot(p.pts[p.i].x - c.x, p.pts[p.i].z - c.z) < 1.4) p.i++;
+    if (p.i >= p.pts.length) return null; // ya salió del camino: último tramo, derecho al destino
+    return p.pts[p.i];
+  }
+
   // ---- Rodear obstáculos (troncos, fogata, atrezo, edificios) ----------------------------------
   // Evitar sólo localmente (moveToward) deja a un colono pegado a un tronco o a un edificio cuando su destino queda justo
   // detrás. Si la línea recta está bloqueada se planea una ruta (A* en celdas de 1 m) que lo rodea.
@@ -3965,7 +3993,7 @@ export class ColonySim {
     // Caminos: pueden venir con un "fast" (visitantes de otra colonia, de vez en cuando) o
     // con el estado completo propio.
     if (s.roads) {
-      this.roads = new Map(s.roads.map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
+      this.roads = new RoadMap(s.roads.map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
       this.emit('roads');
     }
     if (part === 'fast') return;
@@ -4126,7 +4154,7 @@ export class ColonySim {
     this.tradeUsed = Number.isFinite(data.tradeUsed) ? data.tradeUsed : 0;
     this.tradeDay = Number.isFinite(data.tradeDay) ? data.tradeDay : 0;
     this.armyUnpaid = !!data.armyUnpaid;
-    this.roads = new Map((Array.isArray(data.roads) ? data.roads : []).filter((r) => r.length === 3).map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
+    this.roads = new RoadMap((Array.isArray(data.roads) ? data.roads : []).filter((r) => r.length === 3).map(([ix, iz, lv]) => [roadKey(ix, iz), lv]));
     this.primitiveMigrated = !!data.primitiveMigrated;
     this.milestones = new Set(Array.isArray(data.milestones) ? data.milestones.filter((m) => typeof m === 'string') : []);
     this.learned = new Set(Array.isArray(data.learned) ? data.learned.filter((m) => LEARNABLE.concat(['zone_marked', 'food_marked']).includes(m)) : []);
