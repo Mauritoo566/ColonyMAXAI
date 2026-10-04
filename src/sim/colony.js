@@ -522,7 +522,7 @@ export class ColonySim {
   applyMobs(rows) {
     const byId = new Map(this.mobs.map((m) => [m.id, m]));
     const seen = new Set();
-    for (const [id, ti, x, z, facing, state, tame, g] of rows) {
+    for (const [id, ti, x, z, facing, state, tame, g, by] of rows) {
       const type = MOB_TYPES[ti];
       if (!type) continue;
       seen.add(id);
@@ -539,6 +539,7 @@ export class ColonySim {
       m.state = state;
       m.tame = tame ?? 0;
       m.g = g != null && g >= 0 ? g : null;
+      m.by = by != null && by >= 0 ? by : null; // colono que va a domesticarlo
     }
     if (this.mobs.some((m) => !seen.has(m.id))) this.mobs = this.mobs.filter((m) => seen.has(m.id));
   }
@@ -3767,7 +3768,7 @@ export class ColonySim {
   snapshot(part = 'full', { statics = true } = {}) {
     const r2 = (v) => Math.round(v * 100) / 100;
     const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0) | (c.sitting === 'ground' ? 256 : 0) | (c.sitting === 'bench' ? 512 : 0) | (c.running ? 1024 : 0) | (c.carrying === 'body' ? 2048 : 0) | (c.carrying === 'urn' ? 4096 : 0);
-    const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state, m.tamed ? 1 : m.order ? 2 : 0, m.g ?? -1]);
+    const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state, m.tamed ? 1 : m.order ? 2 : 0, m.g ?? -1, m.order?.by ?? -1]);
     if (part === 'fast') {
       // gameTime: la hora de juego de esta colonia, para que quien la mira vea crecer los brotes plantados igual que su dueño.
       const out = { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]), mobs: mobsRows(), gameTime: r2(this.gameTime) };

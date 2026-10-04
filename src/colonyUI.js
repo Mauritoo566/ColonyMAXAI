@@ -580,7 +580,12 @@ export class ColonyUI {
     if (m.type === 'caballo') {
       const apples = Math.floor(this.colony.stock.apple ?? 0);
       if (m.tame === 1) tame = '<section class="cp-section"><h3>Domesticado</h3><p class="reason">Espera en el establo. Todavía no tiene función: se elegirá en la armería (montura de guerra o caballo de carga).</p></section>';
-      else if (m.tame === 2) tame = '<section class="cp-section"><h3>Domesticar</h3><p class="reason">Un colono va a domesticarlo. Las manzanas ya se gastaron del almacén.</p></section>';
+      else if (m.tame === 2) {
+        const who = m.by != null ? this.colony.colonist(m.by) : null;
+        tame = `<section class="cp-section"><h3>Domesticar</h3>
+          <p class="reason">${who ? `Lo va a domesticar <strong>${escapeHtml(who.name)}</strong>.` : 'Esperando a que un colono libre vaya (de día y con lo básico cubierto).'} Las manzanas ya se gastaron del almacén.</p>
+          ${who ? '<button type="button" class="btn" data-tame-who>Ver al colono</button>' : ''}</section>`;
+      }
       else {
         const problem = this.colony.tameProblemOf(m);
         const herd = this.colony.tameableHerd(m).length;
@@ -615,6 +620,10 @@ export class ColonyUI {
       keepScroll(this.panel, () => (this.panel.innerHTML = html));
       this.panel.querySelector('[data-close]').addEventListener('click', () => this.view.selectMob(null));
       this.panel.querySelector('[data-tame]')?.addEventListener('click', () => this.colony.tameHorse(m.id));
+      this.panel.querySelector('[data-tame-who]')?.addEventListener('click', () => {
+        const who = this.colony.colonist(m.by);
+        if (who) this.view.select(who);
+      });
       this.panel.querySelector('[data-tame-herd]')?.addEventListener('click', () => this.colony.tameHerd(m.id));
     }
   }

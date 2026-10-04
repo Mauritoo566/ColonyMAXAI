@@ -97,6 +97,14 @@ assert.equal(TAME_COST, 3);
   const x0 = h.x;
   const z0 = h.z;
   tick(sim, 4);
+  // El navegador sabe qué colono va a domesticarlo (para mostrarlo en la ficha).
+  {
+    const copy = new ColonySim();
+    copy.applyMobs(sim.snapshot('fast').mobs);
+    const seen = copy.mobs.find((m) => m.id === h.id);
+    assert.equal(seen.tame, 2);
+    assert.equal(seen.by, h.order.by);
+  }
   assert.equal(h.x, x0);
   assert.equal(h.z, z0, 'quieto mientras espera al colono');
   let took = false;
