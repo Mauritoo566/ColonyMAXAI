@@ -1577,6 +1577,14 @@ export class ColonySim {
     return Object.values(this.outdoor).reduce((a, b) => a + b, 0);
   }
 
+  // Un almacén lleno detiene a quienes lo llenan: se avisa (una vez cada pocos minutos por bien) en vez de dejarlo sólo en la ficha del edificio.
+  noteStoreFull(kind) {
+    this.fullNotice ??= {};
+    if (this.gameTime - (this.fullNotice[kind] ?? -1e9) < 300) return;
+    this.fullNotice[kind] = this.gameTime;
+    this.emit('notice', `El almacén está lleno de ${GOOD_NAMES[kind] ?? kind}: quienes lo producen se detienen. Construye o mejora un almacén (Almacenes) o dibuja una zona de acopio al aire libre.`);
+  }
+
   isFull(kind) {
     return this.indoor(kind) >= this.capacity(kind) && this.outdoorUsed() >= this.outdoorCapacity();
   }
@@ -1707,6 +1715,32 @@ export class ColonySim {
     this.emit('zones');
     this.emit('changed');
     return null;
+  }
+
+  // Un camino es un camino: nunca queda debajo de un edificio. Al construir, mover o cargar se quitan las casillas de camino que pisa la huella
+  // de un edificio (los adornos pequeños, como las antorchas, no cuentan). No se vuelven a trazar solas ahí.
+  pruneRoadsUnderBuildings() {
+    if (this.remote || !this.roads.size) return;
+    let n = 0;
+    for (const key of [...this.roads.keys()]) {
+      const [ix, iz] = key.split(',').map(Number);
+      const x = ix * ROAD_CELL;
+      const z = iz * ROAD_CELL;
+      for (const o of this.obstacles) {
+        if (o.kind !== 'building' || o.line || o.small) continue;
+        const half = (Math.max(1, Math.round((o.r * 2) / ROAD_CELL)) * ROAD_CELL) / 2;
+        if (Math.abs(x - o.x) < half + ROAD_CELL / 2 - 1e-6 && Math.abs(z - o.z) < half + ROAD_CELL / 2 - 1e-6) {
+          this.roads.delete(key);
+          this.autoRoadKeys.delete(key);
+          n++;
+          break;
+        }
+      }
+    }
+    if (n) {
+      this.staticsRevision++;
+      this.emit('roads');
+    }
   }
 
   // Quita los caminos que pisan la zona de acopio (no se vuelven a trazar solos ahí).
@@ -3355,6 +3389,7 @@ export class ColonySim {
       // (los objetos del centro tampoco aparecen sobre la entrada de un edificio)
       ...centerProps(this.age, [...this.buildings.map((b) => ({ x: b.x, z: b.z, r: b.def.footprint })), ...this.buildings.filter((b) => b.entrance).map((b) => ({ x: (b.entrance.zone.x0 + b.entrance.zone.x1) / 2, z: (b.entrance.zone.z0 + b.entrance.zone.z1) / 2, r: 2.4 }))]).map((p) => ({ x: p.x, z: p.z, r: p.r, kind: 'prop' })),
     ];
+    this.pruneRoadsUnderBuildings();
     this.computeAccessIssues();
   }
 

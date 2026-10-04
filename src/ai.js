@@ -921,6 +921,7 @@ function runWork(colony, c, task, dt, env) {
     task.noResource = true;
     task.storeFull = true;
     b.status = `El almacén está lleno de ${STOCK_NAMES[def.stock]}: construye o mejora almacenes`;
+    colony.noteStoreFull(def.stock);
     return 'done';
   }
   if (def.kind) return runStation(colony, c, task, dt, env);

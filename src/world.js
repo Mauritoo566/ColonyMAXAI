@@ -7,7 +7,7 @@ import { ageInfo } from './ages.js';
 import { ColonySim } from './sim/colony.js';
 import { ColonyView } from './colonists.js';
 import { WeatherState } from './sim/weather.js';
-import { roadMaterials, buildRoadGeometry, roadTerminals } from './roadMesh.js';
+import { roadMaterials, buildRoadGeometry, roadTerminals, footprintBlockers } from './roadMesh.js';
 import { BUILDINGS } from './sim/buildingTypes.js';
 import { ROAD_LEVELS } from './sim/economy.js';
 import { generateCampGrove, tileFromItems } from './resourceGen.js';
@@ -106,6 +106,7 @@ export class OtherCamps {
       entry.buildingsKey = buildingsKey;
       this.buildBuildings(entry, list);
       entry.terminals = roadTerminals(list.filter((b) => BUILDINGS[b.t]).map((b) => ({ def: BUILDINGS[b.t], x: b.x, z: b.z, yaw: b.yaw })));
+      entry.blockers = footprintBlockers(list.filter((b) => BUILDINGS[b.t]).map((b) => ({ def: BUILDINGS[b.t], x: b.x, z: b.z })));
       entry.roadsDirty = true;
     }
   }
@@ -222,7 +223,7 @@ export class OtherCamps {
           entry.roadsDirty = false;
           entry.roadMeshes.forEach((mesh, k) => {
             mesh.geometry.dispose();
-            mesh.geometry = buildRoadGeometry(entry.sim.roads, k + 1, (x, z) => entry.sim.heightAt(x, z) - entry.height, entry.terminals);
+            mesh.geometry = buildRoadGeometry(entry.sim.roads, k + 1, (x, z) => entry.sim.heightAt(x, z) - entry.height, entry.terminals, entry.blockers);
           });
         }
       } else entry.view.hideLabels();

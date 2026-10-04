@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { pickSurface } from './camp.js';
 import { ROAD_CELL, ROAD_LEVELS, roadCellOf, roadCellProblem } from './sim/economy.js';
-import { roadMaterials, buildRoadGeometry, roadTerminals } from './roadMesh.js';
+import { roadMaterials, buildRoadGeometry, roadTerminals, footprintBlockers } from './roadMesh.js';
 
 // Caminos: casillas de 4 m sobre el terreno del campamento (sim/economy.js). Aquí se dibujan
 // (una malla por nivel) y está la herramienta para pintarlos arrastrando el puntero.
@@ -173,9 +173,10 @@ export class RoadSystem {
     this.dirty = false;
     const base = camp.height;
     const terminals = roadTerminals(this.colony.buildings);
+    const blockers = footprintBlockers(this.colony.buildings);
     this.meshes.forEach((mesh, k) => {
       mesh.geometry.dispose();
-      mesh.geometry = buildRoadGeometry(this.colony.roads, k + 1, (x, z) => this.colony.heightAt(x, z) - base, terminals);
+      mesh.geometry = buildRoadGeometry(this.colony.roads, k + 1, (x, z) => this.colony.heightAt(x, z) - base, terminals, blockers);
       mesh.renderOrder = 2;
     });
   }

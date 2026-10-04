@@ -96,30 +96,80 @@ export const GLASS = '#5a7f9a';
 
 // ---- Primitivas -----------------------------------------------------------------------------------
 
-export const box = (p, w, h, d, color, x, y, z, ry = 0, rx = 0, rz = 0) => p.add(new THREE.BoxGeometry(w, h, d), color, mat(x, y, z, rx, ry, rz));
+// Las cajas altas llevan varias divisiones en vertical: así el degradado de color del pie de los muros (modelPolish.js) es suave y no se corta en diagonal.
+export const box = (p, w, h, d, color, x, y, z, ry = 0, rx = 0, rz = 0) => p.add(new THREE.BoxGeometry(w, h, d, 1, Math.max(1, Math.round(h / 0.45)), 1), color, mat(x, y, z, rx, ry, rz));
 export const cyl = (p, rt, rb, h, color, x, y, z, seg = 10) => p.add(new THREE.CylinderGeometry(rt, rb, h, seg), color, mat(x, y, z));
 export const cone = (p, r, h, color, x, y, z, seg = 10) => p.add(new THREE.ConeGeometry(r, h, seg), color, mat(x, y, z));
 export const dome = (p, r, color, x, y, z, sy = 1) => p.add(new THREE.SphereGeometry(r, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), color, mat(x, y, z, 0, 0, 0, 1, sy, 1));
 export const rock = (p, r, color, x, y, z, sy = 0.8) => p.add(new THREE.DodecahedronGeometry(r, 0), color, mat(x, y, z, x, z, 0, 1, sy, 1));
 
-// Tejado a dos aguas con la cumbrera a lo largo de z: w = ancho, d = largo, h = altura de la cumbrera.
+// Un color más claro (k > 1) o más oscuro (k < 1).
+export function tone(color, k) {
+  const c = new THREE.Color(color);
+  return `#${c.multiplyScalar(k).getHexString()}`;
+}
+
+// Tejado a dos aguas con la cumbrera a lo largo de z: w = ancho, d = largo, h = altura de la cumbrera. Lleva hileras de tejas que siguen la
+// pendiente (alternando tono), una cumbrera redondeada y tablas en los bordes de los hastiales.
 export function gable(p, w, d, h, color, y, wallColor, ox = 0, oz = 0) {
   const s = Math.hypot(w / 2, h) + 0.2;
   const a = Math.atan2(h, w / 2);
   box(p, s, 0.16, d + 0.35, color, ox + w / 4, y + h / 2, oz, 0, 0, -a);
   box(p, s, 0.16, d + 0.35, color, ox - w / 4, y + h / 2, oz, 0, 0, a);
+  // Hileras de tejas (tiras finas sobre cada faldón).
+  const rows = Math.max(3, Math.floor(s / 0.36));
+  for (const side of [1, -1]) {
+    const rz = side > 0 ? -a : a;
+    const cx = ox + (side * w) / 4;
+    const cy = y + h / 2;
+    for (let i = 0; i < rows; i++) {
+      const lx = -s / 2 + 0.2 + (i * (s - 0.4)) / (rows - 1);
+      const ly = 0.105;
+      const dx = lx * Math.cos(rz) - ly * Math.sin(rz);
+      const dy = lx * Math.sin(rz) + ly * Math.cos(rz);
+      p.add(new THREE.BoxGeometry(0.1, 0.05, d + 0.3), i % 2 ? tone(color, 0.86) : tone(color, 1.1), mat(cx + dx, cy + dy, oz, 0, 0, rz));
+    }
+    // Tabla del borde (hastial) a cada extremo.
+    for (const zz of [d / 2 + 0.18, -d / 2 - 0.18]) p.add(new THREE.BoxGeometry(s, 0.2, 0.07), tone(color, 0.7), mat(cx, cy - 0.04, oz + zz, 0, 0, rz));
+  }
+  // Cumbrera redondeada a lo largo del caballete.
+  p.add(new THREE.CylinderGeometry(0.11, 0.11, d + 0.42, 6), tone(color, 0.8), mat(ox, y + h + 0.02, oz, Math.PI / 2, 0, 0));
   if (wallColor) {
     for (const z of [d / 2, -d / 2]) p.add(triangle(v(ox - w / 2, y, oz + z), v(ox + w / 2, y, oz + z), v(ox, y + h, oz + z)), wallColor);
   }
 }
 
-export const door = (p, x, y, z, w = 0.8, h = 1.5) => box(p, w, h, 0.12, DARK, x, y + h / 2, z);
-export const window_ = (p, x, y, z, c = DARK, w = 0.5, h = 0.5) => box(p, w, h, 0.1, c, x, y, z);
+// Puerta: la hoja oscura con tablas, jambas y dintel de madera, un tirador y un escalón.
+export function door(p, x, y, z, w = 0.8, h = 1.5) {
+  box(p, w, h, 0.12, DARK, x, y + h / 2, z);
+  box(p, 0.04, h - 0.1, 0.03, '#3a2a1c', x - w * 0.22, y + h / 2, z + 0.07);
+  box(p, 0.04, h - 0.1, 0.03, '#3a2a1c', x + w * 0.22, y + h / 2, z + 0.07);
+  for (const s of [-1, 1]) box(p, 0.09, h + 0.12, 0.17, '#6b4a2e', x + s * (w / 2 + 0.045), y + (h + 0.12) / 2, z + 0.02);
+  box(p, w + 0.28, 0.12, 0.2, '#6b4a2e', x, y + h + 0.06, z + 0.03);
+  box(p, w + 0.3, 0.08, 0.32, '#8f8a82', x, y + 0.04, z + 0.2);
+  box(p, 0.06, 0.06, 0.06, '#d8c9a0', x + w * 0.3, y + h * 0.5, z + 0.09);
+}
+
+// Ventana: el cristal con marco claro, dintel, alféizar y una cruz de maineles.
+export function window_(p, x, y, z, c = DARK, w = 0.5, h = 0.5) {
+  box(p, w, h, 0.1, c, x, y, z);
+  const f = '#e6dcc4';
+  const t = 0.05;
+  box(p, w + 0.16, t, 0.15, f, x, y + h / 2 + t / 2, z + 0.02);
+  box(p, w + 0.22, t + 0.02, 0.22, f, x, y - h / 2 - t / 2, z + 0.06);
+  for (const s of [-1, 1]) box(p, t, h, 0.14, f, x + s * (w / 2 + t / 2), y, z + 0.02);
+  box(p, 0.03, h, 0.12, f, x, y, z + 0.03);
+  box(p, w, 0.03, 0.12, f, x, y, z + 0.03);
+}
 
 // Chimenea con su boca oscura.
 export function chimney(p, x, y, z, h, color = '#8a8478', w = 0.45) {
   box(p, w, h, w, color, x, y + h / 2, z);
-  box(p, w * 1.2, 0.08, w * 1.2, '#3a3a3a', x, y + h, z);
+  // Hiladas de ladrillo a media altura, remate más ancho y la boca oscura con un tizne.
+  box(p, w + 0.04, 0.04, w + 0.04, tone(color, 0.8), x, y + h * 0.35, z);
+  box(p, w + 0.04, 0.04, w + 0.04, tone(color, 0.8), x, y + h * 0.65, z);
+  box(p, w * 1.4, 0.1, w * 1.4, tone(color, 0.9), x, y + h + 0.02, z);
+  box(p, w * 0.8, 0.04, w * 0.8, '#1e1a18', x, y + h + 0.09, z);
 }
 
 // Hileras de vigas vistas sobre un muro (entramado).

@@ -384,7 +384,7 @@ export function roadCellProblem(colony, ix, iz) {
   for (const o of colony.obstacles) {
     if (o.kind === 'building' && !o.line) {
       // Un edificio ocupa casillas enteras: el camino sólo choca si pisa alguna, pegado al lado no.
-      const half = (Math.max(1, Math.round((o.r * 2) / ROAD_CELL)) * ROAD_CELL) / 2;
+      const half = o.small ? o.r : (Math.max(1, Math.round((o.r * 2) / ROAD_CELL)) * ROAD_CELL) / 2;
       if (Math.abs(x - o.x) < half + ROAD_CELL / 2 - 1e-6 && Math.abs(z - o.z) < half + ROAD_CELL / 2 - 1e-6) return 'Hay algo encima';
     } else if (Math.hypot(x - o.x, z - o.z) < o.r + (o.kind === 'tent' ? 0 : 2.2)) return 'Hay algo encima';
   }

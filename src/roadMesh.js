@@ -301,7 +301,18 @@ function resample(points) {
 
 // Construye la geometría de un nivel. heightAt(x, z) da la altura del suelo en el campamento; terminals (opcional)
 // son las casillas que dan a una puerta (ver roadTerminals), para que el camino llegue hasta ella.
-export function buildRoadGeometry(roads, level, heightAt, terminals = new Map()) {
+// Las huellas de los edificios (rectángulos) donde la cinta no se dibuja nunca. buildings: [{ def, x, z }]. Los adornos pequeños no cuentan.
+export function footprintBlockers(buildings) {
+  const out = [];
+  for (const b of buildings) {
+    if (!b.def || b.def.line || b.def.small) continue;
+    const r = footprintRect(b.def, b.x, b.z);
+    if (r) out.push(r);
+  }
+  return out;
+}
+
+export function buildRoadGeometry(roads, level, heightAt, terminals = new Map(), blockers = []) {
   const edges = edgesOf(roads, terminals);
   const virtual = new Set();
   for (const e of edges.values()) {
@@ -336,6 +347,11 @@ export function buildRoadGeometry(roads, level, heightAt, terminals = new Map())
       const lz = z + tx * half;
       const rx = x + tz * half;
       const rz = z - tx * half;
+      // Dentro de la huella de un edificio no hay camino: el tramo se corta ahí (y se retoma al salir).
+      if (blockers.some((r) => x > r.x0 + 0.05 && x < r.x1 - 0.05 && z > r.z0 + 0.05 && z < r.z1 - 0.05)) {
+        prev = null;
+        continue;
+      }
       const base = pos.length / 3;
       // Tres filas (borde, eje, borde): la cinta sigue las lomas y hondonadas del terreno.
       pos.push(lx, heightAt(lx, lz) + LIFT, lz, x, heightAt(x, z) + LIFT, z, rx, heightAt(rx, rz) + LIFT, rz);

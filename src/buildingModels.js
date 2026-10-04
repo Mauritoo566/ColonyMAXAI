@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { Parts, mat, stick, v } from './modelKit.js';
-import { BUILDINGS } from './sim/buildingTypes.js';
+import { BUILDINGS, BUILDING_TYPES } from './sim/buildingTypes.js';
 import { generate } from './buildingModelsGen.js';
 import { modelVariant } from './modelParts.js';
+import { polish } from './modelPolish.js';
 
 export { modelVariant };
 
@@ -120,6 +121,24 @@ function gathererModel1(p) {
     }
   }
   for (let k = 0; k < 6; k++) stick(p, v(-2.4 + k * 0.08, 0, 1.2), v(-2.1 + k * 0.1, 0.9, 1.5 - k * 0.05), 0.03, '#c9b36a', 3);
+  // Tendedero: dos horquetas con una vara de la que cuelgan hierbas, setas y raíces.
+  stick(p, v(-2.3, 0, -0.6), v(-2.3, 1.7, -0.6), 0.05, '#5a3a22', 4);
+  stick(p, v(-2.3, 0, 0.7), v(-2.3, 1.7, 0.7), 0.05, '#5a3a22', 4);
+  stick(p, v(-2.3, 1.65, -0.7), v(-2.3, 1.65, 0.8), 0.04, '#7a5230', 4);
+  for (let k = 0; k < 6; k++) {
+    const z = -0.5 + k * 0.22;
+    stick(p, v(-2.3, 1.62, z), v(-2.3, 1.1 - (k % 3) * 0.12, z), 0.012, '#c8b48a', 3);
+    p.add(new THREE.ConeGeometry(0.07, 0.28, 5), k % 2 ? '#7f9a46' : '#a89a4a', mat(-2.3, 1.0 - (k % 3) * 0.12, z, Math.PI, 0, 0));
+  }
+  // Un tronco para sentarse, un saco y un fardo de leña fina.
+  stick(p, v(0.9, 0.18, 1.9), v(1.9, 0.18, 1.9), 0.18, '#7a5230', 6);
+  p.add(new THREE.SphereGeometry(0.3, 7, 5), '#d8c9a0', mat(-1.2, 0.2, 2.0, 0, 0, 0, 1, 0.8, 0.9));
+  for (let k = 0; k < 7; k++) stick(p, v(2.2 + k * 0.04, 0.12, -1.8 + k * 0.07), v(3.0 + k * 0.03, 0.2, -1.7 + k * 0.07), 0.04, '#7a5a34', 3);
+  // Matas de arbusto con bayas junto a los postes.
+  for (const [x, z] of [[-1.9, 1.7], [1.9, -1.7], [2.2, 1.9]]) {
+    p.add(new THREE.IcosahedronGeometry(0.34, 0), '#4f7a30', mat(x, 0.3, z, 0, 0, 0, 1, 0.8, 1));
+    for (let k = 0; k < 3; k++) p.add(new THREE.IcosahedronGeometry(0.07, 0), '#b8283a', mat(x + (k - 1) * 0.16, 0.5, z + 0.18));
+  }
 }
 
 // Zona de tala: un tocón con un hacha de piedra clavada, troncos y astillas.
@@ -140,6 +159,20 @@ function woodcutterModel1(p) {
   stick(p, v(-1.6, 0, -1.2), v(-1.2, 1.5, -0.6), 0.05, '#5a3a22', 4);
   stick(p, v(-2.2, 0, -0.2), v(-1.2, 1.5, -0.6), 0.05, '#5a3a22', 4);
   stick(p, v(-1.8, 0, 0.6), v(-1.2, 1.5, -0.6), 0.05, '#5a3a22', 4);
+  // Caballete para serrar con un tronco a medio cortar y un hacha apoyada.
+  stick(p, v(-0.2, 0, 1.4), v(0.3, 0.8, 1.4), 0.06, '#6b4a2e', 4);
+  stick(p, v(0.8, 0, 1.4), v(0.3, 0.8, 1.4), 0.06, '#6b4a2e', 4);
+  stick(p, v(-0.2, 0, 2.0), v(0.3, 0.8, 2.0), 0.06, '#6b4a2e', 4);
+  stick(p, v(0.8, 0, 2.0), v(0.3, 0.8, 2.0), 0.06, '#6b4a2e', 4);
+  stick(p, v(-0.6, 0.86, 1.7), v(1.2, 0.86, 1.7), 0.17, '#7a5230', 6);
+  stick(p, v(2.4, 0.0, 1.0), v(2.6, 0.9, 1.1), 0.04, '#9a7446', 4);
+  p.add(new THREE.DodecahedronGeometry(0.13, 0), '#6d6a64', mat(2.62, 0.95, 1.1, 0, 0, 0, 1.3, 0.7, 0.6));
+  // Un segundo tocón más bajo y un montoncito de ramas leñosas.
+  p.add(new THREE.CylinderGeometry(0.38, 0.48, 0.45, 7), '#6b4a2e', mat(-1.2, 0.22, 1.5));
+  p.add(new THREE.CylinderGeometry(0.34, 0.34, 0.04, 7), '#c9a26a', mat(-1.2, 0.46, 1.5));
+  for (let k = 0; k < 6; k++) stick(p, v(-2.2, 0.1 + (k % 3) * 0.1, 1.8 + k * 0.06), v(-1.5, 0.12 + (k % 3) * 0.1, 2.0 + k * 0.05), 0.05, '#7a5a34', 3);
+  // Piel tensada sobre el cobertizo de ramas.
+  p.add(new THREE.ConeGeometry(0.95, 1.5, 4, 1, true), '#a0764a', mat(-1.75, 0.85, -0.3, 0, 0.6, 0));
 }
 
 // Pedrera: piedras sin labrar amontonadas, un percutor y una piel para sentarse.
@@ -157,6 +190,15 @@ function quarryModel1(p) {
     const a = k * 2.1;
     p.add(new THREE.TetrahedronGeometry(0.1, 0), '#a8a39a', mat(0.4 + Math.cos(a) * 0.6, 0.05, 0.6 + Math.sin(a) * 0.6, a, a, 0));
   }
+  // Una losa a medio labrar sobre rodillos de madera, con su cuña.
+  p.add(new THREE.BoxGeometry(1.5, 0.28, 0.9), '#a39e94', mat(-0.2, 0.48, -1.7, 0, 0.2, 0));
+  for (const x of [-0.7, 0.1]) stick(p, v(x, 0.17, -2.3), v(x, 0.17, -1.1), 0.1, '#7a5230', 5);
+  p.add(new THREE.BoxGeometry(0.35, 0.05, 0.12), '#6d6a64', mat(0.5, 0.64, -1.5, 0, 0.4, 0));
+  // Un percutor de asta y una jarra con agua.
+  stick(p, v(1.8, 0.05, 1.0), v(2.3, 0.35, 1.2), 0.05, '#c9b48a', 4);
+  p.add(new THREE.CylinderGeometry(0.2, 0.15, 0.4, 8), '#a8583a', mat(2.0, 0.2, -0.8));
+  // Un hito de piedras apiladas.
+  for (let k = 0; k < 4; k++) p.add(new THREE.DodecahedronGeometry(0.3 - k * 0.05, 0), k % 2 ? '#8f8a82' : '#7d786f', mat(-2.1, 0.22 + k * 0.28, 1.2, k, k, 0, 1, 0.7, 1));
 }
 
 // Recolector de lluvia: cuatro palos con una piel tensada que desagua en vasijas.
@@ -172,6 +214,16 @@ function wellModel1(p) {
   p.add(new THREE.CircleGeometry(0.17, 8), '#2a4a66', mat(0, 0.665, 0, -Math.PI / 2));
   p.add(new THREE.CylinderGeometry(0.24, 0.18, 0.42, 8), '#b8683a', mat(0.7, 0.21, 0.5));
   p.add(new THREE.CylinderGeometry(0.2, 0.16, 0.34, 8), '#98482a', mat(-0.65, 0.17, 0.55));
+  // Piedras alrededor de la base y un cucharón con su jarra.
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2;
+    p.add(new THREE.DodecahedronGeometry(0.2, 0), k % 2 ? '#8b877f' : '#9a958c', mat(Math.cos(a) * 1.15, 0.12, Math.sin(a) * 1.15, a, a, 0, 1, 0.7, 1));
+  }
+  stick(p, v(0.9, 0.55, 0.95), v(1.5, 0.9, 1.1), 0.03, '#9a7446', 3);
+  p.add(new THREE.CylinderGeometry(0.1, 0.07, 0.1, 6), '#7a5230', mat(1.55, 0.92, 1.12));
+  p.add(new THREE.CylinderGeometry(0.2, 0.14, 0.36, 8), '#a8583a', mat(1.5, 0.18, 0.8));
+  // Cuerdas que tensan la piel hacia el suelo.
+  for (const [x, z] of [[-1.2, -1.0], [1.2, -1.0]]) stick(p, v(x * 1.1, 1.5, z * 1.1), v(x * 1.5, 0.05, z * 1.5), 0.012, '#c8b48a', 3);
 }
 
 // Antorcha: un palo hundido en el suelo con piedras en la base y la punta envuelta en trapos y resina. La llama no es parte del modelo:
@@ -203,6 +255,18 @@ function stockpileModel1(p) {
   for (let k = 0; k < 6; k++) p.add(new THREE.DodecahedronGeometry(0.26, 0), k % 2 ? '#8f8a82' : '#7d786f', mat(-1.6 + (k % 3) * 0.45, 0.2 + Math.floor(k / 3) * 0.3, 1.2, k, k, 0));
   p.add(new THREE.BoxGeometry(1.6, 0.05, 1.3), '#a0764a', mat(-0.8, 1.42, -1.2, 0.1, 0, 0.06));
   stick(p, v(-1.4, 0, 0.2), v(-1.3, 1.2, 0.1), 0.05, '#5a3a22', 4);
+  // Un corralito de ramas entrelazadas alrededor de las cestas.
+  for (let k = 0; k < 7; k++) {
+    const x = 0.6 + k * 0.42;
+    stick(p, v(x, 0, 1.45), v(x, 0.7, 1.45), 0.04, '#6b4a2e', 4);
+  }
+  stick(p, v(0.6, 0.35, 1.45), v(3.0, 0.35, 1.45), 0.03, '#a07a4a', 3);
+  stick(p, v(0.6, 0.6, 1.45), v(3.0, 0.6, 1.45), 0.03, '#a07a4a', 3);
+  // Una piel puesta a secar en dos palos y un par de sacos de grano.
+  stick(p, v(-2.1, 0, -0.2), v(-2.1, 1.7, -0.2), 0.05, '#5a3a22', 4);
+  stick(p, v(-2.1, 0, 0.9), v(-2.1, 1.7, 0.9), 0.05, '#5a3a22', 4);
+  p.add(new THREE.BoxGeometry(0.06, 1.0, 1.0), '#a0764a', mat(-2.1, 1.2, 0.35));
+  for (const [x, z] of [[1.9, 0.9], [2.4, 0.5]]) p.add(new THREE.SphereGeometry(0.3, 7, 5), '#d8c9a0', mat(x, 0.22, z, 0, 0, 0, 1, 0.85, 0.9));
 }
 
 // Granero: choza sobre pilotes con techo de paja y escalera.
@@ -239,6 +303,22 @@ function houseModel1(p) {
   for (const x of [-0.7, 0.7]) stick(p, v(x, 0, 1.95), v(x * 0.9, 1.6, 1.8), 0.06, '#5a3a22', 4);
   p.add(new THREE.DodecahedronGeometry(0.28, 0), '#8f8a82', mat(1.6, 0.2, 1.8));
   p.add(new THREE.DodecahedronGeometry(0.22, 0), '#7d786f', mat(-1.7, 0.15, 1.6));
+  // Los palos asoman por arriba, atados, con el agujero del humo.
+  for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + 0.4;
+    stick(p, v(Math.cos(a) * 0.1, 3.5, Math.sin(a) * 0.1), v(Math.cos(a) * 0.35, 4.5, Math.sin(a) * 0.35), 0.05, '#5a3a22', 4);
+  }
+  p.add(new THREE.TorusGeometry(0.22, 0.04, 4, 8), '#c8b48a', mat(0, 3.7, 0, Math.PI / 2, 0, 0));
+  // Cortina de piel en la puerta y un tronco para sentarse.
+  p.add(new THREE.BoxGeometry(0.95, 1.25, 0.05), '#a0764a', mat(0.05, 1.05, 1.95, 0, 0.1, 0.04));
+  stick(p, v(-1.4, 0.16, 2.6), v(-0.2, 0.16, 2.6), 0.17, '#7a5230', 6);
+  // Hoguera de piedras con las cenizas, y una brazada de leña.
+  for (let k = 0; k < 7; k++) {
+    const a = (k / 7) * Math.PI * 2;
+    p.add(new THREE.DodecahedronGeometry(0.15, 0), '#8f8a82', mat(1.9 + Math.cos(a) * 0.4, 0.1, 2.5 + Math.sin(a) * 0.4, a, a, 0, 1, 0.7, 1));
+  }
+  p.add(new THREE.CylinderGeometry(0.3, 0.3, 0.03, 8), '#3a3430', mat(1.9, 0.03, 2.5));
+  for (let k = 0; k < 5; k++) stick(p, v(-2.4, 0.1 + (k % 2) * 0.12, 1.2 + k * 0.1), v(-1.9, 0.14 + (k % 2) * 0.12, 1.4 + k * 0.08), 0.05, '#7a5a34', 3);
 }
 
 // Casa de barro: paredes redondas de barro, techo de paja, puerta de tablas y una ventana.
@@ -256,6 +336,22 @@ function houseModel2(p) {
   p.add(new THREE.BoxGeometry(0.4, 0.4, 0.12), '#1f1812', mat(1.15, 1.8, 1.35, 0, 0.7, 0));
   p.add(new THREE.CylinderGeometry(0.22, 0.2, 0.5, 8), '#a8583a', mat(-1.3, 0.37, 1.7));
   p.add(new THREE.CylinderGeometry(0.2, 0.22, 0.4, 8), '#b8683a', mat(1.5, 0.32, 1.6));
+  // Postigos de madera a los lados de la ventana y una piedra de umbral.
+  for (const s of [-1, 1]) p.add(new THREE.BoxGeometry(0.16, 0.5, 0.05), '#6b4a2e', mat(1.15 + s * 0.3, 1.8, 1.43, 0, 0.7, 0));
+  p.add(new THREE.BoxGeometry(1.1, 0.12, 0.5), '#8f8a82', mat(0, 0.06, 2.1));
+  // Flecos de paja colgando del alero.
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    p.add(new THREE.ConeGeometry(0.1, 0.38, 4), k % 2 ? '#b08c46' : '#c9a45a', mat(Math.cos(a) * 2.05, 2.95, Math.sin(a) * 2.05, Math.PI, 0, 0));
+  }
+  // Parches de barro más claro y una huerta con brotes.
+  for (let k = 0; k < 5; k++) {
+    const a = k * 1.7 + 0.5;
+    p.add(new THREE.BoxGeometry(0.5, 0.4, 0.04), '#c79a6c', mat(Math.cos(a) * 1.82, 1.2 + (k % 3) * 0.4, Math.sin(a) * 1.82, 0, -a + Math.PI / 2, 0));
+  }
+  p.add(new THREE.BoxGeometry(1.4, 0.1, 0.9), '#6b5436', mat(-2.1, 0.05, -0.6, 0, 0.3, 0));
+  for (let k = 0; k < 6; k++) p.add(new THREE.ConeGeometry(0.07, 0.26, 4), '#5a8a38', mat(-2.5 + (k % 3) * 0.4, 0.22, -0.95 + Math.floor(k / 3) * 0.5, 0, 0, 0));
+  for (let k = 0; k < 5; k++) stick(p, v(2.3, 0.1 + (k % 2) * 0.12, -0.4 + k * 0.1), v(2.9, 0.14 + (k % 2) * 0.12, -0.2 + k * 0.08), 0.05, '#7a5a34', 3);
 }
 
 // Andamio de obra: base de tablones y cuatro postes.
@@ -282,6 +378,46 @@ export function buildMesh(fn, ...args) {
 
 const MODELS = { torchModel1, gathererModel2, woodcutterModel2, quarryModel2, wellModel2, gathererModel1, woodcutterModel1, quarryModel1, wellModel1, stockpileModel1, stockpileModel2, houseModel1, houseModel2 };
 
+// Los edificios que reservan 2×2 casillas (8×8 m) tienen modelos pensados para una sola: se agrandan para llenar el espacio que ocupan de
+// verdad (así lo que se ve coincide con lo que se reserva y cada edificio gana presencia). Los de una casilla no cambian.
+const FILL_EXTENT = 6.6; // metros de lado que alcanza un modelo de 2×2 casillas
+const MAX_GROW = 1.6;
+let fillByModel = null;
+function fillOf(model) {
+  if (!fillByModel) {
+    fillByModel = new Map();
+    for (const d of BUILDING_TYPES) {
+      if (d.line || d.small) continue;
+      const cells = Math.max(1, Math.round((d.footprint * 2) / 4));
+      for (const lv of d.levels) if (cells >= 2) fillByModel.set(lv.model, FILL_EXTENT);
+    }
+  }
+  return fillByModel.get(model) ?? 0;
+}
+
+// Un modelo de edificio: se arman sus piezas, se agranda si ocupa 2×2 casillas y se pulen (tonos, sombra del pie, falda de tierra; ver modelPolish.js).
+function buildBuilding(fn, skirt = true, fill = 0) {
+  const parts = new Parts();
+  fn(parts);
+  if (fill > 0) {
+    const box = new THREE.Box3();
+    for (const g of parts.list) {
+      g.computeBoundingBox();
+      box.union(g.boundingBox);
+    }
+    const extent = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+    if (extent > 0 && extent < fill * 0.93) {
+      const k = Math.min(MAX_GROW, fill / extent);
+      for (const g of parts.list) g.scale(k, k, k);
+    }
+  }
+  polish(parts, { skirt });
+  const mesh = parts.mesh(material);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
 // Los modelos se arman una sola vez por nombre y variante y se comparten: dibujar cien casas iguales reutiliza la
 // misma geometría (y el mismo material). Por eso no se libera la geometría de un modelo al quitarlo: releaseModel.
 const geometryCache = new Map();
@@ -301,8 +437,9 @@ function cached(key, make) {
 
 // Malla del modelo de un nivel (por su nombre en sim/buildingTypes.js). variant: ver modelVariant (0 = la base).
 export function levelModel(name, variant = 0) {
-  if (name.startsWith('gen:')) return cached(`${name}|${variant}`, () => buildMesh((p) => generate(p, name, variant)));
-  return cached(name, () => buildMesh(MODELS[name]));
+  const skirt = !/^gen:(wall|gate|pole|tower)/.test(name);
+  if (name.startsWith('gen:')) return cached(`${name}|${variant}`, () => buildBuilding((p) => generate(p, name, variant), skirt, fillOf(name)));
+  return cached(name, () => buildBuilding(MODELS[name], true, fillOf(name)));
 }
 
 export function frameMesh(footprint) {

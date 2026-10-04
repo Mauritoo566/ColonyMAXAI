@@ -81,6 +81,9 @@ function setup(manual) {
   assert.ok(sim.isFull('food'));
   const next = chooseTask(sim, worker, env);
   assert.equal(next?.type, 'build', `con el almacén lleno sigue con otro trabajo (eligió ${next?.type})`);
+  // Y se avisa en pantalla de que el almacén lleno detiene la producción (una sola vez, no a cada intento).
+  const avisos = [];
+  sim.on('notice', (t) => avisos.push(t));
   // Si ya estaba en la tarea cuando se llenó, la termina enseguida (no espera 20 s parado).
   worker.task = { type: 'work', building: gatherer, phase: 'start' };
   let r = 'running';
@@ -91,6 +94,11 @@ function setup(manual) {
   }
   assert.equal(r, 'done');
   assert.ok(t < 1, `termina al instante (${t.toFixed(1)} s)`);
+  assert.equal(avisos.filter((a) => /almacén está lleno de comida/i.test(a)).length, 1, 'avisa una vez de que el almacén lleno detiene la producción');
+  worker.task = { type: 'work', building: gatherer, phase: 'start' };
+  sim.buildCrowd();
+  runTask(sim, worker, worker.task, 0.1, env);
+  assert.equal(avisos.filter((a) => /almacén está lleno de comida/i.test(a)).length, 1, 'no se repite enseguida');
   // En cuanto hay sitio, vuelve.
   sim.stock.food = 0;
   assert.equal(chooseTask(sim, worker, env)?.type, 'work', 'vuelve a su puesto cuando hay sitio');
