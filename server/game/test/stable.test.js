@@ -274,4 +274,37 @@ assert.equal(TAME_COST, 3);
   assert.equal(wildHorses(sim), 0);
 }
 
+// 9) De noche y con lluvia el caballo se resguarda dentro del establo (no se ve y el navegador lo sabe); de día y con buen tiempo sale al patio.
+{
+  const sim = colony();
+  const b = stable(sim);
+  sim.stock.apple = 3;
+  const h = horse(sim, 24, 26);
+  sim.tameHorse(h.id);
+  for (let t = 0; t < 300 && !(h.tamed && h.rider == null && !sim.colonists.some((c) => c.riding)); t += 1) tick(sim, 1);
+  assert.ok(h.tamed);
+  tick(sim, 30);
+  assert.equal(h.inside ?? false, false, 'de día está en el patio');
+  const night = (seconds, rain = 0) => {
+    sim.weather.rain = rain;
+    for (let t = 0; t < seconds; t += 0.5) {
+      for (const c of sim.colonists) c.needs.food = c.needs.water = c.needs.rest = c.needs.warmth = 100;
+      sim.weather.rain = rain;
+      sim.update(0.5, { timeScale: 1, isNight: rain === 0, timeLabel: () => 'Noche' });
+    }
+  };
+  night(60);
+  assert.equal(h.inside, true, 'de noche se mete en el establo');
+  const mirror = new ColonySim();
+  mirror.applyMobs(sim.snapshot('fast').mobs);
+  assert.equal(mirror.mobs.find((m) => m.id === h.id).tame, 3, 'el navegador lo recibe como dentro (no se dibuja)');
+  assert.equal(stallsFree(sim), 3, 'sigue ocupando su hueco');
+  assert.match(sim.tameProblemOf(h), /domesticado/);
+  tick(sim, 40);
+  assert.equal(h.inside, false, 'de día sale');
+  assert.ok(Math.hypot(h.x - b.x, h.z - b.z) < 10, 'y está junto al establo');
+  night(60, 0.8);
+  assert.equal(h.inside, true, 'con lluvia también se resguarda');
+}
+
 console.log('stable.test.js: ok');

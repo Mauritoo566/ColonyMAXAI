@@ -462,6 +462,7 @@ export class ColonyView {
     let best = null;
     let bestDist = Infinity;
     for (const [id, e] of this.mobViews) {
+      if (!e.object.visible) continue;
       const size = e.object.userData.size;
       p.copy(e.object.position);
       p.add(this.tmp.local.copy(p).normalize().multiplyScalar(size.height * 0.5));
@@ -529,6 +530,7 @@ export class ColonyView {
       sim.toDirection(e.x, e.z, world);
       e.object.position.copy(world).multiplyScalar(RADIUS + h);
       e.object.quaternion.copy(sim.camp.quaternion).multiply(yaw.setFromAxisAngle(Y_AXIS, e.facing));
+      e.object.visible = m.tame !== 3; // dentro del establo no se ve
       e.object.userData.state = m.state === 2 ? 'attack' : 'idle';
       setMobLOD(e.object, this.camera.position.distanceToSquared(e.object.position) > MOB_PROXY_DISTANCE * MOB_PROXY_DISTANCE);
       e.def.animate(e.object, this.mobTime, e.speed);

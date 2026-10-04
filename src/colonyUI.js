@@ -579,7 +579,7 @@ export class ColonyUI {
     let tame = '';
     if (m.type === 'caballo') {
       const apples = Math.floor(this.colony.stock.apple ?? 0);
-      if (m.tame === 1) tame = '<section class="cp-section"><h3>Domesticado</h3><p class="reason">Espera en el establo. Todavía no tiene función: se elegirá en la armería (montura de guerra o caballo de carga).</p></section>';
+      if (m.tame === 1 || m.tame === 3) tame = `<section class="cp-section"><h3>Domesticado</h3><p class="reason">${m.tame === 3 ? 'Está dentro del establo (de noche o con lluvia se resguarda).' : 'Espera en el patio del establo.'} Todavía no tiene función: se elegirá en la armería (montura de guerra o caballo de carga).</p></section>`;
       else if (m.tame === 2) {
         const who = m.by != null ? this.colony.colonist(m.by) : null;
         tame = `<section class="cp-section"><h3>Domesticar</h3>

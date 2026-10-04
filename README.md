@@ -367,3 +367,5 @@ Desde la Edad III se construye el **Establo** (huecos para 4, 8 y 14 caballos po
 **Manadas que llegan solas:** como los caballos hacen falta, cada cierto tiempo (unos 0,3 días de juego) llega una manada de 3 a 6 caballos salvajes a entre 55 y 130 m de la fogata, en pradera, estepa, sabana, bosque, taiga y montaña, con un máximo de 9 salvajes a la vez y un aviso. Viven en el servidor, así que todos los que miran la aldea ven los mismos. Los domesticados se guardan enteros y reaparecen al recargar.
 
 Al domesticarlo, el colono **se sube al caballo y lo lleva montado** hasta su hueco junto al establo (se baja allí; si lo interrumpen, se baja donde esté). Se ve sentado sobre el lomo y el navegador recibe la bandera «montado» (8192).
+
+Los caballos domesticados **se resguardan dentro del establo de noche y cuando llueve** (desaparecen de la vista y siguen ocupando su hueco) y salen al patio de día con buen tiempo.

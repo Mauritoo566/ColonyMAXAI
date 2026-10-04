@@ -3768,7 +3768,7 @@ export class ColonySim {
   snapshot(part = 'full', { statics = true } = {}) {
     const r2 = (v) => Math.round(v * 100) / 100;
     const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0) | (c.sitting === 'ground' ? 256 : 0) | (c.sitting === 'bench' ? 512 : 0) | (c.running ? 1024 : 0) | (c.carrying === 'body' ? 2048 : 0) | (c.carrying === 'urn' ? 4096 : 0) | (c.riding ? 8192 : 0);
-    const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state, m.tamed ? 1 : m.order ? 2 : 0, m.g ?? -1, m.order?.by ?? -1]);
+    const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state, m.tamed ? (m.inside ? 3 : 1) : m.order ? 2 : 0, m.g ?? -1, m.order?.by ?? -1]);
     if (part === 'fast') {
       // gameTime: la hora de juego de esta colonia, para que quien la mira vea crecer los brotes plantados igual que su dueño.
       const out = { colonists: this.colonists.map((c) => [c.id, r2(c.x), r2(c.z), r2(c.facing), flags(c)]), mobs: mobsRows(), gameTime: r2(this.gameTime) };

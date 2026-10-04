@@ -13,7 +13,7 @@ const STALL_SPACING = 2.3; // metros entre un hueco y otro
 
 export const isHorse = (m) => m?.type === 'caballo';
 // En el servidor el animal lleva tamed/order; en el navegador sólo llega m.tame (0 salvaje, 1 domesticado, 2 esperando al colono).
-export const isTamed = (m) => !!m.tamed || m.tame === 1;
+export const isTamed = (m) => !!m.tamed || m.tame === 1 || m.tame === 3; // 3: domesticado y dentro del establo
 export const isOrdered = (m) => !!m.order || m.tame === 2;
 export const stables = (colony) => colony.buildings.filter((b) => b.def.kind === 'stable' && b.done && !b.removed);
 export const stallCap = (b) => levelOf(b)?.stalls ?? 0;
@@ -134,6 +134,8 @@ export function checkStable(colony, m) {
   m.stall = null;
   m.role = null;
   m.state = 0;
+  m.inside = false;
+  m.rider = null;
 }
 
 export function serializeTamed(mobs) {

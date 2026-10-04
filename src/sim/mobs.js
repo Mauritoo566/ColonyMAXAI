@@ -192,9 +192,36 @@ function mobGoal(sim, m, dt) {
 }
 
 // Un caballo domesticado: va a su hueco junto al establo y allí se queda, dando algún paso corto de vez en cuando.
-function tamedStep(sim, m, dt) {
+function tamedStep(sim, m, dt, isNight) {
   const st = MOB_STATS[m.type];
   const home = m.stall ?? { x: m.x, z: m.z };
+  // De noche y con lluvia se resguarda dentro del establo (no se ve); de día y con buen tiempo sale al patio, a su hueco.
+  const shelter = m.rider == null && (isNight || (sim.weather?.rain ?? 0) > 0.05);
+  const stable = sim.building(m.stableId);
+  if (m.inside) {
+    if (shelter && stable) {
+      m.state = 0;
+      return;
+    }
+    m.inside = false; // sale por la puerta
+    const door = stable?.entrance?.approach;
+    if (door) {
+      m.x = door.x;
+      m.z = door.z;
+    }
+  }
+  if (shelter && stable) {
+    const door = stable.entrance?.approach ?? { x: stable.x, z: stable.z };
+    if (Math.hypot(door.x - m.x, door.z - m.z) < 1.6) {
+      m.inside = true;
+      m.state = 0;
+      m.opath = null;
+      return;
+    }
+    m.tx = door.x;
+    m.tz = door.z;
+    m.state = 1;
+  }
   // Con un jinete encima va derecho a su hueco, al paso vivo, sin dar vueltas.
   const ridden = m.rider != null;
   if (ridden) {
@@ -203,7 +230,7 @@ function tamedStep(sim, m, dt) {
     m.state = Math.hypot(home.x - m.x, home.z - m.z) < 0.6 ? 0 : 1;
     m.wait = 0;
     if (m.state === 0) return;
-  } else if (m.state === 0) {
+  } else if (!shelter && m.state === 0) {
     m.wait = (m.wait ?? 0) - dt;
     if (m.wait > 0) return;
     const a = Math.random() * Math.PI * 2;
@@ -254,7 +281,7 @@ export function updateMobs(sim, dt, isNight) {
       continue;
     }
     if (m.tamed) {
-      tamedStep(sim, m, dt);
+      tamedStep(sim, m, dt, isNight);
       continue;
     }
     // Hostiles: de noche (o los osos siempre que haya hambre cerca) buscan al colono más cercano al descubierto.
