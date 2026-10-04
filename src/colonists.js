@@ -581,14 +581,17 @@ export class ColonyView {
     // Sentado junto a la fogata: se baja la cadera hasta el suelo (0,02 m de margen) o hasta lo alto del
     // tronco (0,65 m) y las piernas se extienden (suelo) o cuelgan algo adelantadas (tronco).
     // El paso entre estar de pie y sentado es gradual (e.sit va de 0 a 1).
-    const sitting = !!c.sitting && !lying;
-    if (sitting) e.sitKind = c.sitting;
+    // Montado en un caballo: sentado como en un tronco y subido hasta el lomo.
+    const riding = !!c.riding && !lying;
+    const sitting = (!!c.sitting || riding) && !lying;
+    if (sitting) e.sitKind = riding ? 'bench' : c.sitting;
     e.sit += ((sitting ? 1 : 0) - e.sit) * Math.min(1, animDelta * 8);
     if (e.sit < 0.01) e.sit = 0;
     if (e.sit > 0) {
       const hip = 0.84 * object.scale.y;
       const drop = e.sitKind === 'bench' ? hip - 0.75 : hip - 0.1 - 0.02;
       object.position.addScaledVector(world.normalize(), -drop * e.sit);
+      if (riding) object.position.addScaledVector(world.normalize(), 0.5 * e.sit);
     }
 
     const ud = object.userData;

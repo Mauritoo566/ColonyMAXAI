@@ -108,11 +108,29 @@ assert.equal(TAME_COST, 3);
   assert.equal(h.x, x0);
   assert.equal(h.z, z0, 'quieto mientras espera al colono');
   let took = false;
-  for (let t = 0; t < 240 && !h.tamed; t += 0.5) {
+  let rode = null;
+  let rideFlag = false;
+  let together = true;
+  let startRide = null;
+  for (let t = 0; t < 400 && !(h.tamed && rode && !rode.riding); t += 0.5) {
     tick(sim, 0.5);
     if (sim.colonists.some((c) => c.task?.type === 'tame')) took = true;
+    const rider = sim.colonists.find((c) => c.riding);
+    if (rider) {
+      rode = rider;
+      startRide ??= { x: h.x, z: h.z };
+      if (Math.hypot(rider.x - h.x, rider.z - h.z) > 0.01) together = false;
+      const row = sim.snapshot('fast').colonists.find((r) => r[0] === rider.id);
+      if (row[4] & 8192) rideFlag = true;
+    }
   }
   assert.ok(took, 'algún colono fue a domesticarlo');
+  assert.ok(rode, 'el colono se subió al caballo');
+  assert.ok(together, 'va encima del caballo, en su mismo sitio');
+  assert.ok(rideFlag, 'el navegador recibe que va montado');
+  assert.equal(rode.riding, false, 'al llegar se baja');
+  assert.equal(h.rider, null);
+  assert.ok(Math.hypot(rode.x - h.x, rode.z - h.z) < 3, 'y queda junto al caballo');
   assert.ok(h.tamed && !h.order, 'quedó domesticado');
   assert.equal(h.role, null, 'sin función todavía');
   tick(sim, 40);
@@ -124,6 +142,15 @@ assert.equal(TAME_COST, 3);
   copy.applyMobs(sim.snapshot('fast').mobs);
   const seen = copy.mobs.find((m) => m.id === h.id);
   assert.equal(seen.tame, 1);
+  {
+    const c0 = sim.colonists[0];
+    c0.riding = true;
+    const mirror = new ColonySim();
+    mirror.colonists = sim.colonists.map((c) => ({ ...c }));
+    mirror.applySnapshot?.({ colonists: sim.snapshot('fast').colonists });
+    assert.equal(mirror.colonists[0].riding, true);
+    c0.riding = false;
+  }
   // Se guarda y se recupera.
   const data = JSON.parse(JSON.stringify(sim.serialize()));
   const sim2 = colony();

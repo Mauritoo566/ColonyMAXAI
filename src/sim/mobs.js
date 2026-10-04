@@ -195,7 +195,15 @@ function mobGoal(sim, m, dt) {
 function tamedStep(sim, m, dt) {
   const st = MOB_STATS[m.type];
   const home = m.stall ?? { x: m.x, z: m.z };
-  if (m.state === 0) {
+  // Con un jinete encima va derecho a su hueco, al paso vivo, sin dar vueltas.
+  const ridden = m.rider != null;
+  if (ridden) {
+    m.tx = home.x;
+    m.tz = home.z;
+    m.state = Math.hypot(home.x - m.x, home.z - m.z) < 0.6 ? 0 : 1;
+    m.wait = 0;
+    if (m.state === 0) return;
+  } else if (m.state === 0) {
     m.wait = (m.wait ?? 0) - dt;
     if (m.wait > 0) return;
     const a = Math.random() * Math.PI * 2;
@@ -212,7 +220,7 @@ function tamedStep(sim, m, dt) {
   }
   const goal = mobGoal(sim, m, dt);
   const gd = Math.hypot(goal.x - m.x, goal.z - m.z) || 1;
-  const step = Math.min(st.speed * 0.7 * dt, d);
+  const step = Math.min(st.speed * (ridden ? 0.85 : 0.7) * dt, d);
   let nx = m.x + ((goal.x - m.x) / gd) * step;
   let nz = m.z + ((goal.z - m.z) / gd) * step;
   for (const o of sim.obstacles) {

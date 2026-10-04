@@ -3767,7 +3767,7 @@ export class ColonySim {
   // cuando nace alguien; después no hace falta repetirlos).
   snapshot(part = 'full', { statics = true } = {}) {
     const r2 = (v) => Math.round(v * 100) / 100;
-    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0) | (c.sitting === 'ground' ? 256 : 0) | (c.sitting === 'bench' ? 512 : 0) | (c.running ? 1024 : 0) | (c.carrying === 'body' ? 2048 : 0) | (c.carrying === 'urn' ? 4096 : 0);
+    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0) | (c.sitting === 'ground' ? 256 : 0) | (c.sitting === 'bench' ? 512 : 0) | (c.running ? 1024 : 0) | (c.carrying === 'body' ? 2048 : 0) | (c.carrying === 'urn' ? 4096 : 0) | (c.riding ? 8192 : 0);
     const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state, m.tamed ? 1 : m.order ? 2 : 0, m.g ?? -1, m.order?.by ?? -1]);
     if (part === 'fast') {
       // gameTime: la hora de juego de esta colonia, para que quien la mira vea crecer los brotes plantados igual que su dueño.
@@ -3928,6 +3928,7 @@ export class ColonySim {
       c.sitting = f & 512 ? 'bench' : f & 256 ? 'ground' : null;
       c.running = !!(f & 1024);
       c.carrying = f & 2048 ? 'body' : f & 4096 ? 'urn' : null;
+      c.riding = !!(f & 8192);
       if (c.clothed !== !!(f & 8)) {
         c.clothed = !!(f & 8);
         this.emit('clothes');

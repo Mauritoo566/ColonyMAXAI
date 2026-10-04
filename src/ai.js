@@ -612,6 +612,49 @@ function runAbandon(colony, c, task, dt, env) {
   return 'done';
 }
 
+// Domesticar un caballo: va hasta él, lo gana con manzanas, se sube y lo lleva montado hasta su hueco junto al establo.
+const RIDE_TIMEOUT = 150; // segundos: si no llega, se baja donde esté y el caballo sigue solo
+
+function dismount(colony, c, horse) {
+  if (!c.riding) return;
+  c.riding = false;
+  c.moving = false;
+  c.walking = false;
+  if (horse && horse.rider === c.id) horse.rider = null;
+  const spot = colony.freeSpot(c.x + 1.2, c.z + 0.4);
+  c.x = spot.x;
+  c.z = spot.z;
+}
+
+function runTame(colony, c, task, dt, env) {
+  const horse = colony.mobs.find((o) => o.id === task.mobId);
+  if (task.phase === 'ride') {
+    task.ride = (task.ride ?? 0) + dt;
+    if (!horse || !horse.tamed || horse.rider !== c.id || task.ride > RIDE_TIMEOUT) return 'done';
+    // El colono va encima: se mueve con el caballo.
+    c.x = horse.x;
+    c.z = horse.z;
+    c.facing = horse.facing;
+    c.moving = c.walking = c.moveTick = horse.state === 1;
+    if (horse.state === 0 && Math.hypot(horse.x - (horse.stall?.x ?? horse.x), horse.z - (horse.stall?.z ?? horse.z)) < 1.2) return 'done';
+    return 'running';
+  }
+  if (!horse || !horse.order || horse.tamed || (horse.order.by != null && horse.order.by !== c.id)) return 'done';
+  horse.order.by = c.id;
+  if (!go(colony, c, task, horse, dt, 1.6)) return 'running';
+  colony.faceTowards(c, horse.x, horse.z, dt);
+  c.working = true;
+  if (!busy(task, dt, TAME_SECONDS)) return 'running';
+  task.delivered = true;
+  if (!colony.finishTame(horse, c)) return 'failed';
+  // Se sube al caballo y lo lleva al establo.
+  horse.rider = c.id;
+  c.riding = true;
+  c.working = false;
+  task.phase = 'ride';
+  return 'running';
+}
+
 // La familia se lleva a casa el jarrón de un ser querido: va al cementerio, lo coge de la estantería, lo lleva y lo deja en su casa.
 function runUrn(colony, c, task, dt, env) {
   const rec = task.rec;
@@ -755,17 +798,8 @@ export function runTask(colony, c, task, dt, env) {
     case 'urn':
       return runUrn(colony, c, task, dt, env);
 
-    case 'tame': {
-      const horse = colony.mobs.find((o) => o.id === task.mobId);
-      if (!horse || !horse.order || horse.tamed || (horse.order.by != null && horse.order.by !== c.id)) return 'done';
-      horse.order.by = c.id;
-      if (!go(colony, c, task, horse, dt, 1.6)) return 'running';
-      colony.faceTowards(c, horse.x, horse.z, dt);
-      c.working = true;
-      if (!busy(task, dt, TAME_SECONDS)) return 'running';
-      task.delivered = true;
-      return colony.finishTame(horse, c) ? 'done' : 'failed';
-    }
+    case 'tame':
+      return runTame(colony, c, task, dt, env);
 
     case 'abandon':
       return runAbandon(colony, c, task, dt, env);
@@ -1135,9 +1169,10 @@ export function endTask(colony, c, task) {
     rec.claim = null;
   }
   // Domesticando: si lo deja a medias, el caballo vuelve a esperar a otro colono (las manzanas ya están pagadas).
-  if (task.type === 'tame' && !task.delivered) {
+  if (task.type === 'tame') {
     const horse = colony.mobs.find((o) => o.id === task.mobId);
-    if (horse?.order?.by === c.id) horse.order.by = null;
+    if (!task.delivered && horse?.order?.by === c.id) horse.order.by = null;
+    dismount(colony, c, horse); // si lo interrumpen, se baja del caballo donde esté
   }
   c.carrying = null;
   // Lo que llevaba no se pierde ni se duplica: se entrega ahora en el almacén.
@@ -1188,7 +1223,7 @@ export function taskActivity(colony, c, task) {
     case 'guard':
       return walking ? 'Va a su puesto de guardia' : 'Montando guardia';
     case 'tame':
-      return walking ? 'Va a domesticar un caballo' : 'Domesticando un caballo con manzanas';
+      return task.phase === 'ride' ? 'Lleva el caballo al establo montado' : walking ? 'Va a domesticar un caballo' : 'Domesticando un caballo con manzanas';
     case 'abandon':
       return task.phase === 'fetch' ? `Va a por el cuerpo de ${task.rec.name}` : task.phase === 'drop' ? `Deja el cuerpo de ${task.rec.name} lejos de la aldea` : `Lleva el cuerpo de ${task.rec.name} lejos de la aldea`;
     case 'urn':
