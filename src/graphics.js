@@ -16,9 +16,9 @@ const KEY = 'colonymaxai.quality';
 const dpr = window.devicePixelRatio || 1;
 
 export const PRESETS = {
-  alta: { label: 'Alta', antialias: true, simpleTerrain: false, maxPixelRatio: Math.min(dpr, 2), minPixelRatio: 0.7, shadows: true, detailBias: 1 },
-  media: { label: 'Media', antialias: false, simpleTerrain: true, maxPixelRatio: Math.min(dpr, 1.25), minPixelRatio: 0.6, shadows: true, detailBias: 1 },
-  baja: { label: 'Baja', antialias: false, simpleTerrain: true, maxPixelRatio: 1, minPixelRatio: 0.5, shadows: false, detailBias: 1.4 },
+  alta: { label: 'Alta', antialias: true, simpleTerrain: false, maxPixelRatio: Math.min(dpr, 2), minPixelRatio: 0.7, shadows: true, detailBias: 1, foliage: 1 },
+  media: { label: 'Media', antialias: false, simpleTerrain: true, maxPixelRatio: Math.min(dpr, 1.25), minPixelRatio: 0.6, shadows: true, detailBias: 1, foliage: 0.65 },
+  baja: { label: 'Baja', antialias: false, simpleTerrain: true, maxPixelRatio: 1, minPixelRatio: 0.5, shadows: false, detailBias: 1.4, foliage: 0.35 },
 };
 
 function saved() {

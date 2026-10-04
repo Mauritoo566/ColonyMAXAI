@@ -24,7 +24,7 @@ const DECIDUOUS = { broadleaf: 1, berryBush: 0.8, acacia: 0.5, reeds: 0.6, mushr
 // Un material por nivel de "caducidad". El sombreador es el mismo para todos (mismo programa en la tarjeta
 // gráfica); sólo cambia un número. Cambia el color de lo verde, el árbol caduco encoge su copa en invierno
 // y la nieve se queda sobre las caras que miran hacia arriba donde hace frío.
-function seasonalMaterial(deciduous) {
+export function seasonalMaterial(deciduous) {
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
   material.onBeforeCompile = (shader) => {
     bindSeasonUniforms(shader);

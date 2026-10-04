@@ -10,6 +10,7 @@ import { waterUniforms } from './water.js';
 import { CampSystem } from './camp.js';
 import { biomeAt } from './biomes.js';
 import { ResourceSystem } from './resources.js';
+import { FoliageSystem } from './foliage.js';
 import { createSky } from './sky.js';
 import { graphics } from './graphics.js';
 import { DAY_LENGTH_SECONDS, YEAR_DAYS, dateAt, seasonAt, effectiveTemperature, snowCover } from './sim/calendar.js';
@@ -139,6 +140,16 @@ const planet = createPlanet();
 scene.add(planet.object);
 
 const resources = new ResourceSystem(scene);
+const foliageLocal = new THREE.Vector3();
+const foliage = new FoliageSystem(scene, {
+  // Ni sobre los caminos ni dentro de la aldea: se mira con las reglas de la propia colonia.
+  blocked: (world) => {
+    if (!colony.camp) return false;
+    colony.toLocal(world, foliageLocal);
+    return Math.hypot(foliageLocal.x, foliageLocal.z) < 400 && (colony.nearRoad(foliageLocal.x, foliageLocal.z, 1.2) || colony.blockedByBuilding(foliageLocal.x, foliageLocal.z));
+  },
+  density: () => graphics.foliage * Math.min(1, 1.4 / Math.max(1, quality.scale)),
+});
 // La colonia del jugador: una copia de la del servidor (sim/colony.js) que se pone al día
 // con lo que llega y manda las órdenes (construir, marcar...) al servidor.
 const colony = new ColonySim();
@@ -812,6 +823,8 @@ renderer.setAnimationLoop(() => {
   resources.gameTime = colony.gameTime; // los brotes plantados crecen con la hora de juego de tu aldea
   resources.update(camera, resourceFocus, clearance, delta);
   lap('resources');
+  foliage.update(camera, resourceFocus, clearance, delta);
+  lap('foliage');
   camps.update(delta);
   lap('camps');
   const campDir = camps.camp?.dir;
