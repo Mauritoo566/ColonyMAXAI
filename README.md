@@ -373,3 +373,7 @@ Los caballos domesticados **se resguardan dentro del establo de noche y cuando l
 ## Los colonos prefieren los caminos
 
 Si hay un camino que lleve hacia donde van (a menos de 10 m de ellos y de su destino, y que no rodee más de un 30 % + 4 m respecto al trayecto directo), los colonos lo toman (`src/sim/roadpath.js`: A* sobre las casillas de camino) y salen de él para el último tramo. Sin camino, o si rodearía demasiado, van por donde quieran. Ir por camino es más rápido: un **3 %** en el de tierra (5 % empedrado, 7 % adoquinado, 10 % asfaltado).
+
+## Nubes
+
+Las bolitas de las nubes son ahora «abolladas» (coliflor) con la base plana, normales suaves y un degradado de blanco cálido arriba a gris azulado abajo, con los mismos triángulos que antes. Cada cúmulo lleva una torre central más alta, un borde luminoso contra la luz y una «respiración» lenta de cada bolita hecha en el sombreador (sin coste en el procesador).

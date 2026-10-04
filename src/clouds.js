@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNoise3D, fbm } from './noise.js';
 import { RADIUS, MAX_LAND_HEIGHT, SEED, surfaceHeight } from './elevation.js';
 
@@ -37,29 +38,38 @@ export function cloudCover(dir) {
   return THREE.MathUtils.clamp((n - desertBand + 0.12) * 2.2, 0, 1);
 }
 
+// Una bolita de nube: un icosaedro "abollado" (coliflor, no una pelota perfecta), de base plana, con las normales suavizadas para que la luz
+// resbale sin facetas y con el color en degradado: blanco cálido arriba y gris azulado abajo. Los vértices se sueldan, así que cuesta lo mismo.
 function createPuffGeometry(detail) {
-  const geometry = new THREE.IcosahedronGeometry(1, detail);
+  const raw = new THREE.IcosahedronGeometry(1, detail);
+  raw.deleteAttribute('normal');
+  raw.deleteAttribute('uv');
+  const rp = raw.attributes.position;
+  for (let i = 0; i < rp.count; i++) {
+    const x = rp.getX(i);
+    const y = rp.getY(i);
+    const z = rp.getZ(i);
+    // Abolladuras determinadas por la posición (los vértices repetidos reciben lo mismo y no se abre la malla).
+    const lump = 1 + 0.2 * Math.sin(x * 3.7 + z * 2.1) * Math.cos(y * 3.1 - x * 1.7) + 0.08 * Math.sin(z * 6.3 + y * 4.9);
+    rp.setXYZ(i, x * lump, Math.max(y * lump, -0.25), z * lump); // base plana, como los cúmulos reales
+  }
+  const geometry = mergeVertices(raw, 1e-4);
+  geometry.computeVertexNormals();
   const pos = geometry.attributes.position;
   const colors = new Float32Array(pos.count * 3);
-  const top = new THREE.Color('#ffffff');
-  const base = new THREE.Color('#c3cad6');
+  const top = new THREE.Color('#fffcf4');
+  const base = new THREE.Color('#aab6cc');
   const c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
-    let y = pos.getY(i);
-    if (y < -0.25) {
-      y = -0.25; // base plana, como los cúmulos reales
-      pos.setY(i, y);
-    }
-    c.copy(base).lerp(top, THREE.MathUtils.smoothstep(y, -0.25, 0.6));
+    c.copy(base).lerp(top, THREE.MathUtils.smoothstep(pos.getY(i), -0.25, 0.65));
     c.toArray(colors, i * 3);
   }
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  geometry.computeVertexNormals();
   return geometry;
 }
 
-const puffGeometry = createPuffGeometry(1); // 80 triángulos: nubes cercanas
-const blobGeometry = createPuffGeometry(0); // 20 triángulos: cúmulos lejanos (pocos píxeles)
+export const puffGeometry = createPuffGeometry(1); // 80 triángulos: nubes cercanas
+export const blobGeometry = createPuffGeometry(0); // 20 triángulos: cúmulos lejanos (pocos píxeles)
 // Parámetros del "hueco" en las nubes alrededor del centro de la pantalla, para que no
 // tapen lo que estás mirando. main.js los actualiza en cada fotograma.
 export const cloudFade = {
@@ -75,6 +85,7 @@ export const cloudFade = {
   viewProjection: { value: new THREE.Matrix4() },
   cameraPosition: { value: new THREE.Vector3() },
   aspect: { value: 1 },
+  time: { value: 0 }, // segundos: las nubes "respiran" despacio
 };
 
 // Cálculo del hueco compartido por el material de las nubes y el de su sombra.
@@ -105,9 +116,9 @@ function fadeUniforms() {
   };
 }
 
-const cloudMaterial = new THREE.MeshStandardMaterial({
+export const cloudMaterial = new THREE.MeshStandardMaterial({
   vertexColors: true,
-  flatShading: true,
+  flatShading: false,
   roughness: 1,
   metalness: 0,
   emissive: new THREE.Color('#2a3346'),
@@ -115,7 +126,23 @@ const cloudMaterial = new THREE.MeshStandardMaterial({
 });
 
 cloudMaterial.onBeforeCompile = (shader) => {
-  Object.assign(shader.uniforms, fadeUniforms(), { uResolution: cloudFade.resolution });
+  Object.assign(shader.uniforms, fadeUniforms(), { uResolution: cloudFade.resolution, uTime: cloudFade.time });
+  // Cada bolita late muy poco y con su propio ritmo (la fase sale de dónde está): la nube parece viva sin gastar nada en el procesador.
+  shader.vertexShader = shader.vertexShader
+    .replace('void main() {', 'uniform float uTime;\nvoid main() {')
+    .replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+      #ifdef USE_INSTANCING
+        {
+          vec3 ip = instanceMatrix[3].xyz;
+          float ph = ip.x * 0.00031 + ip.y * 0.00023 + ip.z * 0.00037;
+          float breathe = 1.0 + 0.035 * sin(uTime * 0.32 + ph) + 0.018 * sin(uTime * 0.71 + ph * 2.3);
+          transformed.xz *= breathe;
+          transformed.y *= 1.0 + (breathe - 1.0) * 1.6;
+        }
+      #endif`,
+    );
   shader.fragmentShader = shader.fragmentShader
     .replace(
       'void main() {',
@@ -131,6 +158,11 @@ cloudMaterial.onBeforeCompile = (shader) => {
         vec2 fromCenter = (gl_FragCoord.xy - 0.5 * uResolution) / uResolution.y;
         float fade = cloudFadeAmount(fromCenter, length(vViewPosition));
         diffuseColor.a *= mix(1.0, uMinOpacity, fade);
+      }
+      {
+        // Borde luminoso: contra la luz el contorno de la nube brilla un poco (el "filo de plata" de los cúmulos).
+        float rim = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewPosition))), 3.0);
+        outgoingLight += vec3(0.16, 0.17, 0.2) * rim;
       }
       #include <opaque_fragment>`,
     );
@@ -207,18 +239,19 @@ function tangentFrame(up) {
 // cerca de la cámara y no perder precisión.
 function addCumulus(write, rand, up, baseRadius, size, flatness, origin) {
   tangentFrame(up);
-  const puffs = 5 + Math.floor(rand() * 8);
+  const puffs = 7 + Math.floor(rand() * 8);
   for (let p = 0; p < puffs; p++) {
     const angle = rand() * Math.PI * 2;
-    const d = Math.sqrt(rand());
+    // El primero es la torre central (más alta y ancha); el resto se reparte alrededor y se achica hacia los bordes.
+    const d = p === 0 ? 0.05 : Math.sqrt(rand());
     const dist = d * size;
     tmp.offset
       .copy(tmp.east)
       .multiplyScalar(Math.cos(angle) * dist)
       .addScaledVector(tmp.north, Math.sin(angle) * dist * 0.7);
 
-    const width = size * (0.35 + 0.35 * rand()) * (1 - 0.45 * d);
-    const height = width * flatness * (0.7 + 0.6 * rand()) * (1.25 - 0.6 * d);
+    const width = size * (0.35 + 0.35 * rand()) * (1 - 0.45 * d) * (p === 0 ? 1.25 : 1);
+    const height = width * flatness * (0.7 + 0.6 * rand()) * (1.25 - 0.6 * d) * (p === 0 ? 1.3 : 1);
 
     tmp.up.copy(up).multiplyScalar(baseRadius).add(tmp.offset);
     const r = tmp.up.length();
@@ -509,6 +542,7 @@ export function createClouds() {
     object: group,
     update(delta, camera, viewportHeight) {
       time += delta;
+      cloudFade.time.value = time;
       high.rotation.y += delta * 0.0015; // los grandes sistemas derivan despacio
       high.userData.cull(camera);
       cumulus.update(camera, viewportHeight, time);
