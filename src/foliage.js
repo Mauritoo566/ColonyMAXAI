@@ -1,5 +1,5 @@
 // Follaje del mundo: matas de pasto, pasto alto, helechos, arbustos y flores que cubren el suelo alrededor de lo que se mira. Pensado para no dar lag:
-//  - Sólo existe cerca (unos 85 m alrededor del punto que se mira, y sólo a poca altura): no hay nada que dibujar de lejos.
+//  - Sólo existe cerca (unos 150 m alrededor del punto que se mira, y sólo a poca altura): no hay nada que dibujar de lejos.
 //  - Se genera por trozos de 24 m, anclados al mundo (siempre el mismo pasto en el mismo sitio, para todos los jugadores), con un tope de tiempo por
 //    fotograma: la altura y el bioma se calculan en una cuadrícula pequeña por trozo y el resto se interpola. Nada de esto toca el hilo del juego más de
 //    unos milisegundos, y un trozo ya generado no se vuelve a calcular.
@@ -19,16 +19,16 @@ import { seasonalMaterial } from './resources.js';
 // ---- Ajustes ---------------------------------------------------------------------------------------------------------------------------
 export const CHUNK_M = 24; // lado de un trozo
 const GRID = 6; // divisiones por lado para la altura y el bioma de cada trozo
-export const RADIUS_FAR = 85; // metros desde el punto que se mira: más lejos no hay follaje
-const KEEP_CACHE = 170; // trozos ya generados que se recuerdan fuera de la vista (por distancia)
-const MAX_CHUNKS_PER_FRAME = 2;
+export const RADIUS_FAR = 150; // metros desde el punto que se mira: más lejos no hay follaje
+const KEEP_CACHE = 420; // trozos ya generados que se recuerdan fuera de la vista (por distancia)
+const MAX_CHUNKS_PER_FRAME = 3;
 const BUDGET_MS = 3; // tiempo máximo por fotograma generando trozos
-const MAX_ALTITUDE = 260; // a más altura que esto (sobre el suelo) no se dibuja
-const REBUILD_MOVE = 5; // metros que se mueve el foco para rehacer las instancias
+const MAX_ALTITUDE = 450; // a más altura que esto (sobre el suelo) no se dibuja
+const REBUILD_MOVE = 8; // metros que se mueve el foco para rehacer las instancias
 const REBUILD_EVERY = 0.12; // segundos mínimos entre dos reconstrucciones
 const MAX_SLOPE = 0.75; // pendiente (tangente) máxima donde crece
-const FADE_NEAR = 62;
-const FADE_FAR = 84; // metros: entre ambos las matas se encogen hasta desaparecer
+const FADE_NEAR = 108;
+const FADE_FAR = 148; // metros: entre ambos las matas se encogen hasta desaparecer
 
 // Qué crece en cada bioma y cuántas matas por metro cuadrado.
 const MIX = {
@@ -46,7 +46,7 @@ const MIX = {
 };
 const FLOWER_COLORS = ['#e8463c', '#f0d24a', '#f4f4ee', '#a874d8'];
 export const KINDS = ['grass', 'tallgrass', 'fern', 'shrub', 'flower0', 'flower1', 'flower2', 'flower3'];
-const CAP = { grass: 16000, tallgrass: 9000, fern: 6000, shrub: 2500, flower0: 2500, flower1: 2500, flower2: 2500, flower3: 2500 };
+const CAP = { grass: 32000, tallgrass: 18000, fern: 11000, shrub: 4500, flower0: 4500, flower1: 4500, flower2: 4500, flower3: 4500 };
 // Cuánto pierde las hojas cada tipo con el frío (1 = del todo).
 const DECIDUOUS = { grass: 0.75, tallgrass: 0.9, fern: 0.7, shrub: 0.6, flower0: 0.95, flower1: 0.95, flower2: 0.95, flower3: 0.95 };
 // Tamaño y color de cada tipo.
@@ -404,7 +404,7 @@ export class FoliageSystem {
       this.dirty = true;
     }
     this.stats.generatedMs += performance.now() - t0;
-    if (this.chunks.size > KEEP_CACHE * 2) this.trim(focus);
+    if (this.chunks.size > KEEP_CACHE * 1.5) this.trim(focus);
     const moved = this.lastFocus.distanceTo(focus) * RADIUS;
     const density = this.density();
     if (Math.abs(density - this.lastDensity) > 0.04) this.dirty = true;
@@ -481,7 +481,7 @@ export class FoliageSystem {
           if (dist2 > far2) continue;
           // Aclarado: todo cerca; menos matas cuanto más lejos (y menos con poca calidad).
           const dist = Math.sqrt(dist2);
-          const keep = (dist < 35 ? 1 : dist < 60 ? 1 - ((dist - 35) / 25) * 0.5 : 0.5 - ((dist - 60) / 25) * 0.35) * density;
+          const keep = (dist < 40 ? 1 : dist < 90 ? 1 - ((dist - 40) / 50) * 0.55 : 0.45 - ((dist - 90) / 60) * 0.3) * density;
           if (d.rank[q] > keep) continue;
           if (n >= CAP[k]) break;
           const o = n * 16;
