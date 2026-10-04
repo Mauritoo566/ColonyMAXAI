@@ -21,6 +21,8 @@ function urgency(value) {
   return u * u;
 }
 
+const RELAX_SECONDS = 25; // mínimo que se queda sentado junto al fuego antes de levantarse
+
 // Penaliza lo lejano: a 150 m una acción vale la mitad.
 function distanceFactor(d) {
   return 1 / (1 + d / 150);
@@ -475,7 +477,11 @@ export function runTask(colony, c, task, dt, env) {
       }
       c.sitting = seat.kind;
       colony.faceTowards(c, 0, 0, dt);
-      return n.warmth >= 88 ? 'done' : 'running';
+      // Sentado se queda a gusto: hasta estar caliente del todo y un rato más (no se levanta en cuanto sube del umbral para
+      // volver a enfriarse enseguida). Una necesidad seria sí lo levanta: la tarea pasa a valer poco para shouldSwitch.
+      task.relax = (task.relax ?? 0) + dt;
+      task.score = Math.min(task.score ?? 0.5, 0.5);
+      return n.warmth >= 99 && task.relax >= RELAX_SECONDS && !colony.mobThreat?.(c) ? 'done' : 'running';
     }
 
     case 'chat': {

@@ -93,4 +93,33 @@ const env = { isNight: false, gameTime: 0 };
   assert.equal(c.sitting ?? null, null);
 }
 
+
+// Sentados se quedan tranquilos: no se levantan al pasar de 88 de calor, sino al estar calientes del todo y tras un rato.
+{
+  const sim = colony(1);
+  const c = sim.colonists[0];
+  c.x = 6;
+  c.z = 0;
+  c.task = { type: 'warm' };
+  let sat = null;
+  let t = 0;
+  let result = 'running';
+  for (; t < 90 && result === 'running'; t += DT) {
+    sim.buildCrowd();
+    c.walking = false;
+    c.moveTick = false;
+    c.sitting = null;
+    c.waiting = false;
+    result = runTask(sim, c, c.task, DT, env);
+    if (c.sitting && sat === null) {
+      sat = t;
+      c.needs.warmth = 100; // ya está caliente nada más sentarse
+    }
+    if (sat !== null && result === 'running') assert.ok(c.sitting, 'sigue sentado mientras se relaja');
+  }
+  assert.ok(sat !== null, 'llegó a sentarse');
+  assert.equal(result, 'done', 'al final se levanta');
+  assert.ok(t - sat >= 24, `se quedó sentado un buen rato aunque ya estaba caliente (${(t - sat).toFixed(0)} s)`);
+}
+
 console.log('seating.test.js: ok');
