@@ -99,6 +99,14 @@ export function mobThreat(sim, c) {
   return false;
 }
 
+// Distancia al animal hostil más cercano (Infinity si no hay): para saber si un colono tiene miedo de verdad.
+export function threatDistance(sim, c) {
+  let best = Infinity;
+  if (sim.absent || !sim.mobs?.length) return best;
+  for (const m of sim.mobs) if (MOB_STATS[m.type].hostile) best = Math.min(best, Math.hypot(m.x - c.x, m.z - c.z));
+  return best;
+}
+
 export function updateMobs(sim, dt, isNight) {
   if (!sim.mobs?.length || dt > 2) return;
   const rand = Math.random;

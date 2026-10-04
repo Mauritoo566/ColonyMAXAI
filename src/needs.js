@@ -219,6 +219,9 @@ export function addMoodEvent(c, id, delta, gameTime) {
 // Actualiza necesidades y salud. env: { dt (segundos de juego), ambient (0–1, calor del
 // lugar según clima y hora), nearFire, companion (colono cercano o null), walking, time,
 // absent (el dueño no está: la salud no baja de CRITICAL_HEALTH) }
+export const RUN_REST_COST = 4; // correr cansa 4 veces lo que caminar
+export const RUN_THIRST = 1.5; // y da más sed
+
 export function updateNeeds(c, env) {
   const { dt } = env;
   const n = c.needs;
@@ -226,9 +229,9 @@ export function updateNeeds(c, env) {
   const g = c.genome;
   const metabolism = 0.75 + gene(g, 'metabolism') * 0.5; // 0,75× a 1,25×
   n.food = clamp(n.food - (100 / (4 * DAY)) * metabolism * dt);
-  n.water = clamp(n.water - (100 / (3 * DAY)) * metabolism * (env.thirst ?? 1) * dt);
+  n.water = clamp(n.water - (100 / (3 * DAY)) * metabolism * (env.thirst ?? 1) * (env.running ? RUN_THIRST : 1) * dt);
   const tiredness = 1.25 - gene(g, 'stamina') * 0.5; // 1,25× a 0,75×
-  const restRate = (100 / (3 * DAY)) * tiredness * (env.walking ? 1 : 0.5);
+  const restRate = (100 / (3 * DAY)) * tiredness * (env.walking ? (env.running ? RUN_REST_COST : 1) : 0.5);
   n.rest = clamp(n.rest - restRate * dt);
 
   // Calor: tiende al calor del ambiente (más o menos según la resistencia al frío). La

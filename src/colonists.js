@@ -296,7 +296,7 @@ export class ColonyView {
       this.labelsRoot.appendChild(label);
       // x, z, facing: dónde se dibuja; sigue con suavidad a la simulación (que por la red
       // llega a saltos, varias veces por segundo).
-      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, sit: 0, sitKind: null, lift: 0, clothed: c.clothed, outfitKey: outfit.key, build, growth: c.growth ?? 1, hearts: [], heartTimer: 0, x: c.x, z: c.z, facing: c.facing });
+      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, sit: 0, sitKind: null, lift: 0, run: 0, clothed: c.clothed, outfitKey: outfit.key, build, growth: c.growth ?? 1, hearts: [], heartTimer: 0, x: c.x, z: c.z, facing: c.facing });
     }
     this.refreshClothes();
     this.refreshTotem();
@@ -562,7 +562,9 @@ export class ColonyView {
     // Camina sólo si de verdad avanza (el servidor manda el desplazamiento real): bloqueado, espera en reposo.
     const walking = (c.moving ?? c.walking) ? 1 : 0;
     e.moving += (walking - e.moving) * Math.min(1, animDelta * 6);
-    e.phase += animDelta * WALK_SPEED * 5.2 * e.moving;
+    // Corriendo: zancadas más rápidas y largas, y el cuerpo ligeramente inclinado hacia delante (se suaviza al empezar y parar).
+    e.run += ((c.running && walking ? 1 : 0) - e.run) * Math.min(1, animDelta * 6);
+    e.phase += animDelta * WALK_SPEED * 5.2 * e.moving * (1 + 0.7 * e.run);
 
     // Sobre un camino los pies suben con la cinta (se dibuja por encima del terreno); entrar y salir es gradual.
     e.lift += (this.sim.roadLiftAt(e.x, e.z) - e.lift) * Math.min(1, animDelta * 8);
@@ -601,7 +603,7 @@ export class ColonyView {
     }
     if (far) return;
     const { body, armL, armR, legL, legR } = ud;
-    const swing = Math.sin(e.phase) * 0.65 * e.moving;
+    const swing = Math.sin(e.phase) * 0.65 * e.moving * (1 + 0.55 * e.run);
     // Piernas: sentado en el suelo, estiradas hacia delante; en un tronco, colgando un poco adelantadas.
     const legPose = e.sitKind === 'bench' ? -0.8 : -Math.PI / 2;
     legL.rotation.x = swing * (1 - e.sit) + legPose * e.sit;
@@ -622,7 +624,8 @@ export class ColonyView {
     }
     this.updateHearts(e, animDelta);
     const breathe = Math.sin(performance.now() * 0.0018 + e.phase) * 0.01 * (1 - e.moving);
-    body.position.y = Math.abs(Math.cos(e.phase)) * 0.05 * e.moving + breathe;
+    body.position.y = Math.abs(Math.cos(e.phase)) * 0.05 * e.moving * (1 + 0.6 * e.run) + breathe;
+    body.rotation.x = 0.14 * e.run;
   }
 
   // Corazones sobre la casa mientras están juntos (la posición es la de la casa).

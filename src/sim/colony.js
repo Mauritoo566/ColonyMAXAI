@@ -25,6 +25,7 @@ import { centerProps } from './centerLayout.js';
 import { entranceOf, accessProblem, halfOf, pointInRect, rectsOverlap, circleHitsRect, footprintRect, resourceClearOf, cardinalYaw } from './access.js';
 import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, ROAD_LEVELS, ROAD_CELL, ROAD_LIFT, autoRoadPath } from './economy.js';
 import { pushSample } from '../interp.js';
+import { decideRun, RUN_FACTOR } from './running.js';
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
@@ -326,6 +327,7 @@ export class ColonySim {
           clothed: c.clothed,
           companion: c.companion,
           walking: c.walking,
+          running: !!c.running && !!c.moving,
           time,
           gameTime: this.gameTime,
           absent,
@@ -1100,7 +1102,7 @@ export class ColonySim {
   }
 
   speedOf(c) {
-    return WALK_SPEED * (0.85 + gene(c.genome, 'agility') * 0.3) * roadSpeed(this, c.x, c.z);
+    return WALK_SPEED * (0.85 + gene(c.genome, 'agility') * 0.3) * roadSpeed(this, c.x, c.z) * (c.running ? RUN_FACTOR : 1);
   }
 
   // Llegar sin quedar encimado a otro que ya está parado: primero se corre al hueco libre más cercano (unos segundos como mucho).
@@ -1274,6 +1276,9 @@ export class ColonySim {
       const best = chooseTask(this, c, env);
       if (best && (!c.task || shouldSwitch(c.task, best))) this.startTask(c, best, env);
     }
+    // Piensa si le compensa correr (necesidad urgente o miedo): cuesta cansancio.
+    c.runWhy = decideRun(this, c, env);
+    c.running = !!c.runWhy;
     if (c.task) {
       const result = runTask(this, c, c.task, dt, env);
       if (result === 'done' || result === 'failed') {
@@ -1305,6 +1310,7 @@ export class ColonySim {
     if (c.working && c.task && WORK_TYPES.has(c.task.type)) this.practice(c, c.task, dt);
     c.activity = c.task ? taskActivity(this, c, c.task) : 'Descansando un momento';
     if (c.task?.type === 'wander' && c.idle) c.activity = c.idle;
+    if (c.running && c.runWhy) c.activity += ` (corriendo: ${c.runWhy})`;
     if (c.waiting && c.task) c.activity += ' (esperando paso)';
     c.orderState = !c.order ? null : c.task?.ordered ? 'active' : 'interrupted';
     if (c.orderState === 'interrupted') c.activity += ' (orden en pausa: necesidad urgente)';
@@ -1435,6 +1441,7 @@ export class ColonySim {
   startTask(c, task, env) {
     if (c.task) endTask(this, c, c.task);
     c.task = task;
+    c.progress = null; // el destino de la tarea anterior no cuenta (decide si corre por lo que falta de la nueva)
     c.stuckTimer = 0;
     c.lastProgress = Infinity;
     const note = taskLog(c, task);
@@ -3640,7 +3647,7 @@ export class ColonySim {
   // cuando nace alguien; después no hace falta repetirlos).
   snapshot(part = 'full', { statics = true } = {}) {
     const r2 = (v) => Math.round(v * 100) / 100;
-    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0) | (c.sitting === 'ground' ? 256 : 0) | (c.sitting === 'bench' ? 512 : 0);
+    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0) | (c.sitting === 'ground' ? 256 : 0) | (c.sitting === 'bench' ? 512 : 0) | (c.running ? 1024 : 0);
     const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state]);
     if (part === 'fast') {
       // gameTime: la hora de juego de esta colonia, para que quien la mira vea crecer los brotes plantados igual que su dueño.
@@ -3798,6 +3805,7 @@ export class ColonySim {
       c.inside = !!(f & 32);
       c.outdoorSleep = !!(f & 64);
       c.sitting = f & 512 ? 'bench' : f & 256 ? 'ground' : null;
+      c.running = !!(f & 1024);
       if (c.clothed !== !!(f & 8)) {
         c.clothed = !!(f & 8);
         this.emit('clothes');
