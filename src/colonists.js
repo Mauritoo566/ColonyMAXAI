@@ -7,6 +7,7 @@ import { CenterView } from './center.js';
 import { outfitFor } from './outfits.js';
 import { MOBS, setMobLOD } from './mobs.js';
 import { MOB_STATS } from './sim/mobs.js';
+import { sampleTrack, clock } from './interp.js';
 
 // Vista de los colonos: dibuja a los de la simulación (sim/colony.js) con su modelo low
 // poly, los anima al caminar y trabajar, pone su nombre encima y permite elegirlos con
@@ -296,7 +297,7 @@ export class ColonyView {
       this.labelsRoot.appendChild(label);
       // x, z, facing: dónde se dibuja; sigue con suavidad a la simulación (que por la red
       // llega a saltos, varias veces por segundo).
-      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, sit: 0, sitKind: null, clothed: c.clothed, outfitKey: outfit.key, build, growth: c.growth ?? 1, hearts: [], heartTimer: 0, x: c.x, z: c.z, facing: c.facing });
+      this.entries.set(c.id, { c, object, label, moving: 0, phase: c.phase ?? 0, workPhase: 0, sit: 0, sitKind: null, lift: 0, clothed: c.clothed, outfitKey: outfit.key, build, growth: c.growth ?? 1, hearts: [], heartTimer: 0, x: c.x, z: c.z, facing: c.facing });
     }
     this.refreshClothes();
     this.refreshTotem();
@@ -413,10 +414,17 @@ export class ColonyView {
     // Ya no hay tipis: el campamento inicial es una fogata, un acopio y un refugio de ramas.
     if (campObject?.userData.tipis) campObject.userData.tipis.visible = false;
     const follow = 1 - Math.exp(-delta * 10);
+    const now = clock();
     for (const e of this.entries.values()) {
       const { c } = e;
-      // Un salto grande (reconectar, volver a la pestaña) no se anima: se pone ahí.
-      if (Math.hypot(c.x - e.x, c.z - e.z) > 8) {
+      // Lo que manda el servidor se dibuja un poco en el pasado, interpolando entre muestras: movimiento continuo.
+      const p = sampleTrack(c, now);
+      if (p) {
+        e.x = p.x;
+        e.z = p.z;
+        e.facing = p.facing;
+      } else if (Math.hypot(c.x - e.x, c.z - e.z) > 8) {
+        // Sin muestras (copia sin red): un salto grande no se anima, y lo demás se sigue con suavidad.
         e.x = c.x;
         e.z = c.z;
         e.facing = c.facing;
@@ -501,16 +509,24 @@ export class ColonyView {
       }
       const px = e.x;
       const pz = e.z;
-      if (Math.hypot(m.x - e.x, m.z - e.z) > 8) {
-        e.x = m.x;
-        e.z = m.z;
+      const p = sampleTrack(m, clock());
+      if (p) {
+        e.x = p.x;
+        e.z = p.z;
+        e.facing = p.facing;
       } else {
-        e.x += (m.x - e.x) * follow;
-        e.z += (m.z - e.z) * follow;
+        if (Math.hypot(m.x - e.x, m.z - e.z) > 8) {
+          e.x = m.x;
+          e.z = m.z;
+        } else {
+          e.x += (m.x - e.x) * follow;
+          e.z += (m.z - e.z) * follow;
+        }
+        e.facing += Math.atan2(Math.sin(m.facing - e.facing), Math.cos(m.facing - e.facing)) * follow;
       }
-      e.facing += Math.atan2(Math.sin(m.facing - e.facing), Math.cos(m.facing - e.facing)) * follow;
       e.speed += (Math.hypot(e.x - px, e.z - pz) / Math.max(1e-3, delta) - e.speed) * 0.2;
-      const h = sim.heightAt(e.x, e.z);
+      e.lift = (e.lift ?? 0) + (sim.roadLiftAt(e.x, e.z) - (e.lift ?? 0)) * Math.min(1, delta * 8);
+      const h = sim.heightAt(e.x, e.z) + e.lift * 1.15;
       sim.toDirection(e.x, e.z, world);
       e.object.position.copy(world).multiplyScalar(RADIUS + h);
       e.object.quaternion.copy(sim.camp.quaternion).multiply(yaw.setFromAxisAngle(Y_AXIS, e.facing));
@@ -549,7 +565,9 @@ export class ColonyView {
     e.moving += (walking - e.moving) * Math.min(1, animDelta * 6);
     e.phase += animDelta * WALK_SPEED * 5.2 * e.moving;
 
-    const h = this.sim.heightAt(e.x, e.z);
+    // Sobre un camino los pies suben con la cinta (se dibuja por encima del terreno); entrar y salir es gradual.
+    e.lift += (this.sim.roadLiftAt(e.x, e.z) - e.lift) * Math.min(1, animDelta * 8);
+    const h = this.sim.heightAt(e.x, e.z) + e.lift * 1.15;
     this.sim.toDirection(e.x, e.z, world);
     object.position.copy(world).multiplyScalar(RADIUS + h);
     // Orientación: la del campamento (su "arriba" es el del planeta allí) y el rumbo.

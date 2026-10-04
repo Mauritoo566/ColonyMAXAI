@@ -23,7 +23,8 @@ import { buildBlocker, upgradeBlocker, evolveHouses, buildCostOf, buildLevelFor,
 import { GOOD_NAMES } from './goods.js';
 import { centerProps } from './centerLayout.js';
 import { entranceOf, accessProblem, halfOf, pointInRect, rectsOverlap, circleHitsRect, footprintRect, resourceClearOf, cardinalYaw } from './access.js';
-import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, ROAD_LEVELS, ROAD_CELL, autoRoadPath } from './economy.js';
+import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, ROAD_LEVELS, ROAD_CELL, ROAD_LIFT, autoRoadPath } from './economy.js';
+import { pushSample } from '../interp.js';
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, dailyRaid, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
@@ -480,6 +481,7 @@ export class ColonySim {
       m.x = x;
       m.z = z;
       m.facing = facing;
+      pushSample(m, x, z, facing);
       m.state = state;
     }
     if (this.mobs.some((m) => !seen.has(m.id))) this.mobs = this.mobs.filter((m) => seen.has(m.id));
@@ -1952,6 +1954,15 @@ export class ColonySim {
     if (Math.hypot(x, z) > SPOT_RADIUS) return 'Demasiado lejos de la aldea';
     if (building && Math.hypot(x - building.x, z - building.z) > (building.def.range ?? 0)) return 'Fuera del radio de acción del leñador';
     return this.resourceSiteProblem(x, z);
+  }
+
+  // Cuánto sube quien camina sobre un camino: la cinta se dibuja ROAD_LIFT por encima del terreno, así que hay que subir
+  // los pies con ella (0 fuera de los caminos). La vista lo suaviza al entrar y salir.
+  roadLiftAt(x, z) {
+    if (!this.roads.size) return 0;
+    const [cx, cz] = roadCellOf(x, z);
+    if (!this.roads.has(roadKey(cx, cz))) return 0;
+    return Math.abs(x - cx * ROAD_CELL) < 1.9 && Math.abs(z - cz * ROAD_CELL) < 1.9 ? ROAD_LIFT : 0;
   }
 
   // ¿Hay un camino pegado a (x, z)? La cinta mide 3,4 m y sigue las curvas entre casillas de 4 m: se mira la casilla y sus
@@ -3782,6 +3793,7 @@ export class ColonySim {
       c.x = x;
       c.z = z;
       c.facing = facing;
+      pushSample(c, x, z, facing);
       c.walking = !!(f & 1);
       c.moving = !!(f & 128);
       c.working = !!(f & 2);

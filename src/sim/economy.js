@@ -335,6 +335,7 @@ export function researchProblem(colony, id) {
 // ---------------------------------------------------------------------------------------------
 
 export const ROAD_CELL = 4;
+export const ROAD_LIFT = 0.26; // metros que la cinta del camino se dibuja por encima del terreno (quien camina por él sube igual)
 export const ROAD_LEVELS = [
   { age: 2, name: 'Camino de tierra', cost: { fiber: 1 }, speed: 1.25, color: '#a8845a' },
   { age: 5, name: 'Camino empedrado', cost: { stone: 2 }, speed: 1.45, color: '#8f8a82' },

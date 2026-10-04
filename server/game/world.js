@@ -15,9 +15,9 @@ import { awaySnapshot, awaySummary, AWAY_MAX_SECONDS, AWAY_MIN_SECONDS } from '.
 // jugadores y los colonos de las colonias ajenas que tiene cerca.
 
 const TICK_MS = 100; // la simulación avanza 10 veces por segundo
-const FAST_EVERY = 2; // posiciones de la colonia propia: cada 2 pasos (5 por segundo)
+const FAST_EVERY = 1; // posiciones de la colonia propia: cada paso (10 por segundo; el navegador interpola entre ellas)
 const FULL_EVERY = 10; // colonia entera: cada segundo
-const OTHERS_EVERY = 2; // colonos de colonias ajenas cercanas: 5 por segundo (antes 2: se veían a saltos)
+const OTHERS_EVERY = 1; // colonos de colonias ajenas cercanas: 10 por segundo, igual de fluidos que los propios
 const PLAYERS_EVERY = 20; // lista de jugadores (si cambió): cada 2 segundos
 const TIME_EVERY = 100; // hora del mundo: cada 10 segundos (el navegador la extrapola)
 const SAVE_EVERY_MS = 30_000;

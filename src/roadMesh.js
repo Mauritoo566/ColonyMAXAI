@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ROAD_CELL } from './sim/economy.js';
+import { ROAD_CELL, ROAD_LIFT } from './sim/economy.js';
 import { entranceOf, footprintRect, rectsOverlap, rect } from './sim/access.js';
 
 // Dibujo de los caminos: el trazado de casillas se convierte en curvas suaves (se unen las casillas
@@ -10,7 +10,7 @@ import { entranceOf, footprintRect, rectsOverlap, rect } from './sim/access.js';
 const WIDTH = 3.4; // metros de ancho de la cinta (igual en todos los niveles)
 const STEP = 0.9; // separación de los puntos a lo largo
 const CAP = WIDTH / 2; // los extremos libres terminan en media luna de este radio
-const LIFT = 0.26;
+const LIFT = ROAD_LIFT;
 
 const key = (ix, iz) => `${ix},${iz}`;
 
@@ -153,8 +153,9 @@ export function roadMaterials(levelCount) {
     depthWrite: false,
     side: THREE.DoubleSide,
     polygonOffset: true,
-    polygonOffsetFactor: -3,
-    polygonOffsetUnits: -3,
+    // Un empujón mínimo contra el parpadeo con el terreno (la cinta ya va ROAD_LIFT por encima): más y se dibuja sobre lo que pisa.
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   }));
 }
 
