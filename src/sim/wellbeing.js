@@ -9,7 +9,7 @@
 // "puntos inmediatos" para los eventos.
 
 import { DAY_LENGTH_SECONDS } from '../daynight.js';
-import { NEEDS, hasTrait } from '../needs.js';
+import { NEEDS, hasTrait, URN_BONUS, STENCH_PENALTY } from '../needs.js';
 import { BUILDINGS, levelOf } from './buildingTypes.js';
 import { isAdult, usable } from './family.js';
 
@@ -23,6 +23,9 @@ export const EVENT_TEXT = {
   age: 'Celebró la llegada de una nueva edad',
   attack: 'Un animal lo atacó',
   meal: 'Comió a gusto en el comedor',
+  grief: 'Lloró la muerte de un ser querido',
+  urn: 'Llevó a casa el jarrón de un ser querido',
+  sawbody: 'Vio un cuerpo sin enterrar',
   love: 'Pasó un rato con su pareja',
 };
 
@@ -86,7 +89,7 @@ const SHORT = { food: 'hambre', water: 'sed', rest: 'agotado', warmth: 'frío' }
 export function moodFactors(colony, c) {
   const causes = [];
   const positives = [];
-  const fx = c.moodFx ?? { companion: 0, homeless: 0 };
+  const fx = c.moodFx ?? { companion: 0, homeless: 0, urns: 0 };
   for (const id of ['food', 'water', 'rest', 'warmth']) {
     const v = needValue(c, id);
     if (v < 40) {
@@ -96,7 +99,9 @@ export function moodFactors(colony, c) {
       positives.push({ id: `ok-${id}`, source: 'need', text: `${NEEDS.find((n) => n.id === id).name} cubierta`, impact: pts(NEED_WEIGHT * (v - 50)) });
     }
   }
+  if ((fx.stench ?? 0) > 0.05) causes.push({ id: 'stench', source: 'condition', text: 'Huele muy mal: hay cuerpos sin enterrar cerca', impact: -pts(STENCH_PENALTY * fx.stench), sev: fx.stench > 0.6 ? 2 : 1, short: 'mal olor' });
   if ((fx.homeless ?? 0) > 0.05) causes.push({ id: 'homeless', source: 'condition', text: 'No tiene una cama propia', impact: -pts(HOMELESS_PENALTY * fx.homeless), sev: fx.homeless > 0.6 ? 2 : 1, short: 'sin cama' });
+  if ((fx.urns ?? 0) > 0) positives.push({ id: 'urns', source: 'condition', text: fx.urns > 1 ? 'Tiene en casa los jarrones de sus seres queridos' : 'Tiene en casa el jarrón de un ser querido', impact: pts(URN_BONUS * fx.urns) });
   if (hasTrait(c, 'pessimist')) causes.push({ id: 'trait-pessimist', source: 'trait', text: 'Es pesimista: su ánimo tiende a ser más bajo', impact: -12, sev: 0, short: 'pesimista' });
   if (hasTrait(c, 'optimist')) positives.push({ id: 'trait-optimist', source: 'trait', text: 'Es optimista', impact: 12 });
   if (fx.companion) {
@@ -160,6 +165,13 @@ function adviceFor(colony, c, cause) {
       if (h.free > 0) out.push({ text: `Hay ${h.free} plaza${h.free > 1 ? 's' : ''} libre${h.free > 1 ? 's' : ''}: se le asignará una vivienda.`, action: { kind: 'housing' } });
       else if (unlocked(colony, 'house')) out.push({ text: `Sin plazas libres (${h.housed}/${h.slots} ocupadas, ${h.adults} adultos). Construí o mejorá una vivienda.`, action: { kind: 'build', type: 'house' } });
       else out.push({ text: 'Sin plazas libres y todavía no hay viviendas disponibles en esta edad.' });
+      break;
+    }
+    case 'stench': {
+      const built = colony.buildings.some((b) => b.def.id === 'cemetery' && b.done);
+      if (built) out.push({ text: 'Hay cuerpos sin enterrar: el cementerio no da abasto (sin tumbas libres o sin enterrador). Mejóralo o ponle un enterrador.', action: { kind: 'build', type: 'cemetery' } });
+      else if (unlocked(colony, 'cemetery')) out.push({ text: 'Construí un cementerio (Servicios) y ponle un enterrador: se llevará a los muertos y dejará de oler.', action: { kind: 'build', type: 'cemetery' } });
+      else out.push({ text: 'Todavía no hay cementerios en esta edad: un colono se llevará el cuerpo lejos de la aldea.' });
       break;
     }
     case 'alone-sociable':

@@ -257,6 +257,32 @@ add({
 });
 
 // ---------------------------------------------------------------------------------------
+// Cementerio (desde la Edad III; antes, un colono cualquiera carga al muerto y lo deja lejos de la aldea): quien muere queda tirado; el
+// enterrador (Servicios) lo busca, lo carga y lo entierra en una de las tumbas del recinto.
+// Pasado el tiempo de reposo (rest) pasa los restos a cenizas en un jarrón que deja en la estantería del fondo (hueco libre), y la
+// tumba queda libre para el próximo. La familia puede llevarse el jarrón a casa si lo extraña: da bienestar (sim/cemetery.js).
+//   plots  tumbas en tierra a la vez · niches  huecos de la estantería · rest  segundos que reposa un cuerpo en tierra
+// ---------------------------------------------------------------------------------------
+
+add({
+  id: 'cemetery',
+  category: 'services',
+  kind: 'cemetery',
+  job: 'Enterrador',
+  skill: 'service',
+  icon: 'pot',
+  cost: { wood: 30, stone: 14, fiber: 6 },
+  buildTime: 80,
+  footprint: 3.4,
+  levels: [
+    L(3, 'Cementerio', 'Un recinto vallado con unas pocas tumbas y una estantería para los jarrones. El enterrador busca a quien ha muerto, lo carga y lo entierra; pasado un tiempo lo pasa a cenizas en un jarrón y libera la tumba. La familia puede llevarse el jarrón a casa. Sin cementerio, los cuerpos quedan tirados: huelen mal y entristecen a quien los ve.', 'gen:cemetery:3', { plots: 5, niches: 6, rest: 360 }),
+    L(5, 'Cementerio con muro', 'Tapia de piedra, más tumbas y una estantería mayor para los jarrones.', 'gen:cemetery:5', { plots: 9, niches: 12, rest: 360, upgradeCost: { cut_stone: 16, wood: 30, pottery: 4 } }),
+    L(7, 'Cementerio con columbario', 'Pórtico, obeliscos y un columbario ordenado.', 'gen:cemetery:7', { plots: 14, niches: 18, rest: 360, upgradeCost: { planks: 24, cut_stone: 16 } }),
+    L(9, 'Cementerio moderno', 'Jardín, verja de hierro, farolas y un columbario cubierto.', 'gen:cemetery:9', { plots: 20, niches: 24, rest: 360, upgradeCost: { concrete: 20, steel: 8 } }),
+  ],
+});
+
+// ---------------------------------------------------------------------------------------
 // Decoración: adornos sueltos (small: true). No ocupan una casilla de 4 m: miden lo que miden, se ponen uno a uno y
 // pegados a caminos y edificios (sólo no tapan una entrada). No tienen trabajadores ni entrada.
 //   flame  altura de la llama sobre el suelo (la dibuja torchFlames.js, animada y con luz de noche)

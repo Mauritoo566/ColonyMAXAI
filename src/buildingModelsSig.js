@@ -1,6 +1,8 @@
 // Lo que hace reconocible a cada edificio: además de la forma de su estilo (buildingModelsGen.js), cada tipo lleva
 // sus propias piezas (un horno de pan no se parece a una alfarería ni a una carbonera). Todo cabe dentro de la
 // huella del edificio y deja libre el frente, donde está la puerta (+z) y su franja de acceso.
+import { BUILDINGS } from './sim/buildingTypes.js';
+import { PLOT_COLS, PLOT_ROWS, NICHE_COLS, NICHE_ROWS, plotLocal, nicheLocal } from './sim/cemetery.js';
 import {
   THREE, mat, stick, v, box, cyl, cone, dome, rock, gable, door, window_, chimney, pot, sack, barrel, crate, logs, sign, flagPole,
   pal, flag, pick, DARK, GLASS,
@@ -609,6 +611,55 @@ export function diningMark(p, tier) {
     box(p, 1.8, 1.8, 2.4, GLASS, 3.2, 1.0, 0.0);
     box(p, 1.9, 0.12, 2.5, '#cfcfca', 3.2, 2.0, 0.0);
   }
+}
+
+// Cementerio: un recinto vallado con sus tumbas (los bordes de las que caben a esta edad), una estantería con huecos para los jarrones en
+// el fondo y un portón al frente. Las tumbas ocupadas y los jarrones los dibuja la vista (deadView.js) a partir de lo que hay de verdad.
+export function cemeteryYard(p, tier) {
+  const c = pal(tier);
+  const lv = BUILDINGS.cemetery.levels.find((l) => l.age === tier) ?? BUILDINGS.cemetery.levels[0];
+  const plots = Math.min(PLOT_COLS * PLOT_ROWS, lv.plots);
+  const niches = Math.min(NICHE_COLS * NICHE_ROWS, lv.niches);
+  const fence = tier >= 9 ? '#3a3a40' : tier >= 5 ? c.trim : '#6b4a2e';
+  box(p, 7.6, 0.08, 7.4, tier >= 7 ? '#8f8a7c' : '#7d6a4c', 0, 0.04, 0); // tierra apisonada
+  // Vallado: postes y travesaños, con un hueco al frente (+z) para el portón.
+  const H = tier >= 9 ? 1.1 : 0.9;
+  for (let x = -3.6; x <= 3.61; x += 0.9) if (Math.abs(x) > 1.3) box(p, 0.14, H, 0.14, fence, x, H / 2, 3.6);
+  for (let z = -2.7; z <= 3.61; z += 0.9) {
+    box(p, 0.14, H, 0.14, fence, -3.6, H / 2, z);
+    box(p, 0.14, H, 0.14, fence, 3.6, H / 2, z);
+  }
+  box(p, 2.3, 0.08, 0.08, fence, -2.45, H * 0.8, 3.6);
+  box(p, 2.3, 0.08, 0.08, fence, 2.45, H * 0.8, 3.6);
+  box(p, 0.08, 0.08, 6.4, fence, -3.6, H * 0.8, 0.45);
+  box(p, 0.08, 0.08, 6.4, fence, 3.6, H * 0.8, 0.45);
+  // Portón: dos pilares y un dintel.
+  for (const x of [-1.2, 1.2]) box(p, 0.3, 1.5, 0.3, c.wall, x, 0.75, 3.6);
+  box(p, 2.7, 0.18, 0.3, c.trim, 0, 1.55, 3.6);
+  // Estantería del fondo: un muro con un hueco por cada jarrón que cabe.
+  const wallH = 0.5 + NICHE_ROWS * 0.62;
+  box(p, 7.0, wallH, 0.5, c.wall, 0, wallH / 2, -3.55);
+  box(p, 7.2, 0.14, 0.7, c.roof, 0, wallH + 0.07, -3.55);
+  for (let i = 0; i < niches; i++) {
+    const q = nicheLocal(i);
+    box(p, 0.6, 0.46, 0.12, DARK, q.x, q.y, -3.3);
+  }
+  for (let r = 0; r < NICHE_ROWS; r++) box(p, 6.6, 0.05, 0.22, c.trim, 0, 0.24 + r * 0.62, -3.28);
+  // Tumbas: el borde de piedra de cada una (vacías); las ocupadas llevan además su montículo y su cruz (deadView.js).
+  for (let i = 0; i < plots; i++) {
+    const q = plotLocal(i);
+    box(p, 0.95, 0.03, 0.62, '#5a4632', q.x, 0.1, q.z);
+    box(p, 1.0, 0.07, 0.07, c.base, q.x, 0.12, q.z - 0.34);
+    box(p, 1.0, 0.07, 0.07, c.base, q.x, 0.12, q.z + 0.34);
+    box(p, 0.07, 0.07, 0.68, c.base, q.x - 0.5, 0.12, q.z);
+    box(p, 0.07, 0.07, 0.68, c.base, q.x + 0.5, 0.12, q.z);
+  }
+  if (tier >= 7) for (const x of [-3.1, 3.1]) box(p, 0.3, 1.4, 0.3, c.wall, x, 0.7, 3.1); // obeliscos
+  if (tier >= 9) for (const x of [-3.2, 3.2]) {
+    stick(p, v(x, 0, 2.3), v(x, 2.6, 2.3), 0.05, '#3a3a40', 5);
+    box(p, 0.3, 0.4, 0.3, '#f6e6a0', x, 2.8, 2.3);
+  }
+  if (tier >= 9) box(p, 7.2, 0.1, 1.5, GLASS, 0, wallH + 0.55, -3.0);
 }
 
 // Recolectores y leñadores de las edades avanzadas.

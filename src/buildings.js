@@ -5,6 +5,7 @@ import { levelModel, frameMesh, material, modelVariant, releaseModel } from './b
 import { BUILDINGS, levelOf } from './sim/buildingTypes.js';
 import { buildLevelFor } from './sim/progression.js';
 import { eatingNow } from './sim/dining.js';
+import { usedPlots, plotsOf } from './sim/cemetery.js';
 import { addChimneySmoke } from './chimneySmoke.js';
 import { addTorchFlame } from './torchFlames.js';
 import { DEPOSIT_COLORS } from './sim/economy.js';
@@ -640,6 +641,7 @@ export class BuildingSystem {
     if (b.accessIssue) return '⚠ Entrada bloqueada';
     if (typeof lv.capacity === 'object') return 'Almacén';
     if (lv.seats) return `Comedor · ${eatingNow(this.sim, b)}/${lv.seats} comiendo`;
+    if (lv.plots) return `Cementerio · ${usedPlots(this.sim, b).length}/${plotsOf(b)} tumbas`;
     if (lv.housing != null) {
       const r = this.sim.residents(b);
       return `Vivienda · ${r.adults.length}/${lv.housing}${r.children.length ? ` (+${r.children.length} ${r.children.length > 1 ? 'niños' : 'niño'})` : ''}`;

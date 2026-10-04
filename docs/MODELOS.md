@@ -56,6 +56,10 @@ Generada con `node tools/audit-models.mjs --md`. Una fila por tipo y nivel: la e
 | dining_hall | 3 | 6 | `gen:hall:6:dining_hall` | 2514 | 7.1×4.4×4.3 | 8×8 | — |
 | dining_hall | 4 | 8 | `gen:hall:8:dining_hall` | 2808 | 7.1×4.4×4.3 | 8×8 | — |
 | dining_hall | 5 | 10 | `gen:hall:10:dining_hall` | 2880 | 7.5×4.4×4.3 | 8×8 | mejora poco visible (0.08) |
+| cemetery | 1 | 3 | `gen:cemetery:3:cemetery` | 2376 | 7.6×2.5×7.7 | 8×8 | — |
+| cemetery | 2 | 5 | `gen:cemetery:5:cemetery` | 3312 | 7.6×2.5×7.7 | 8×8 | — |
+| cemetery | 3 | 7 | `gen:cemetery:7:cemetery` | 4500 | 7.6×2.5×7.7 | 8×8 | — |
+| cemetery | 4 | 9 | `gen:cemetery:9:cemetery` | 6024 | 7.6×3.0×7.7 | 8×8 | — |
 | torch | 1 | 1 | `torchModel1` | 564 | 0.4×1.6×0.5 | 1×1 | — |
 | house | 1 | 1 | `houseModel1` | 1014 | 4.2×3.8×4.2 | 4×4 | — |
 | house | 2 | 2 | `houseModel2` | 3072 | 5.2×5.2×5.2 | 4×4 | — |

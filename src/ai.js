@@ -13,6 +13,7 @@ import { DAY_LENGTH_SECONDS } from './daynight.js';
 import { specOf, spotCategory, WORK_TYPES, waitReason } from './sim/specialties.js';
 import { SPROUT_KEY } from './resourceGen.js';
 import { stallReason } from './sim/economy.js';
+import { abandonTarget, farSpot, nextJob, cemeteryStatus, plotSpot, nicheSpot, freePlot, freeNiche, urnWanted, placeUrnHome, isCemetery, BURY_SECONDS, EXHUME_SECONDS, URN_SECONDS, TAKE_SECONDS, PLACE_SECONDS, THINK_SECONDS } from './sim/cemetery.js';
 import { hallFor, hallOpen, mealSource, reserveSeat, releaseSeat, leaveHall, finishMeal, finishDrink, URGENT } from './sim/dining.js';
 
 const DAY = DAY_LENGTH_SECONDS;
@@ -207,6 +208,23 @@ export function chooseTask(colony, c, env) {
     add(urgency(n.warmth) * 1.35 + 0.18, { type: 'dress' });
   }
 
+  // Edades I y II (sin cementerio): un colono cualquiera carga a quien murió y lo deja lejos de la aldea. "Cualquiera": quien piensa justo ahora
+  // y le da por ahí (la mayoría no), con lo básico cubierto y de día. El primero que va lo reserva.
+  if (colony.age < 3 && !c.soldier && !isChild(c) && !env.isNight && Math.min(n.food, n.water, n.rest, n.warmth) > 35 && c.rand() < 0.4) {
+    const body = abandonTarget(colony, c);
+    if (body) add(0.5 / (1 + dist(c, body) / 120), { type: 'abandon', rec: body, phase: 'fetch' });
+  }
+
+  // Un jarrón de un ser querido en la estantería del cementerio: la familia puede querer llevárselo a casa. Lo piensa bien: sólo si tiene lo
+  // básico cubierto, de día, tiene casa, y le dura la idea un buen rato (si se le pasa, no va).
+  if (!c.soldier && !isChild(c) && !env.isNight && c.home != null && Math.min(n.food, n.water, n.rest, n.warmth) > 40) {
+    const want = urnWanted(colony, c, env.gameTime);
+    if (want) {
+      if (c.urnThink?.id !== want.rec.id) c.urnThink = { id: want.rec.id, since: env.gameTime };
+      if (env.gameTime - c.urnThink.since >= THINK_SECONDS) add(0.25 + want.longing * 0.5, { type: 'urn', rec: want.rec, phase: 'toDoor' });
+    } else c.urnThink = null;
+  } else c.urnThink = null;
+
   // Charlar si está desanimado (según su carácter).
   if (n.mood < 60 && !env.isNight) {
     const partner = nearestAwake(colony, c);
@@ -261,8 +279,10 @@ export function chooseTask(colony, c, env) {
     // Con el almacén lleno o sin materiales no se queda esperando: hace otra cosa y vuelve cuando se pueda.
     const full = job?.def.stock && colony.isFull(job.def.stock);
     // Sin materiales, sin sitio donde dejar lo que sale o sin energía: sigue con su siguiente trabajo y vuelve en cuanto se pueda.
-    const stalled = !!(job?.def.kind && (stallReason(colony, job) || (job.status && /Sin energ/i.test(job.status))));
-    if (job && job.done && !full && !stalled) addWork(jobTier, (manualJob ? 0.62 : 0.34) * diligence * fine, { type: 'work', building: job, phase: 'start' });
+    const stalled = !!(job?.def.kind && job.def.kind !== 'cemetery' && (stallReason(colony, job) || (job.status && /Sin energ/i.test(job.status))));
+    // El enterrador sólo sale a trabajar si hay a quién enterrar o pasar a cenizas (si no, sigue con su siguiente trabajo).
+    const idleGrave = !!(job && isCemetery(job) && !nextJob(colony, job, c, env.gameTime));
+    if (job && job.done && !full && !stalled && !idleGrave) addWork(jobTier, (manualJob ? 0.62 : 0.34) * diligence * fine, { type: 'work', building: job, phase: 'start' });
     // Recolectar lo que el jugador marcó (herramienta de recolección): sólo la categoría de cada sitio.
     const marked = colony.nearestMarked(c.x, c.z, env.gameTime, (sp) => tierOf(spotCategory(sp, colony.age)) >= 0);
     if (marked) {
@@ -400,6 +420,249 @@ function runHall(colony, c, task, dt, env, kind) {
   return ok ? 'done' : 'failed';
 }
 
+// Moverse en línea recta hasta un punto (dentro del recinto, donde las colisiones no valen); true al llegar.
+function glide(colony, c, spot, dt, speed = 1.7) {
+  const d = Math.hypot(spot.x - c.x, spot.z - c.z);
+  colony.faceTowards(c, spot.x, spot.z, dt);
+  if (d < 0.1) return true;
+  const step = Math.min(d, speed * dt);
+  c.x += ((spot.x - c.x) / d) * step;
+  c.z += ((spot.z - c.z) / d) * step;
+  c.walking = true;
+  c.moveTick = true;
+  return step >= d - 1e-6;
+}
+
+// El trabajo del enterrador: busca al muerto, lo carga y lo entierra; o pasa a cenizas a quien ya reposó y deja el jarrón en la estantería.
+function runCemetery(colony, c, task, dt, env) {
+  const b = task.building;
+  const now = env.gameTime;
+  if (!task.rec) {
+    const job = nextJob(colony, b, c, now);
+    if (!job) {
+      b.status = cemeteryStatus(colony, b, now) ?? 'Nadie a quien enterrar por ahora';
+      return 'done';
+    }
+    task.rec = job.rec;
+    task.kind = job.kind;
+    task.rec.claim = c.id;
+    task.phase = job.kind === 'bury' ? 'fetch' : 'toDoor';
+    task.timer = 0;
+  }
+  const rec = task.rec;
+  const door = b.entrance?.approach ?? { x: b.x, z: b.z };
+  if (task.kind === 'bury') {
+    b.status = `Entierra a ${rec.name}`;
+    if (task.phase === 'fetch') {
+      if (rec.state !== 'ground') return 'done';
+      if (!go(colony, c, task, rec, dt, 1.1)) return 'running';
+      c.working = true;
+      colony.faceTowards(c, rec.x, rec.z, dt);
+      if (!busy(task, dt, 2.5)) return 'running';
+      const plot = freePlot(colony, b);
+      if (plot == null) return 'done'; // ya no hay tumba libre
+      rec.state = 'carried';
+      rec.carrier = c.id;
+      rec.bid = b.id;
+      rec.plot = plot;
+      task.phase = 'toDoor';
+      task.timer = 0;
+    }
+    if (task.phase === 'toDoor') {
+      c.carrying = 'body';
+      rec.x = c.x;
+      rec.z = c.z;
+      if (!go(colony, c, task, door, dt, 0.9)) return 'running';
+      task.phase = 'inYard';
+    }
+    if (task.phase === 'inYard') {
+      c.carrying = 'body';
+      const spot = plotSpot(b, rec.plot);
+      rec.x = c.x;
+      rec.z = c.z;
+      if (!glide(colony, c, spot, dt)) return 'running';
+      task.phase = 'dig';
+      task.timer = 0;
+    }
+    if (task.phase === 'dig') {
+      c.working = true;
+      if (!busy(task, dt, BURY_SECONDS)) return 'running';
+      rec.state = 'grave';
+      rec.buriedAt = now;
+      rec.carrier = null;
+      rec.claim = null;
+      const p = plotSpot(b, rec.plot);
+      rec.x = p.x;
+      rec.z = p.z;
+      c.carrying = null;
+      colony.emit('notice', `${rec.name} fue enterrado en el cementerio`);
+      colony.emit('changed');
+      task.phase = 'out';
+      return 'running';
+    }
+    if (task.phase === 'out') {
+      if (!glide(colony, c, door, dt)) return 'running';
+      return 'done';
+    }
+    return 'done';
+  }
+  // Pasar a cenizas.
+  b.status = `Pasa a cenizas a ${rec.name}`;
+  if (rec.state !== 'grave' || rec.bid !== b.id) return 'done';
+  if (task.phase === 'toDoor') {
+    if (!go(colony, c, task, door, dt, 0.9)) return 'running';
+    task.phase = 'inYard';
+  }
+  if (task.phase === 'inYard') {
+    if (!glide(colony, c, plotSpot(b, rec.plot), dt)) return 'running';
+    task.phase = 'exhume';
+    task.timer = 0;
+  }
+  if (task.phase === 'exhume') {
+    c.working = true;
+    if (!busy(task, dt, EXHUME_SECONDS)) return 'running';
+    const niche = freeNiche(colony, b);
+    if (niche == null) return 'done'; // sin hueco en la estantería: los restos siguen en su tumba
+    rec.niche = niche; // reservado desde ahora
+    task.phase = 'toShelf';
+    task.timer = 0;
+  }
+  if (task.phase === 'toShelf') {
+    c.carrying = 'urn';
+    if (!glide(colony, c, nicheSpot(b, rec.niche), dt)) return 'running';
+    task.phase = 'fill';
+    task.timer = 0;
+  }
+  if (task.phase === 'fill') {
+    c.carrying = 'urn';
+    c.working = true;
+    if (!busy(task, dt, URN_SECONDS)) return 'running';
+    rec.state = 'shelf';
+    rec.shelvedAt = now;
+    rec.plot = null; // la tumba queda libre
+    rec.claim = null;
+    const n = nicheSpot(b, rec.niche);
+    rec.x = n.x;
+    rec.z = n.z;
+    c.carrying = null;
+    colony.emit('notice', `El jarrón de ${rec.name} está en la estantería del cementerio; su tumba queda libre`);
+    colony.emit('changed');
+    task.phase = 'out';
+    return 'running';
+  }
+  if (task.phase === 'out') {
+    if (!glide(colony, c, door, dt)) return 'running';
+    return 'done';
+  }
+  return 'done';
+}
+
+// Antes del cementerio: un colono carga al muerto y lo deja bien lejos de la aldea.
+function runAbandon(colony, c, task, dt, env) {
+  const rec = task.rec;
+  if (!rec) return 'done';
+  if (!task.started) {
+    if (rec.state !== 'ground' || (rec.claim != null && rec.claim !== c.id)) return 'done';
+    rec.claim = c.id;
+    task.started = true;
+  }
+  if (task.phase === 'fetch') {
+    if (rec.state !== 'ground') return 'done';
+    if (!go(colony, c, task, rec, dt, 1.1)) return 'running';
+    c.working = true;
+    colony.faceTowards(c, rec.x, rec.z, dt);
+    if (!busy(task, dt, 2.5)) return 'running';
+    rec.state = 'carried';
+    rec.carrier = c.id;
+    task.far = farSpot(colony, rec, c.rand);
+    task.phase = 'carry';
+    task.timer = 0;
+  }
+  if (task.phase === 'carry') {
+    c.carrying = 'body';
+    rec.x = c.x;
+    rec.z = c.z;
+    if (!go(colony, c, task, task.far, dt, 1.2)) return 'running';
+    task.phase = 'drop';
+    task.timer = 0;
+  }
+  if (task.phase === 'drop') {
+    c.carrying = 'body';
+    c.working = true;
+    if (!busy(task, dt, 3)) return 'running';
+    rec.state = 'abandoned';
+    rec.carrier = null;
+    rec.claim = null;
+    rec.x = c.x;
+    rec.z = c.z;
+    c.carrying = null;
+    task.delivered = true;
+    colony.emit('notice', `${c.name} dejó el cuerpo de ${rec.name} lejos de la aldea`);
+    colony.emit('changed');
+    return 'done';
+  }
+  return 'done';
+}
+
+// La familia se lleva a casa el jarrón de un ser querido: va al cementerio, lo coge de la estantería, lo lleva y lo deja en su casa.
+function runUrn(colony, c, task, dt, env) {
+  const rec = task.rec;
+  const now = env.gameTime;
+  const b = colony.building(rec?.bid);
+  if (!rec || !b || b.removed) return 'done';
+  const door = b.entrance?.approach ?? { x: b.x, z: b.z };
+  if (!task.started) {
+    if (rec.state !== 'shelf' || (rec.claim != null && rec.claim !== c.id)) return 'done';
+    rec.claim = c.id;
+    task.started = true;
+  }
+  if (task.phase === 'toDoor') {
+    if (!go(colony, c, task, door, dt, 0.9)) return 'running';
+    task.phase = 'inYard';
+  }
+  if (task.phase === 'inYard') {
+    if (!glide(colony, c, nicheSpot(b, rec.niche ?? 0), dt)) return 'running';
+    task.phase = 'take';
+    task.timer = 0;
+  }
+  if (task.phase === 'take') {
+    c.working = true;
+    if (!busy(task, dt, TAKE_SECONDS)) return 'running';
+    if (rec.state !== 'shelf') return 'done';
+    rec.state = 'fetched';
+    rec.carrier = c.id;
+    task.phase = 'out';
+  }
+  if (task.phase === 'out') {
+    c.carrying = 'urn';
+    if (!glide(colony, c, door, dt)) return 'running';
+    task.phase = 'home';
+  }
+  if (task.phase === 'home') {
+    c.carrying = 'urn';
+    const home = colony.building(c.home);
+    if (!home || home.removed || !home.done) return 'failed'; // sin casa: el jarrón vuelve a la estantería (endTask)
+    const at = home.entrance?.approach ?? { x: home.x, z: home.z };
+    rec.x = c.x;
+    rec.z = c.z;
+    if (!go(colony, c, task, at, dt, 0.9)) return 'running';
+    task.phase = 'place';
+    task.timer = 0;
+  }
+  if (task.phase === 'place') {
+    c.carrying = 'urn';
+    c.working = true;
+    if (!busy(task, dt, PLACE_SECONDS)) return 'running';
+    placeUrnHome(colony, rec, c, now);
+    c.carrying = null;
+    task.delivered = true;
+    colony.emit('notice', `${c.name} llevó a casa el jarrón de ${rec.name}`);
+    colony.emit('changed');
+    return 'done';
+  }
+  return 'done';
+}
+
 export function runTask(colony, c, task, dt, env) {
   const n = c.needs;
   const stock = colony.stock;
@@ -480,6 +743,12 @@ export function runTask(colony, c, task, dt, env) {
       if (!busy(task, dt, 5)) return 'running';
       return colony.takeClothes(c) ? 'done' : 'failed';
     }
+
+    case 'urn':
+      return runUrn(colony, c, task, dt, env);
+
+    case 'abandon':
+      return runAbandon(colony, c, task, dt, env);
 
     case 'warm': {
       if (task.seat === undefined) {
@@ -645,6 +914,7 @@ function runWork(colony, c, task, dt, env) {
     return busy(task, dt, 20) ? 'done' : 'running';
   }
   // Con el almacén lleno no tiene sentido traer más: espera (y avisa en la ficha).
+  if (isCemetery(b)) return runCemetery(colony, c, task, dt, env);
   if (colony.isFull(def.stock) && task.phase !== 'returning' && task.phase !== 'hauling') {
     // No se queda parado esperando: termina la tarea y sigue con su siguiente trabajo (chooseTask no le ofrece éste mientras
     // el almacén esté lleno y se lo vuelve a ofrecer en cuanto haya sitio).
@@ -821,6 +1091,29 @@ function runHarvest(colony, c, task, dt, env) {
 // Al abandonar una tarea (por otra más urgente), liberar lo que tenía reservado.
 export function endTask(colony, c, task) {
   if (task.spot && task.spot.taken === c) task.spot.taken = null;
+  // Cementerio: lo que llevaba no se pierde ni se duplica. Un cuerpo a medio llevar queda donde esté; los restos siguen en su tumba;
+  // un jarrón a medio llevar vuelve a su hueco (o, si ya no hay, se queda en la casa del familiar).
+  if (task.rec && (task.type === 'work' || task.type === 'urn' || task.type === 'abandon') && task.rec.claim === c.id) {
+    const rec = task.rec;
+    if (rec.state === 'carried') {
+      rec.state = 'ground';
+      rec.carrier = null;
+      rec.plot = null;
+      rec.bid = null;
+      rec.x = c.x;
+      rec.z = c.z;
+    } else if (rec.state === 'fetched') {
+      const b = colony.building(rec.bid);
+      const niche = b ? freeNiche(colony, b) : null;
+      if (niche != null) {
+        rec.state = 'shelf';
+        rec.niche = niche;
+        rec.carrier = null;
+      } else if (c.home != null) placeUrnHome(colony, rec, c, colony.gameTime);
+    } else if (rec.state === 'grave' && task.kind === 'cremate') rec.niche = null;
+    rec.claim = null;
+  }
+  c.carrying = null;
   // Lo que llevaba no se pierde ni se duplica: se entrega ahora en el almacén.
   if (task.type === 'harvest' && task.load && !task.delivered) {
     for (const [k, n] of Object.entries(task.load)) colony.produce(k, n);
@@ -868,6 +1161,11 @@ export function taskActivity(colony, c, task) {
       return walking ? `Va a casa con ${task.partner.name}` : `Espera a ${task.partner.name} en la puerta`;
     case 'guard':
       return walking ? 'Va a su puesto de guardia' : 'Montando guardia';
+    case 'abandon':
+      return task.phase === 'fetch' ? `Va a por el cuerpo de ${task.rec.name}` : task.phase === 'drop' ? `Deja el cuerpo de ${task.rec.name} lejos de la aldea` : `Lleva el cuerpo de ${task.rec.name} lejos de la aldea`;
+    case 'urn':
+      if (task.phase === 'home' || task.phase === 'place') return task.phase === 'place' ? `Deja en casa el jarrón de ${task.rec.name}` : `Lleva a casa el jarrón de ${task.rec.name}`;
+      return task.phase === 'take' ? `Coge el jarrón de ${task.rec.name}` : `Va a por el jarrón de ${task.rec.name}`;
     case 'warm':
       if (walking) return 'Va a calentarse al fuego';
       return c.sitting === 'bench' ? 'Sentado en un tronco, calentándose' : c.sitting === 'ground' ? 'Sentado junto al fuego, calentándose' : 'Calentándose junto al fuego';

@@ -219,6 +219,10 @@ export function addMoodEvent(c, id, delta, gameTime) {
 // Actualiza necesidades y salud. env: { dt (segundos de juego), ambient (0–1, calor del
 // lugar según clima y hora), nearFire, companion (colono cercano o null), walking, time,
 // absent (el dueño no está: la salud no baja de CRITICAL_HEALTH) }
+export const URN_BONUS = 6; // puntos de ánimo por cada jarrón de un ser querido en su casa
+export const MAX_URNS_BONUS = 2; // hasta dos
+export const STENCH_PENALTY = 12; // puntos de ánimo que quita el peor olor (cuerpos sin enterrar cerca)
+
 export const RUN_REST_COST = 4; // correr cansa 4 veces lo que caminar
 export const RUN_THIRST = 1.5; // y da más sed
 
@@ -257,10 +261,16 @@ export function updateNeeds(c, env) {
   if (env.companion) moodTarget += hasTrait(c, 'loner') ? -5 : hasTrait(c, 'sociable') ? 25 : 12;
   // Sin casa propia (desde la Edad del Bronce) el ánimo baja; la molestia entra de a poco.
   moodTarget -= 14 * (env.homeless ?? 0);
+  // El jarrón de un ser querido en casa consuela (sim/cemetery.js).
+  moodTarget += URN_BONUS * Math.min(MAX_URNS_BONUS, env.urns ?? 0);
+  // El mal olor de cuerpos sin enterrar cerca baja el ánimo mientras dura.
+  moodTarget -= STENCH_PENALTY * Math.min(1, env.stench ?? 0);
   moodTarget = clamp(moodTarget);
   // Lo que explica el ánimo (sim/wellbeing.js): hacia dónde tira y qué condiciones lo empujan. Es estado de trabajo, no se guarda.
   c.moodTarget = moodTarget;
-  const fx = (c.moodFx ??= { companion: 0, homeless: 0 });
+  const fx = (c.moodFx ??= { companion: 0, homeless: 0, urns: 0 });
+  fx.urns = Math.min(MAX_URNS_BONUS, env.urns ?? 0);
+  fx.stench = Math.min(1, env.stench ?? 0);
   fx.companion = env.companion ? 1 : 0;
   fx.homeless = env.homeless ?? 0;
   const moodRate = 100 / (0.8 * DAY);

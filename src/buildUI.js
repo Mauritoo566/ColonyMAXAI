@@ -9,6 +9,7 @@ import { productionEstimate, estimateLine } from './sim/estimates.js';
 import { FOOD_SPOIL_SECONDS, zoneCapacity } from './sim/colony.js';
 import { villageReport } from './sim/report.js';
 import { eatingNow } from './sim/dining.js';
+import { cemeteryStatus, plotsOf, nichesOf, usedPlots, usedNiches } from './sim/cemetery.js';
 import { enableHScroll, revealInScroller } from './hscroll.js';
 import { storageKey } from './storage.js';
 import { preserveScroll, keepScroll } from './keepScroll.js';
@@ -479,6 +480,10 @@ export class BuildUI {
     return `<section class="cp-section">
         <h3>Vecinos (${adults.length}/${level.housing} plazas${children.length ? ` · +${children.length} ${children.length > 1 ? 'niños' : 'niño'} con su familia` : ''})</h3>
         <p class="reason">${residents.length ? residents.map((c) => escapeHtml(c.name)).join(', ') : 'Aún no vive nadie aquí: se mudarán quienes duerman en las tiendas.'}</p>
+        ${(() => {
+          const urns = (this.colony.dead ?? []).filter((r) => r.state === 'home' && r.home === b.id);
+          return urns.length ? `<p class="reason"><strong>Jarrones en casa:</strong> ${urns.map((r) => escapeHtml(r.name)).join(', ')}. Consuelan a su familia.</p>` : '';
+        })()}
         <div class="stat-line"><span>Población máxima de la colonia</span><strong>${this.colony.colonists.length} / ${this.colony.maxPopulation}</strong></div>
         <p class="reason">Es la suma de las plazas de todas las casas terminadas de la colonia (${villageReport(this.colony).population.housing} entre todas ahora mismo), no sólo de ésta.</p>
         ${next ? `<p class="reason">Se puede mejorar a ${next.name} (caben ${next.housing}) pagando, en el mismo sitio, cuando llegue la ${ageInfo(next.age).name}.</p>` : ''}
@@ -582,7 +587,7 @@ export class BuildUI {
     // Clave para no redibujar si nada cambió.
     const site = b.done ? null : colony.siteInfo(b);
     const siteKey = site ? [site.state, site.why, (site.ids ?? []).join(), (site.ordered ?? []).join(), b.priority, b.paused, colony.colonists.map((c) => (c.growth ?? 1) < 1 || c.soldier ? '' : c.id).join('.')].join('~') : '';
-    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, b.accessIssue, upgradeProblem, stored, b.def.id === 'dining_hall' ? eatingNow(colony, b) : '', b.gate, est?.lines[0], (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), Math.floor(colony.stock.tree_seed ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, b.accessIssue, upgradeProblem, stored, b.def.id === 'dining_hall' ? eatingNow(colony, b) : '', b.def.id === 'cemetery' || b.def.levels[0].housing != null ? (colony.dead ?? []).map((r) => `${r.id}${r.state}${r.plot ?? ''}${r.niche ?? ''}${r.home ?? ''}`).join(',') : '', b.gate, est?.lines[0], (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), Math.floor(colony.stock.tree_seed ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -857,10 +862,35 @@ export class BuildUI {
       <ul class="trade-list">${rows.join('')}</ul></section>`;
   }
 
+  // Cementerio: tumbas y huecos de la estantería (usados y libres), quién espera, quién reposa y los jarrones; lo que hace falta si no hay trabajo.
+  cemeteryHtml(b, level) {
+    const colony = this.colony;
+    const dead = colony.dead ?? [];
+    const waiting = dead.filter((r) => r.state === 'ground');
+    const resting = dead.filter((r) => r.state === 'grave' && r.bid === b.id);
+    const urns = dead.filter((r) => r.state === 'shelf' && r.bid === b.id);
+    const home = dead.filter((r) => r.state === 'home');
+    const why = cemeteryStatus(colony, b);
+    const names = (list) => (list.length ? list.map((r) => escapeHtml(r.name)).join(', ') : 'nadie');
+    const freePlots = plotsOf(b) - usedPlots(colony, b).length;
+    const freeNiches = nichesOf(b) - usedNiches(colony, b).length;
+    return `<section class="cp-section"><h3>Cementerio</h3>
+      <div class="stat-line"><span>Tumbas</span><strong>${usedPlots(colony, b).length} / ${plotsOf(b)} ocupadas</strong></div>
+      <div class="stat-line"><span>Estantería (jarrones)</span><strong>${usedNiches(colony, b).length} / ${nichesOf(b)} huecos</strong></div>
+      <div class="stat-line"><span>Esperan sin enterrar</span><strong>${waiting.length}</strong></div>
+      <p class="reason"><strong>En tierra:</strong> ${names(resting)}. Pasan a cenizas cuando han reposado ${Math.round((level.rest ?? 360) / 60)} min de juego y hay hueco en la estantería.</p>
+      <p class="reason"><strong>Jarrones en la estantería:</strong> ${names(urns)}. La familia puede llevárselos a casa si los extraña (les da bienestar).</p>
+      ${home.length ? `<p class="reason"><strong>Ya en casa de su familia:</strong> ${names(home)}.</p>` : ''}
+      ${why ? `<p class="order-msg is-bad">${escapeHtml(why)}</p>` : ''}
+      <p class="reason">Quedan ${freePlots} tumbas libres y ${freeNiches} huecos libres. El enterrador sólo sale a trabajar cuando hay a quién enterrar o pasar a cenizas.</p>
+    </section>`;
+  }
+
   // Hospitales, escuelas y administración: si están funcionando y qué aportan.
   serviceNote(b, level) {
-    if (!['hospital', 'school', 'admin', 'dining_hall'].includes(b.def.id)) return '';
+    if (!['hospital', 'school', 'admin', 'dining_hall', 'cemetery'].includes(b.def.id)) return '';
     const lines = [];
+    if (b.def.id === 'cemetery') return this.cemeteryHtml(b, level);
     if (b.def.id === 'dining_hall') {
       lines.push(['Plazas', `${eatingNow(this.colony, b)} comiendo ahora · ${level.seats} a la vez`]);
       lines.push(['Bienestar', `+${level.mood} por comida (dura ${level.mealTime} s)`]);

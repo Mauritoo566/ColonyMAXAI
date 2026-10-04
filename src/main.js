@@ -21,6 +21,7 @@ import { BuildingSystem } from './buildings.js';
 import { updateSmokes } from './chimneySmoke.js';
 import { initTorchLights, updateTorches } from './torchFlames.js';
 import { startFireworks, updateFireworks } from './fireworks.js';
+import { DeadView } from './deadView.js';
 import { BuildUI } from './buildUI.js';
 import { WeatherSystem, WEATHER } from './weather.js';
 import { AgeUI } from './ageUI.js';
@@ -173,6 +174,10 @@ const buildings = new BuildingSystem({
   labelsRoot: document.getElementById('labels'),
   pickColonist: (x, y) => colonyView.pickAt(x, y) ?? (colonyView.pickMobAt(x, y) != null ? true : null),
 });
+// Los difuntos que se ven: cuerpos tirados o llevados, tumbas, jarrones (sim/cemetery.js; la lista la manda el servidor).
+const deadView = new DeadView({ scene, sim: colony, buildings, colonyView });
+colony.on('dead', () => deadView.sync());
+colony.on('buildings', () => deadView.sync());
 const harvest = new HarvestTool({ scene, camera, canvas, colony, controls, campObject });
 // Recursos del mundo: lo talado desaparece y lo que brota con la lluvia aparece.
 // mergeRemoved (no restoreRemoved): lo propio nunca se "destala", así que sumar es seguro
@@ -832,6 +837,7 @@ renderer.setAnimationLoop(() => {
   updateSmokes(); // humo de las cocinas (sólo mientras hay alguien comiendo dentro)
   updateTorches(undefined, camera, nightLevel); // llamas de las antorchas (con luz de noche)
   updateFireworks(); // fuegos artificiales de las aldeas que suben de edad
+  deadView.update(); // el cuerpo o el jarrón que alguien lleva va con él
   lap('buildings');
   colonyUI.update(delta);
   buildUI.update(delta);

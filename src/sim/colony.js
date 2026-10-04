@@ -26,6 +26,7 @@ import { entranceOf, accessProblem, halfOf, pointInRect, rectsOverlap, circleHit
 import { generateDeposits, depositAt, updateProduction, updatePower, applyHospitals, trainColonists, tradeProblem, doTrade, researchProblem, roadsProblem, roadCost, roadLevelFor, roadKey, roadCellProblem, roadCellOf, roadSpeed, ROAD_LEVELS, ROAD_CELL, ROAD_LIFT, autoRoadPath } from './economy.js';
 import { pushSample } from '../interp.js';
 import { decideRun, RUN_FACTOR } from './running.js';
+import { recordDeath, serializeDead, restoreDead, viewDead, urnsAtHome, stenchAt, seesBody, SAW_BODY, SAW_COOLDOWN } from './cemetery.js';
 import { TECHS_BY_ID } from './techs.js';
 import { recruit, recruitProblem, dismiss, upgradeSoldier, soldierUpgradeProblem, payUpkeep, armyReport, militaryPower } from './military.js';
 import { UNITS_BY_ID } from './units.js';
@@ -196,6 +197,7 @@ export class ColonySim {
     this.age = 1; // edad de la colonia (ages.js)
     this.weather = null; // WeatherSystem: la lluvia acelera lo que crece y enfría
     this.sprouts = []; // brotes de la lluvia (se guardan)
+    this.dead = []; // difuntos: tirados, enterrados, en la estantería o en una casa (sim/cemetery.js)
     this.zones = []; // zona de acopio al aire libre (rectángulo girado, rect.js)
     this.outdoor = {}; // lo guardado al aire libre (parte de stock)
     this.foodBatches = []; // comida al aire libre: [{ amount, expires }]
@@ -318,6 +320,13 @@ export class ColonySim {
       for (const c of this.colonists) {
         c.companion = c.sleeping || c.inside ? null : this.nearestColonist(c, COMPANY_RADIUS);
         c.nearFire = Math.hypot(c.x, c.z) < FIRE_WARMTH_RADIUS;
+        // Cuerpos sin enterrar (desde la edad del cementerio): apestan cerca y entristecen a quien los ve (dentro de casa, el olor llega menos).
+        const stench = this.dead.length ? stenchAt(this, c.x, c.z) * (c.inside || (c.sleeping && !c.outdoorSleep) ? 0.35 : 1) : 0;
+        if (stench > 0 && !c.sleeping && !c.inside && seesBody(this, c) && this.gameTime - (c.sawBodyAt ?? -1e9) > SAW_COOLDOWN) {
+          c.sawBodyAt = this.gameTime;
+          addMoodEvent(c, 'sawbody', SAW_BODY, this.gameTime);
+          addLog(c, time, 'Vio un cuerpo sin enterrar y sintió un olor horrible');
+        }
         updateNeeds(c, {
           dt,
           ambient,
@@ -328,6 +337,8 @@ export class ColonySim {
           companion: c.companion,
           walking: c.walking,
           running: !!c.running && !!c.moving,
+          urns: urnsAtHome(this, c),
+          stench,
           time,
           gameTime: this.gameTime,
           absent,
@@ -350,7 +361,7 @@ export class ColonySim {
         }
       }
       // Talleres, servicios y energía avanzan en cada paso (así también cuentan al ponerse al día).
-      for (const b of this.buildings) if (b.done && b.def.kind) updateProduction(this, b, dt);
+      for (const b of this.buildings) if (b.done && b.def.kind && b.def.kind !== 'cemetery') updateProduction(this, b, dt);
       applyHospitals(this, dt);
       this.powerTimer = (this.powerTimer ?? 0) - dt;
       if (this.powerTimer <= 0) {
@@ -530,6 +541,7 @@ export class ColonySim {
   die(c, cause) {
     const time = this.timeLabel();
     this.deaths.push({ name: c.name, cause, day: time });
+    recordDeath(this, c, cause); // el cuerpo queda tirado y los suyos lo lloran (el enterrador va a buscarlo)
     this.colonists = this.colonists.filter((o) => o !== c);
     if (c.task) endTask(this, c, c.task);
     for (const b of this.buildings) b.workers = b.workers.filter((w) => w !== c);
@@ -589,6 +601,7 @@ export class ColonySim {
     this.gameTime = 0;
     this.removed = new Map();
     this.sprouts = [];
+    this.dead = [];
     this.sproutTile = null;
     this.groveTile = null;
     this.spots = [];
@@ -1268,6 +1281,7 @@ export class ColonySim {
     c.walking = false;
     c.working = false;
     c.sitting = null; // 'ground' | 'bench' mientras se calienta sentado (lo fija la tarea cada paso)
+    c.carrying = null; // 'body' | 'urn' mientras lleva un cuerpo o un jarrón (lo fija la tarea cada paso)
     c.waiting = false;
     c.moveTick = false;
     c.thinkTimer -= dt;
@@ -3441,6 +3455,7 @@ export class ColonySim {
         regrowing: this.spots.filter((s) => s.readyAt > this.gameTime).map((s) => [s.key, s.index, s.readyAt]),
         removed: this.serializeRemoved(),
         sprouts: this.sprouts,
+        dead: serializeDead(this.dead),
         marked: this.spots.filter((s) => s.marked && !s.gone).map((s) => [s.key, s.index]),
         zones: this.zones,
         outdoor: this.outdoor,
@@ -3663,7 +3678,7 @@ export class ColonySim {
   // cuando nace alguien; después no hace falta repetirlos).
   snapshot(part = 'full', { statics = true } = {}) {
     const r2 = (v) => Math.round(v * 100) / 100;
-    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0) | (c.sitting === 'ground' ? 256 : 0) | (c.sitting === 'bench' ? 512 : 0) | (c.running ? 1024 : 0);
+    const flags = (c) => (c.walking ? 1 : 0) | (c.working ? 2 : 0) | (c.sleeping ? 4 : 0) | (c.clothed ? 8 : 0) | (c.loving ? 16 : 0) | (c.inside ? 32 : 0) | (c.sleeping && c.outdoorSleep ? 64 : 0) | (c.moving ? 128 : 0) | (c.sitting === 'ground' ? 256 : 0) | (c.sitting === 'bench' ? 512 : 0) | (c.running ? 1024 : 0) | (c.carrying === 'body' ? 2048 : 0) | (c.carrying === 'urn' ? 4096 : 0);
     const mobsRows = () => this.mobs.map((m) => [m.id, MOB_TYPES.indexOf(m.type), r2(m.x), r2(m.z), r2(m.facing), m.state]);
     if (part === 'fast') {
       // gameTime: la hora de juego de esta colonia, para que quien la mira vea crecer los brotes plantados igual que su dueño.
@@ -3707,6 +3722,7 @@ export class ColonySim {
       discovery: this.discovery,
       defeat: this.defeat,
       deaths: this.deaths.slice(-10),
+      dead: viewDead(this.dead),
       alerts: this.alerts,
       autoRoads: this.autoRoads,
       roads: statics ? [...this.roads].map(([k, lv]) => [...k.split(',').map(Number), lv]) : undefined,
@@ -3741,7 +3757,7 @@ export class ColonySim {
         age: c.age,
         // Por qué está como está (sim/wellbeing.js): hacia dónde tira el ánimo, su categoría y tendencia, los golpes recientes,
         // la tarea y lo que le impide resolver su necesidad. La réplica del navegador lo usa para explicarlo.
-        mf: [r2(c.moodTarget ?? c.needs.mood), c.moodBand ?? 2, c.moodTrend ?? 0, c.moodFx?.companion ?? 0, Math.round((c.moodFx?.homeless ?? 0) * 100)],
+        mf: [r2(c.moodTarget ?? c.needs.mood), c.moodBand ?? 2, c.moodTrend ?? 0, c.moodFx?.companion ?? 0, Math.round((c.moodFx?.homeless ?? 0) * 100), c.moodFx?.urns ?? 0, Math.round((c.moodFx?.stench ?? 0) * 100)],
         me: c.moodEvents?.length ? c.moodEvents.map((e) => [e.id, r2(e.delta), r2(e.at)]) : undefined,
         tt: c.task?.type ?? null,
         bl: c.block ? [c.block.need, c.block.why] : undefined,
@@ -3822,6 +3838,7 @@ export class ColonySim {
       c.outdoorSleep = !!(f & 64);
       c.sitting = f & 512 ? 'bench' : f & 256 ? 'ground' : null;
       c.running = !!(f & 1024);
+      c.carrying = f & 2048 ? 'body' : f & 4096 ? 'urn' : null;
       if (c.clothed !== !!(f & 8)) {
         c.clothed = !!(f & 8);
         this.emit('clothes');
@@ -3844,7 +3861,7 @@ export class ColonySim {
         c.moodTarget = row.mf[0];
         c.moodBand = row.mf[1];
         c.moodTrend = row.mf[2];
-        c.moodFx = { companion: row.mf[3], homeless: row.mf[4] / 100 };
+        c.moodFx = { companion: row.mf[3], homeless: row.mf[4] / 100, urns: row.mf[5] ?? 0, stench: (row.mf[6] ?? 0) / 100 };
       }
       c.moodEvents = row.me ? row.me.map(([id, delta, at]) => ({ id, delta, at })) : undefined;
       c.taskType = row.tt ?? null;
@@ -3864,6 +3881,15 @@ export class ColonySim {
     if (part === 'fast') return;
 
     this.gameTime = s.gameTime;
+    // Difuntos (para dibujarlos y mostrarlos): la copia del navegador sólo refleja la del servidor.
+    if (Array.isArray(s.dead)) {
+      const key = JSON.stringify(s.dead);
+      if (key !== this.deadKey) {
+        this.deadKey = key;
+        this.dead = s.dead;
+        this.emit('dead');
+      }
+    }
     this.stock = { ...s.stock };
     this.outdoor = { ...s.outdoor };
     this.foodBatches = s.foodBatches ?? [];
@@ -4017,6 +4043,7 @@ export class ColonySim {
     this.discovery = data.discovery && Number.isFinite(data.discovery.progress) ? { progress: Math.min(1, Math.max(0, data.discovery.progress)) } : null;
     this.defeat = data.defeat && typeof data.defeat.cause === 'string' ? { cause: data.defeat.cause, day: String(data.defeat.day ?? ''), last: String(data.defeat.last ?? '') } : null;
     this.deaths = Array.isArray(data.deaths) ? data.deaths.filter((d) => d && typeof d.name === 'string').slice(-20) : [];
+    this.dead = restoreDead(data.dead);
     this.autoRoads = data.autoRoads !== false;
     const keys = (list) => new Set((Array.isArray(list) ? list : []).filter((k) => typeof k === 'string' && /^-?\d+,-?\d+$/.test(k)));
     this.autoRoadKeys = new Set([...keys(data.autoRoadKeys)].filter((k) => this.roads.has(k)));
