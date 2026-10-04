@@ -8,6 +8,7 @@ import { PRIORITY_NAMES } from './ai.js';
 import { productionEstimate, estimateLine } from './sim/estimates.js';
 import { FOOD_SPOIL_SECONDS, zoneCapacity } from './sim/colony.js';
 import { villageReport } from './sim/report.js';
+import { eatingNow } from './sim/dining.js';
 import { storageKey } from './storage.js';
 import { preserveScroll, keepScroll } from './keepScroll.js';
 import { DAY_LENGTH_SECONDS } from './daynight.js';
@@ -854,8 +855,13 @@ export class BuildUI {
 
   // Hospitales, escuelas y administración: si están funcionando y qué aportan.
   serviceNote(b, level) {
-    if (!['hospital', 'school', 'admin'].includes(b.def.id)) return '';
+    if (!['hospital', 'school', 'admin', 'dining_hall'].includes(b.def.id)) return '';
     const lines = [];
+    if (b.def.id === 'dining_hall') {
+      lines.push(['Plazas', `${eatingNow(this.colony, b)} comiendo ahora · ${level.seats} a la vez`]);
+      lines.push(['Bienestar', `+${level.mood} por comida (dura ${level.mealTime} s)`]);
+      lines.push(['Comida', 'sale del almacén de la colonia (pan si hay)']);
+    }
     if (b.def.id === 'hospital') lines.push(['Atención', b.operating ? `activa (recuperación ×${(level.regen ?? 0).toFixed(1)})` : 'parada']);
     if (b.def.id === 'school') lines.push(['Enseñanza', b.operating ? `activa (hasta nivel ${level.skillCap})` : 'parada']);
     if (level.population) lines.push(['Cubre a', `${level.population} habitantes`]);

@@ -9,7 +9,7 @@ import {
 } from './modelParts.js';
 import {
   quarryPit, clayPit, shaftMine, pottery, bakery, charcoalKiln, brickKiln, smelterMark, bloomeryMark, workshopMark, sawmill, millMark, powderMill,
-  factoryMark, barracksMark, upgradeKit, waterWorks, farmMark, stockpileMark, gathererMark, woodcutterMark,
+  factoryMark, barracksMark, upgradeKit, waterWorks, farmMark, stockpileMark, gathererMark, woodcutterMark, diningMark,
 } from './buildingModelsSig.js';
 
 // ---- Viviendas ------------------------------------------------------------------------------
@@ -210,6 +210,9 @@ function hall(p, tier, id) {
     case 'school':
       box(p, 0.9, 1.2, 0.9, c.trim, w / 2 - 0.7, 0.3 + h + 0.6, 0);
       cone(p, 0.65, 0.7, c.roof, w / 2 - 0.7, 0.3 + h + 1.55, 0, 4);
+      break;
+    case 'dining_hall':
+      diningMark(p, tier);
       break;
     default:
       break;

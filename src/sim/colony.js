@@ -72,7 +72,7 @@ export const CLOTHES_SPOT = { x: Math.cos(0.55) * 7.2, z: Math.sin(0.55) * 7.2 }
 // Tótem de la tribu (llega con la Edad de Piedra), junto a la fogata.
 export const TOTEM_SPOT = { x: Math.cos(4.6) * 7, z: Math.sin(4.6) * 7 };
 
-const WALK_SPEED = 1.4; // m/s
+export const WALK_SPEED = 1.8; // m/s (antes 1,4: se veían lentos)
 export const COLONIST_RADIUS = 0.45;
 const WANDER = [6, 70]; // pasean por el claro y sus alrededores (metros desde la fogata)
 const HEIGHT_CELL = 2; // metros por celda de la caché de alturas

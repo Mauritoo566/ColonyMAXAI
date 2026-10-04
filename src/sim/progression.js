@@ -17,7 +17,7 @@ import { DAY_LENGTH_SECONDS } from '../daynight.js';
 // Lo que todavía no funciona no se ofrece ni se puede construir. Cada fase añade sus funciones.
 export const FEATURES = new Set(['gather', 'storage', 'house', 'well', 'crew', 'process', 'power', 'energy', 'deposit', 'drop', 'market', 'admin', 'research', 'tech', 'service', 'military', 'defense']);
 
-const KIND_FEATURE = { undefined: 'gather', process: 'process', power: 'power', node: 'power', drop: 'drop', market: 'market', admin: 'admin', research: 'research', service: 'service', military: 'military', defense: 'defense' };
+const KIND_FEATURE = { undefined: 'gather', process: 'process', power: 'power', node: 'power', drop: 'drop', market: 'market', admin: 'admin', research: 'research', service: 'service', dining: 'service', military: 'military', defense: 'defense' };
 
 function kindImplemented(def) {
   const feature = def.id === 'stockpile' ? 'storage' : def.id === 'house' || def.id === 'apartment' ? 'house' : def.id === 'well' ? 'well' : KIND_FEATURE[def.kind];
@@ -70,7 +70,7 @@ export const EXPANSION_STEP = 12; // metros de radio por ampliación
 export const limitsFor = (age) => LIMITS[Math.min(LIMITS.length, Math.max(1, age)) - 1];
 
 // Factor del tope por tipo de edificio (las defensas largas, los postes y los pozos son distintos).
-const CAP_SCALE = { well: 1, farm: 1.5, stockpile: 1.5, wall: 12, pole: 8, watchtower: 3, gate: 2, fort: 0.5, barracks: 1, hospital: 0.5, school: 0.5, market: 0.5, admin: 0.5, academy: 0.5, power_plant: 0.5, boiler: 1, station: 0.5 };
+const CAP_SCALE = { well: 1, farm: 1.5, stockpile: 1.5, wall: 12, pole: 8, watchtower: 3, gate: 2, fort: 0.5, barracks: 1, hospital: 0.5, school: 0.5, dining_hall: 0.5, market: 0.5, admin: 0.5, academy: 0.5, power_plant: 0.5, boiler: 1, station: 0.5 };
 
 export function capOf(def, age) {
   const l = limitsFor(age);

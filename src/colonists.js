@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RADIUS } from './elevation.js';
 import { Parts, mat, stick, v } from './modelKit.js';
-import { CLOTHES_SPOT, TOTEM_SPOT } from './sim/colony.js';
+import { CLOTHES_SPOT, TOTEM_SPOT, WALK_SPEED } from './sim/colony.js';
 import { appearanceFromGenes } from './genes.js';
 import { CenterView } from './center.js';
 import { outfitFor } from './outfits.js';
@@ -14,7 +14,6 @@ import { sampleTrack, clock } from './interp.js';
 // un clic. También dibuja la pila de ropa y el tótem de la tribu. No decide nada: todo
 // lo que hacen sale de la simulación.
 
-const WALK_SPEED = 1.4; // m/s (para el ritmo de las piernas)
 const LABEL_DISTANCE = 170; // metros: más lejos no se muestra ni el aviso de problema
 const LABEL_NEAR = 50; // metros: el nombre de un colono sano sólo se ve así de cerca
 const LABEL_MAX = 10; // etiquetas a la vez (además del elegido)

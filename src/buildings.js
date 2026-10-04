@@ -4,6 +4,7 @@ import { pickSurface } from './camp.js';
 import { levelModel, frameMesh, material, modelVariant, releaseModel } from './buildingModels.js';
 import { BUILDINGS, levelOf } from './sim/buildingTypes.js';
 import { buildLevelFor } from './sim/progression.js';
+import { eatingNow } from './sim/dining.js';
 import { DEPOSIT_COLORS } from './sim/economy.js';
 import { entranceOf, halfOf, ACCESS_DEPTH, footprintRect, rectsOverlap } from './sim/access.js';
 
@@ -628,6 +629,7 @@ export class BuildingSystem {
     const needed = this.sim.crewNeeded(b);
     if (b.accessIssue) return '⚠ Entrada bloqueada';
     if (typeof lv.capacity === 'object') return 'Almacén';
+    if (lv.seats) return `Comedor · ${eatingNow(this.sim, b)}/${lv.seats} comiendo`;
     if (lv.housing != null) {
       const r = this.sim.residents(b);
       return `Vivienda · ${r.adults.length}/${lv.housing}${r.children.length ? ` (+${r.children.length} ${r.children.length > 1 ? 'niños' : 'niño'})` : ''}`;

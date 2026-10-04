@@ -51,6 +51,11 @@ Generada con `node tools/audit-models.mjs --md`. Una fila por tipo y nivel: la e
 | stockpile | 8 | 8 | `gen:hall:8:stockpile` | 2028 | 7.3×3.8×4.4 | 4×4 | sobresale 1.6 m de su huella |
 | stockpile | 9 | 9 | `gen:hall:9:stockpile` | 2460 | 7.3×3.8×5.5 | 4×4 | sobresale 1.6 m de su huella |
 | stockpile | 10 | 10 | `gen:hall:10:stockpile` | 2568 | 7.3×3.8×5.5 | 4×4 | mejora poco visible (0.07); sobresale 1.6 m de su huella |
+| dining_hall | 1 | 2 | `gen:hall:2:dining_hall` | 2310 | 7.1×6.0×3.8 | 8×8 | — |
+| dining_hall | 2 | 4 | `gen:hall:4:dining_hall` | 2538 | 7.1×6.0×3.9 | 8×8 | — |
+| dining_hall | 3 | 6 | `gen:hall:6:dining_hall` | 2838 | 7.1×6.0×4.3 | 8×8 | — |
+| dining_hall | 4 | 8 | `gen:hall:8:dining_hall` | 3132 | 7.1×6.0×4.3 | 8×8 | — |
+| dining_hall | 5 | 10 | `gen:hall:10:dining_hall` | 3204 | 7.5×6.0×4.3 | 8×8 | mejora poco visible (0.08) |
 | house | 1 | 1 | `houseModel1` | 1014 | 4.2×3.8×4.2 | 4×4 | — |
 | house | 2 | 2 | `houseModel2` | 3072 | 5.2×5.2×5.2 | 4×4 | — |
 | house | 3 | 3 | `gen:house:3:house` | 1122 | 4.4×3.5×3.7 | 4×4 | — |

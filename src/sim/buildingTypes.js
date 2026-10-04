@@ -234,6 +234,29 @@ add({
 });
 
 // ---------------------------------------------------------------------------------------
+// Comedor: los colonos comen dentro, sentados y a gusto, con lo que haya en el almacén de la colonia (no hace falta
+// llevar nada: está conectado a él). Cada plato les da bienestar; al aire libre, junto al fuego, no.
+//   seats      plazas a la vez · mealTime  segundos que dura una comida · mood  bienestar que da cada comida
+// ---------------------------------------------------------------------------------------
+
+add({
+  id: 'dining_hall',
+  category: 'services',
+  kind: 'dining',
+  icon: 'food',
+  cost: { wood: 30, stone: 10, fiber: 8 },
+  buildTime: 70,
+  footprint: 3.4,
+  levels: [
+    L(2, 'Comedor de troncos', 'Una sala techada con mesas largas y bancos junto a una cocina de piedra. Come y bebe con lo que hay en el almacén de la colonia: los colonos entran, se sientan y comen a gusto, y eso les da bienestar. Con un comedor en uso se consume sólo ahí (comer o beber fuera queda para emergencias) y el aguatero lleva el agua en jarras hasta el almacén.', 'gen:hall:2', { seats: 6, mealTime: 12, mood: 8 }),
+    L(4, 'Comedor de adobe', 'Más mesas, un hogar grande y un toldo para el verano: caben más a la vez y la comida sienta mejor.', 'gen:hall:4', { seats: 10, mealTime: 11, mood: 10, upgradeCost: { wood: 40, stone: 24, iron_tools: 1 } }),
+    L(6, 'Comedor de tablones', 'Una nave de tablones con ventanas, cocina con campana y alacenas: se come rápido y bien.', 'gen:hall:6', { seats: 16, mealTime: 10, mood: 12, upgradeCost: { planks: 24, cut_stone: 14 } }),
+    L(8, 'Comedor de ladrillo', 'Salón de ladrillo con barra de servicio y cocina industrial.', 'gen:hall:8', { seats: 24, mealTime: 9, mood: 14, upgradeCost: { bricks: 24, planks: 16 } }),
+    L(10, 'Comedor moderno', 'Comedor colectivo con cocina central y salón acristalado.', 'gen:hall:10', { seats: 36, mealTime: 8, mood: 16, upgradeCost: { concrete: 20, steel: 8 } }),
+  ],
+});
+
+// ---------------------------------------------------------------------------------------
 // Viviendas: se construyen ya con el aspecto de la edad; las que ya están se mejoran pagando
 // ---------------------------------------------------------------------------------------
 
@@ -892,7 +915,7 @@ export const BUILD_CATEGORIES = [
   { id: 'housing', name: 'Vivienda', icon: 'people', soon: 'Chozas y casas para que los colonos duerman mejor y la colonia crezca.' },
   { id: 'storage', name: 'Almacenes', icon: 'wood', soon: 'Graneros y depósitos para guardar más recursos.' },
   { id: 'infrastructure', name: 'Infraestructura', icon: 'bolt', soon: 'Agua, energía, transporte y caminos.' },
-  { id: 'services', name: 'Servicios', icon: 'coin', soon: 'Comercio, administración, investigación, salud y enseñanza.' },
+  { id: 'services', name: 'Servicios', icon: 'coin', soon: 'Comedores, comercio, administración, investigación, salud y enseñanza.' },
   { id: 'military', name: 'Ejército', icon: 'sword', soon: 'Cuarteles, armerías y escuelas militares.' },
   { id: 'defense', name: 'Defensa', icon: 'shield', soon: 'Empalizadas, torres y murallas.' },
 ];

@@ -12,6 +12,8 @@ import { levelOf, STOCK_NAMES } from './sim/buildingTypes.js';
 import { DAY_LENGTH_SECONDS } from './daynight.js';
 import { specOf, spotCategory, WORK_TYPES, waitReason } from './sim/specialties.js';
 import { SPROUT_KEY } from './resourceGen.js';
+import { stallReason } from './sim/economy.js';
+import { hallFor, hallOpen, mealSource, reserveSeat, releaseSeat, leaveHall, finishMeal, finishDrink, URGENT } from './sim/dining.js';
 
 const DAY = DAY_LENGTH_SECONDS;
 
@@ -150,23 +152,37 @@ export function chooseTask(colony, c, env) {
   // Comer: bayas o setas cercanas, o las provisiones del almacén.
   if (n.food < 75) {
     const base = urgency(n.food) * 1.3 + (n.food < 45 ? 0.15 : 0);
-    const bush = colony.nearestSpot('food', c.x, c.z, 200, env.gameTime);
+    // Con un comedor en uso se come ahí: fuera (el almacén de la fogata, las bayas del monte) sólo si es urgente o si el comedor
+    // no tiene nada que servir.
+    const open = hallOpen(colony);
+    const outside = !open || n.food < URGENT;
+    const bush = !outside && mealSource(colony) ? null : colony.nearestSpot('food', c.x, c.z, 200, env.gameTime);
     if (bush) add(base * distanceFactor(dist(c, bush)), { type: 'eat', source: 'bush', spot: bush });
-    if (stock.food >= 1) add(base * distanceFactor(dist(c, storage)) * 1.05, { type: 'eat', source: 'stock' });
+    if (stock.food >= 1 && outside) add(base * distanceFactor(dist(c, storage)) * 1.05, { type: 'eat', source: 'stock' });
     // El pan sacia más que cualquier otra cosa: se prefiere si hay.
-    if ((stock.bread ?? 0) >= 1) add(base * distanceFactor(dist(c, storage)) * 1.25, { type: 'eat', source: 'bread' });
+    if ((stock.bread ?? 0) >= 1 && outside) add(base * distanceFactor(dist(c, storage)) * 1.25, { type: 'eat', source: 'bread' });
+    // El comedor (si hay uno con plaza y algo que servir): se come dentro, sentado y a gusto; se prefiere a comer al aire libre.
+    const hall = mealSource(colony) ? hallFor(colony, c) : null;
+    if (hall) add(base * distanceFactor(dist(c, hall)) * 1.5, { type: 'eat', source: 'hall', building: hall });
   }
 
   // Beber: agua cercana, un pozo o el almacén.
   if (n.water < 75) {
     const base = urgency(n.water) * 1.4 + (n.water < 45 ? 0.15 : 0);
-    const water = colony.waterSpot();
+    // Con un comedor en uso se bebe ahí; el río, el pozo y el almacén de la fogata, sólo si es urgente o si no hay agua en el almacén.
+    const open = hallOpen(colony);
+    const outside = !open || n.water < URGENT;
+    const outsideWater = outside || (stock.water ?? 0) < 1;
+    const water = outsideWater ? colony.waterSpot() : null;
     if (water) add(base * distanceFactor(dist(c, water)), { type: 'drink', source: 'water', spot: water });
     for (const b of colony.buildings) {
+      if (!outsideWater) break;
       // Del recolector de lluvia sólo se bebe si tiene agua juntada.
       if (b.def.id === 'well' && b.done && !b.accessIssue && (!levelOf(b).rainOnly || b.store >= 1)) add(base * distanceFactor(dist(c, b)) * 1.1, { type: 'drink', source: 'well', building: b });
     }
-    if (stock.water >= 1) add(base * distanceFactor(dist(c, storage)), { type: 'drink', source: 'stock' });
+    if (stock.water >= 1 && outside) add(base * distanceFactor(dist(c, storage)), { type: 'drink', source: 'stock' });
+    const dhall = stock.water >= 1 ? hallFor(colony, c) : null;
+    if (dhall) add(base * distanceFactor(dist(c, dhall)) * 1.5, { type: 'drink', source: 'hall', building: dhall });
   }
 
   // Dormir: de noche con ganas, o de día sólo si está agotado.
@@ -244,7 +260,8 @@ export function chooseTask(colony, c, env) {
     const job = c.job;
     // Con el almacén lleno o sin materiales no se queda esperando: hace otra cosa y vuelve cuando se pueda.
     const full = job?.def.stock && colony.isFull(job.def.stock);
-    const stalled = job?.status && /Faltan materiales|Sin energ/i.test(job.status) && job.def.kind;
+    // Sin materiales, sin sitio donde dejar lo que sale o sin energía: sigue con su siguiente trabajo y vuelve en cuanto se pueda.
+    const stalled = !!(job?.def.kind && (stallReason(colony, job) || (job.status && /Sin energ/i.test(job.status))));
     if (job && job.done && !full && !stalled) addWork(jobTier, (manualJob ? 0.62 : 0.34) * diligence * fine, { type: 'work', building: job, phase: 'start' });
     // Recolectar lo que el jugador marcó (herramienta de recolección): sólo la categoría de cada sitio.
     const marked = colony.nearestMarked(c.x, c.z, env.gameTime, (sp) => tierOf(spotCategory(sp, colony.age)) >= 0);
@@ -350,6 +367,39 @@ function busy(task, dt, seconds) {
   return task.timer >= seconds;
 }
 
+// Comer o beber en el comedor: reserva plaza, va a la puerta, entra (dentro no se ve), come o bebe el tiempo que dura y sale.
+function runHall(colony, c, task, dt, env, kind) {
+  const b = task.building;
+  if (!b || b.removed || !b.done) return 'failed';
+  if (!task.seated) {
+    if (!task.reserved) {
+      if (!reserveSeat(colony, b, c)) {
+        task.failWhy = 'El comedor está lleno';
+        return 'failed';
+      }
+      task.reserved = true;
+    }
+    if (kind === 'eat' ? !mealSource(colony) : (colony.stock.water ?? 0) < 1) {
+      task.failWhy = kind === 'eat' ? 'No queda comida en el almacén' : 'No queda agua en el almacén';
+      return 'failed';
+    }
+    if (!go(colony, c, task, edgeOf(b, c), dt, 0.9)) return 'running';
+    c.x = b.x;
+    c.z = b.z;
+    c.inside = true;
+    task.seated = true;
+    task.timer = 0;
+  }
+  c.inside = true;
+  task.timer += dt;
+  const meal = levelOf(b)?.mealTime ?? 12;
+  if (task.timer < (kind === 'eat' ? meal : Math.min(6, meal * 0.5))) return 'running';
+  const ok = kind === 'eat' ? finishMeal(colony, c, b, env.gameTime) : finishDrink(colony, c);
+  leaveHall(c, b);
+  if (!ok) task.failWhy = kind === 'eat' ? 'Se acabó la comida mientras comía' : 'Se acabó el agua mientras bebía';
+  return ok ? 'done' : 'failed';
+}
+
 export function runTask(colony, c, task, dt, env) {
   const n = c.needs;
   const stock = colony.stock;
@@ -357,6 +407,7 @@ export function runTask(colony, c, task, dt, env) {
 
   switch (task.type) {
     case 'eat': {
+      if (task.source === 'hall') return runHall(colony, c, task, dt, env, 'eat');
       if (task.source === 'bush') {
         const spot = task.spot;
         if (spot.taken && spot.taken !== c) return 'failed';
@@ -386,6 +437,7 @@ export function runTask(colony, c, task, dt, env) {
     }
 
     case 'drink': {
+      if (task.source === 'hall') return runHall(colony, c, task, dt, env, 'drink');
       const point = task.source === 'water' ? task.spot : task.source === 'well' ? edgeOf(task.building, c) : colony.layout.storage;
       if (!go(colony, c, task, point, dt, 1.6)) return 'running';
       if (!busy(task, dt, 4)) return 'running';
@@ -593,14 +645,25 @@ function runWork(colony, c, task, dt, env) {
     return busy(task, dt, 20) ? 'done' : 'running';
   }
   // Con el almacén lleno no tiene sentido traer más: espera (y avisa en la ficha).
-  if (colony.isFull(def.stock) && task.phase !== 'returning') {
+  if (colony.isFull(def.stock) && task.phase !== 'returning' && task.phase !== 'hauling') {
+    // No se queda parado esperando: termina la tarea y sigue con su siguiente trabajo (chooseTask no le ofrece éste mientras
+    // el almacén esté lleno y se lo vuelve a ofrecer en cuanto haya sitio).
     task.noResource = true;
     task.storeFull = true;
     b.status = `El almacén está lleno de ${STOCK_NAMES[def.stock]}: construye o mejora almacenes`;
-    return busy(task, dt, 20) ? 'done' : 'running';
+    return 'done';
   }
   if (def.kind) return runStation(colony, c, task, dt, env);
   if (def.id === 'well') {
+    // Con un comedor en uso el agua no aparece sola en el almacén: el aguatero la lleva en jarras (todo el consumo es en el comedor).
+    if (task.phase === 'hauling') {
+      if (!go(colony, c, task, colony.layout.storage, dt, 1.6)) return 'running';
+      const water = colony.produce('water', task.water);
+      b.produced += water;
+      task.delivered = true;
+      b.status = null;
+      return 'done';
+    }
     // Recolector de lluvia: el aguatero vacía las vasijas en el almacén (si hay agua).
     if (level.rainOnly && b.store < 1) {
       task.noResource = true;
@@ -621,6 +684,12 @@ function runWork(colony, c, task, dt, env) {
     } else {
       // Con lluvia el pozo se llena solo: rinde hasta el doble.
       water = level.yield * (1 + (colony.weather?.effectiveRain ?? 0));
+    }
+    if (hallOpen(colony)) {
+      task.water = water;
+      task.phase = 'hauling';
+      b.status = null;
+      return 'running';
     }
     water = colony.produce('water', water);
     b.produced += water;
@@ -697,6 +766,8 @@ function runWork(colony, c, task, dt, env) {
 function runStation(colony, c, task, dt, env) {
   const b = task.building;
   if (!b.done || c.job !== b || b.removed) return 'done';
+  // Sin materiales o sin sitio donde dejar lo que sale: no se queda parado en el puesto, sigue con otro trabajo.
+  if (stallReason(colony, b)) return 'done';
   if (!go(colony, c, task, edgeOf(b, c), dt, 0.9)) return 'running';
   c.working = !!b.operating || !!b.cycleActive;
   colony.faceTowards(c, b.x, b.z, dt);
@@ -754,9 +825,17 @@ export function endTask(colony, c, task) {
   if (task.type === 'harvest' && task.load && !task.delivered) {
     for (const [k, n] of Object.entries(task.load)) colony.produce(k, n);
     task.delivered = true;
+  } else if (task.type === 'work' && task.phase === 'hauling' && !task.delivered && task.water > 0) {
+    // Las jarras que llevaba no se pierden: se dejan ahora en el almacén.
+    task.building.produced += colony.produce('water', task.water);
+    task.delivered = true;
   } else if (task.type === 'work' && task.phase === 'returning' && !task.delivered && task.building?.def.stock) {
     colony.produce(task.building.def.stock, task.litter ? task.building.def.scavenge.yield : levelOf(task.building).yield);
     task.delivered = true;
+  }
+  if ((task.type === 'eat' || task.type === 'drink') && task.source === 'hall') {
+    releaseSeat(task.building, c);
+    leaveHall(c, task.building);
   }
   if (task.type === 'sleep') c.sleeping = false;
   if (task.type === 'love') endLove(colony, c);
@@ -770,10 +849,12 @@ export function taskActivity(colony, c, task) {
   const walking = c.walking;
   switch (task.type) {
     case 'eat':
+      if (task.source === 'hall') return c.inside ? 'Comiendo sentado en el comedor' : walking ? 'Va al comedor' : 'Entrando al comedor';
       if (task.source === 'bread') return walking ? 'Va a comer pan' : 'Comiendo pan';
       if (task.source === 'stock') return walking ? 'Va a comer de las provisiones' : 'Comiendo';
       return walking ? `Va a buscar ${task.spot.type === 'mushrooms' ? 'setas' : 'bayas'}` : `Comiendo ${task.spot.type === 'mushrooms' ? 'setas' : 'bayas'}`;
     case 'drink':
+      if (task.source === 'hall') return c.inside ? 'Bebiendo sentado en el comedor' : walking ? 'Va al comedor a beber' : 'Entrando al comedor';
       if (task.source === 'well') return walking ? 'Va a beber al pozo' : 'Bebiendo';
       if (task.source === 'stock') return walking ? 'Va a beber de las vasijas' : 'Bebiendo';
       return walking ? 'Va a beber agua' : 'Bebiendo agua';
@@ -810,6 +891,7 @@ export function taskActivity(colony, c, task) {
       if (task.storeFull) return 'Espera: el almacén está lleno';
       if (task.noResource) return def.id === 'well' ? 'Espera a que llueva' : (levelOf(task.building).noResourceText ?? def.noResourceText);
       if (def.id === 'well') {
+        if (task.phase === 'hauling') return walking ? 'Lleva jarras de agua al almacén' : 'Deja las jarras en el almacén';
         if (levelOf(task.building).rainOnly) return walking ? 'Va al recolector de lluvia' : 'Vaciando las vasijas de lluvia';
         return walking ? 'Va al pozo' : 'Sacando agua del pozo';
       }
@@ -831,8 +913,10 @@ export function taskActivity(colony, c, task) {
 export function taskLog(c, task) {
   switch (task.type) {
     case 'eat':
+      if (task.source === 'hall') return 'Comió a gusto en el comedor';
       return task.source === 'bread' ? 'Fue a comer pan' : task.source === 'stock' ? 'Fue a comer de las provisiones' : `Fue a buscar ${task.spot.type === 'mushrooms' ? 'setas' : 'bayas'}`;
     case 'drink':
+      if (task.source === 'hall') return 'Bebió en el comedor';
       return task.source === 'water' ? 'Fue a beber agua' : task.source === 'well' ? 'Fue a beber al pozo' : 'Bebió de las vasijas';
     case 'sleep':
       return 'Se fue a dormir';

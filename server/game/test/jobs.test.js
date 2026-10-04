@@ -7,7 +7,7 @@ import { ColonySim } from '../../../src/sim/colony.js';
 import { WeatherState } from '../../../src/sim/weather.js';
 import { BUILDINGS } from '../../../src/sim/buildingTypes.js';
 import { naturalSurfaceHeight } from '../../../src/elevation.js';
-import { chooseTask } from '../../../src/ai.js';
+import { chooseTask, runTask } from '../../../src/ai.js';
 
 const dir = new THREE.Vector3(-0.8984470605519815, 0.4271785546817849, 0.10154487582091702).normalize();
 function colony() {
@@ -58,6 +58,65 @@ function setup(manual) {
   const task = chooseTask(sim, worker, env);
   assert.equal(task?.type, 'build', `lo automático cede ante lo de sus especialidades (eligió ${task?.type})`);
   assert.equal(task.building, site);
+}
+
+
+// 3) Almacén lleno: no se queda esperando; sigue con el siguiente trabajo y vuelve en cuanto hay sitio.
+{
+  const sim = colony();
+  const gatherer = sim.createBuilding(BUILDINGS.gatherer, 24, 12, 0, 1, 0, 1);
+  gatherer.done = true;
+  gatherer.progress = 1;
+  const worker = sim.colonists.find((c) => !c.soldier && (c.growth ?? 1) >= 1);
+  worker.spec = ['gathering', 'building', 'woodcutting'];
+  sim.setWorker(gatherer, worker, 'La colonia lo eligió.', true);
+  const site = sim.createBuilding(BUILDINGS.stockpile, 24, -12, 0, 0, 0);
+  site.done = false;
+  site.progress = 0;
+  // Con sitio: su puesto (su primera especialidad).
+  sim.stock.food = 5;
+  assert.equal(chooseTask(sim, worker, env)?.type, 'work');
+  // Lleno: no le ofrece ese puesto y pasa a lo siguiente (la obra).
+  sim.stock.food = sim.capacity('food');
+  assert.ok(sim.isFull('food'));
+  const next = chooseTask(sim, worker, env);
+  assert.equal(next?.type, 'build', `con el almacén lleno sigue con otro trabajo (eligió ${next?.type})`);
+  // Si ya estaba en la tarea cuando se llenó, la termina enseguida (no espera 20 s parado).
+  worker.task = { type: 'work', building: gatherer, phase: 'start' };
+  let r = 'running';
+  let t = 0;
+  for (; t < 5 && r === 'running'; t += 0.1) {
+    sim.buildCrowd();
+    r = runTask(sim, worker, worker.task, 0.1, env);
+  }
+  assert.equal(r, 'done');
+  assert.ok(t < 1, `termina al instante (${t.toFixed(1)} s)`);
+  // En cuanto hay sitio, vuelve.
+  sim.stock.food = 0;
+  assert.equal(chooseTask(sim, worker, env)?.type, 'work', 'vuelve a su puesto cuando hay sitio');
+}
+
+// 4) Un puesto de producción sin materiales o sin sitio para lo que sale: el trabajador no se queda parado, y vuelve cuando se puede.
+{
+  const sim = colony();
+  sim.setAge(3);
+  const def = BUILDINGS.bakery;
+  const b = sim.createBuilding(def, 24, 12, 0, 1, 0, 1);
+  b.done = true;
+  b.progress = 1;
+  const worker = sim.colonists.find((c) => !c.soldier && (c.growth ?? 1) >= 1);
+  worker.spec = [def.skill, ...['building', 'gathering', 'woodcutting', 'mining'].filter((x) => x !== def.skill).slice(0, 2)];
+  sim.setWorker(b, worker, 'La colonia lo eligió.', true);
+  const recipe = def.levels[0].recipe;
+  // Sin entradas: se va a otra cosa.
+  for (const k of Object.keys(recipe.in)) sim.stock[k] = 0;
+  assert.notEqual(chooseTask(sim, worker, env)?.type, 'work', 'sin materiales no se queda en el puesto');
+  worker.task = { type: 'work', building: b, phase: 'start' };
+  sim.buildCrowd();
+  assert.equal(runTask(sim, worker, worker.task, 0.1, env), 'done', 'si estaba allí, se va');
+  // Con entradas y sitio: vuelve.
+  for (const [k, n] of Object.entries(recipe.in)) sim.stock[k] = n * 4;
+  assert.equal(chooseTask(sim, worker, env)?.type, 'work', 'vuelve cuando hay materiales');
 }
 
 console.log('jobs.test.js: ok');

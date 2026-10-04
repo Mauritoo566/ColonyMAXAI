@@ -78,6 +78,19 @@ export function logisticsBonus(colony, b) {
   return best;
 }
 
+// ¿Por qué no puede empezar un ciclo ahora mismo? Faltan materiales o no hay sitio para lo que sale (null = puede). Sale del estado
+// del almacén, no del texto del edificio: así el trabajador sabe que se puede ir a otra cosa y que al volver ya hay sitio, sin
+// vaivenes (el texto depende de si está presente).
+export function stallReason(colony, b) {
+  const lv = levelOf(b);
+  const recipe = lv?.recipe;
+  if (!recipe || !CYCLE_KINDS.has(b.def.kind) || b.cycleActive) return null;
+  const lacking = Object.entries(recipe.in ?? {}).filter(([k, n]) => (colony.stock[k] ?? 0) < n);
+  if (lacking.length) return `Faltan materiales: ${lacking.map(([k, n]) => `${Math.ceil(n - (colony.stock[k] ?? 0))} de ${name(k)}`).join(' y ')}`;
+  const full = Object.entries(recipe.out ?? {}).find(([k, n]) => !hasRoom(colony, k, n));
+  return full ? `El almacén está lleno de ${name(full[0])}: construye o mejora almacenes` : null;
+}
+
 // Un paso de un edificio con receta, servicio o puesto de trabajo.
 export function updateProduction(colony, b, dt) {
   if (!b.done) return;

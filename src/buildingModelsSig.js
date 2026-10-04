@@ -571,6 +571,47 @@ export function stockpileMark(p, tier) {
   }
 }
 
+// Comedor: chimenea de la cocina con humo, mesas largas con bancos en el costado, un caldero con leña y, según la edad,
+// toldo, cartel, ventanas de servicio, extractor y salón acristalado. Nunca delante: ahí están la puerta y su acceso.
+export function diningMark(p, tier) {
+  const c = pal(tier);
+  const wood = tier >= 6 ? '#9a7446' : '#8a643c';
+  // Cocina: chimenea que sobresale del tejado y una nubecita de humo.
+  chimney(p, -1.4, 2.7, -0.9, 1.7, tier >= 8 ? '#a8a29a' : '#8a8478', 0.5);
+  for (const [dy, r] of [[4.7, 0.22], [5.15, 0.3], [5.65, 0.38]]) p.add(new THREE.SphereGeometry(r, 6, 4), '#d8d8d4', mat(-1.4, dy, -0.9));
+  // Dos mesas largas con bancos a cada lado, en el costado derecho.
+  for (const z of [-1.1, 0.5]) {
+    box(p, 0.9, 0.08, 1.5, wood, 2.95, 0.85, z);
+    for (const dz of [-0.6, 0.6]) stick(p, v(2.95, 0, z + dz), v(2.95, 0.85, z + dz), 0.05, '#5a3a22', 4);
+    for (const dx of [-0.65, 0.65]) box(p, 0.3, 0.06, 1.4, wood, 2.95 + dx, 0.5, z);
+  }
+  // Caldero sobre leña a la izquierda, con vasijas.
+  pot(p, -2.9, 0, 0.1, '#34302c', 1.1);
+  logs(p, -2.9, 0, -0.9, 0.9, 3);
+  pot(p, -2.6, 0, 0.9, '#b0603a', 0.7);
+  if (tier >= 4) {
+    // Toldo sobre las mesas.
+    for (const [x, z] of [[2.4, -1.8], [3.5, -1.8], [2.4, 1.2], [3.5, 1.2]]) stick(p, v(x, 0, z), v(x, 2.0, z), 0.05, c.trim, 4);
+    box(p, 1.4, 0.07, 3.3, tier >= 6 ? '#c8423a' : '#d8c9a0', 2.95, 2.05, -0.3, 0, 0, 0.06);
+  }
+  if (tier >= 6) {
+    // Cartel con un plato sobre la puerta y barriles de bebida.
+    box(p, 1.0, 0.4, 0.06, '#e8e0cc', 0, 2.75, 1.95);
+    cyl(p, 0.14, 0.14, 0.06, '#c8423a', 0, 2.75, 2.0, 10);
+    for (const z of [-1.7, -1.2]) barrel(p, -2.9, 0, z - 0.2, '#7a5230', 0.9);
+  }
+  if (tier >= 8) {
+    // Ventanilla de servicio con barra y extractor en el tejado.
+    box(p, 1.4, 0.12, 0.5, c.trim, -2.5, 1.1, 1.5);
+    cyl(p, 0.35, 0.35, 0.25, '#7a8088', 1.2, 3.8, -0.9, 10);
+  }
+  if (tier >= 10) {
+    // Salón acristalado anexo.
+    box(p, 1.8, 1.8, 2.4, GLASS, 3.2, 1.0, 0.0);
+    box(p, 1.9, 0.12, 2.5, '#cfcfca', 3.2, 2.0, 0.0);
+  }
+}
+
 // Recolectores y leñadores de las edades avanzadas.
 export function gathererMark(p) {
   // Cajas de fruta, un secadero y un toldo.
