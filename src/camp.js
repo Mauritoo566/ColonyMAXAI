@@ -265,6 +265,7 @@ function createFire() {
       puffGeometry,
       new THREE.MeshStandardMaterial({ color: '#b8b4ae', transparent: true, depthWrite: false, flatShading: true }),
     );
+    puff.renderOrder = 3.5; // el humo de la fogata se dibuja después de los caminos (renderOrder 2)
     puff.userData.phase = i / 7;
     fire.add(puff);
     fire.userData.smoke.push(puff);

@@ -57,11 +57,15 @@ export function addTorchFlame(parent, y, isLit = () => true) {
   const inner = new THREE.Mesh(innerGeometry, new THREE.MeshBasicMaterial({ color: '#ffe08a', transparent: true, opacity: 0.95, depthWrite: false }));
   outer.position.y = 0.2;
   inner.position.y = 0.14;
+  // Después de los caminos (renderOrder 2) y la cuadrícula (3): una llama o un halo nunca quedan por debajo de un camino.
+  outer.renderOrder = 3.5;
+  inner.renderOrder = 3.51;
   const haloParams = { color: '#ffb060', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending };
   const map = glowTexture();
   if (map) haloParams.map = map; // sin pantalla (pruebas) no hay textura
   const halo = new THREE.Sprite(new THREE.SpriteMaterial(haloParams));
   halo.position.y = 0.22;
+  halo.renderOrder = 3.52;
   group.add(outer, inner, halo);
   group.visible = false;
   parent.add(group);

@@ -44,6 +44,7 @@ const dir = new THREE.Vector3(-0.8984470605519815, 0.4271785546817849, 0.1015448
   const scene = new THREE.Scene();
   const show = startFireworks(scene, dir, 10, { launches: 6, span: 4, seed: 0.42 });
   assert.equal(showCount(), 1);
+  assert.ok(show.points.renderOrder > 2, 'las chispas van después de los caminos');
   assert.equal(scene.children.length, 1);
   // Centrado en la aldea: su grupo está sobre el suelo, con su vertical.
   const up = new THREE.Vector3(0, 1, 0).applyQuaternion(show.group.quaternion);

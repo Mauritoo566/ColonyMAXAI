@@ -5,6 +5,7 @@ import * as THREE from 'three';
 
 // Dónde está la chimenea en el modelo del comedor (buildingModelsSig.js: diningMark), en metros desde el centro del edificio.
 export const CHIMNEY = { x: -1.4, y: 4.4, z: -0.9 };
+export const AIR_ORDER = 3.5; // orden de dibujo de lo transparente que flota en el aire (caminos: 2, cuadrícula: 3)
 const PUFFS = 9;
 const RISE = 6; // metros que sube cada bolita antes de desvanecerse
 const SECONDS = 4.2; // lo que tarda una bolita en subir
@@ -32,6 +33,7 @@ export function addChimneySmoke(parent, intensityOf) {
   const puffs = [];
   for (let i = 0; i < PUFFS; i++) {
     const puff = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: '#cfcbc4', transparent: true, depthWrite: false, flatShading: true, opacity: 0 }));
+    puff.renderOrder = AIR_ORDER; // después de los caminos: el humo nunca queda por debajo de ellos
     puff.userData.phase = i / PUFFS;
     puff.userData.sway = i * 2.17;
     group.add(puff);

@@ -52,6 +52,9 @@ const box = new THREE.Box3().setFromObject(model);
 assert.ok(box.max.y >= CHIMNEY.y - 0.2, `la chimenea del modelo llega hasta la boca del humo (${box.max.y.toFixed(2)} vs ${CHIMNEY.y})`);
 assert.ok(box.max.y < CHIMNEY.y + 1, 'sin esferas de humo falsas sobre la chimenea');
 
+// 4b) El humo se dibuja después de los caminos (renderOrder 2): nunca se ve por debajo de ellos.
+assert.ok(smoke.puffs.every((pf) => pf.renderOrder > 2), 'el humo va después del camino');
+
 // 5) Al quitar el edificio de la escena el humo se limpia solo.
 scene.remove(building);
 run(0.2);

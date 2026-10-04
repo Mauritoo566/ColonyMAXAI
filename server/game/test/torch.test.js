@@ -86,6 +86,7 @@ assert.equal(entranceOf(torch, 0, 0, 0), null, 'no tiene puerta');
     flames.push(addTorchFlame(g, 1.55, () => i !== 8)); // la 9.ª sin terminar
   }
   assert.equal(torchCount(), 9);
+  for (const f of flames) assert.ok(f.outer.renderOrder > 2 && f.inner.renderOrder > 2 && f.halo.renderOrder > 2, 'las llamas van después del camino');
   let now = 0;
   const run = (seconds, night) => {
     for (let t = 0; t < seconds; t += 0.05) updateTorches((now += 0.05), camera, night);

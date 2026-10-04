@@ -33,6 +33,7 @@ class Show {
     this.material = new THREE.PointsMaterial({ size: 2.4, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
     this.points = new THREE.Points(geometry, this.material);
     this.points.frustumCulled = false;
+    this.points.renderOrder = 3.6; // después de los caminos: las chispas bajas no quedan por debajo de ellos
     this.group.add(this.points);
     scene.add(this.group);
     // Guion: cuándo sale cada cohete y adónde.
