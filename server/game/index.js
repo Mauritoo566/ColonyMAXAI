@@ -9,6 +9,7 @@
 // por variables de entorno (ver game.env.example).
 
 import http from 'node:http';
+import { execFileSync } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 import { join, resolve, extname, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +30,26 @@ const HEARTBEAT_MS = 30_000;
 const PROTOCOL = 1;
 
 const log = (...args) => console.log(new Date().toISOString(), ...args);
+
+// ---- Versión ------------------------------------------------------------------------------
+// Qué commit del juego es: el que corre este proceso ("running", fijado al arrancar) y el que hay ahora en disco ("disk").
+// Si no coinciden, se actualizó el código pero falta reiniciar el servidor (la simulación sigue siendo la vieja).
+
+function gitInfo() {
+  try {
+    const [commit, date, ...subject] = execFileSync('git', ['log', '-1', '--format=%H%n%cI%n%s'], { cwd: ROOT, encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }).trim().split(/\r?\n/);
+    return { commit, short: commit.slice(0, 7), date, subject: subject.join(' ') };
+  } catch {
+    return null;
+  }
+}
+const RUNNING_VERSION = gitInfo();
+const STARTED_AT = Date.now();
+let diskCache = { at: 0, value: RUNNING_VERSION };
+function diskVersion() {
+  if (Date.now() - diskCache.at > 5000) diskCache = { at: Date.now(), value: gitInfo() };
+  return diskCache.value;
+}
 
 // ---- Archivos del juego -----------------------------------------------------------------
 
@@ -51,6 +72,11 @@ async function serveStatic(req, res) {
     res.writeHead(200, { 'content-type': 'text/plain' }).end('ok');
     return;
   }
+  if (path === '/version.json') {
+    res.writeHead(200, { 'content-type': TYPES['.json'], 'cache-control': 'no-store' });
+    res.end(JSON.stringify({ running: RUNNING_VERSION, disk: diskVersion(), startedAt: STARTED_AT, now: Date.now() }));
+    return;
+  }
   if (!ALLOWED.some((re) => re.test(path)) || path.includes('..')) {
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('No encontrado');
     return;
@@ -64,7 +90,13 @@ async function serveStatic(req, res) {
   try {
     const info = await stat(file);
     if (!info.isFile()) throw new Error('no es un archivo');
-    const body = await readFile(file);
+    let body = await readFile(file);
+    // La página lleva anotado de qué versión es (Configuración la compara con la del servidor).
+    if (path === '/index.html') {
+      const v = diskVersion();
+      body = Buffer.from(String(body).replace('</head>', `<meta name="build" content="${v?.short ?? ''}">
+</head>`));
+    }
     res.writeHead(200, {
       'content-type': TYPES[extname(file)] ?? 'application/octet-stream',
       // Siempre preguntar si cambió: al actualizar el juego los jugadores ven lo nuevo.
