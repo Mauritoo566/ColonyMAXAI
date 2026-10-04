@@ -3,6 +3,7 @@
 // Los modelos están en src/mobs.js. El mundo no depende de tu edad: aparecen por bioma.
 import { addMoodEvent } from '../needs.js';
 import { checkStable } from './stable.js';
+import { DAY_LENGTH_SECONDS } from '../daynight.js';
 
 export const MOB_TYPES = ['conejo', 'ciervo', 'jabali', 'oveja', 'uro', 'caballo', 'lobo', 'oso'];
 
@@ -44,6 +45,7 @@ const GROUP = { conejo: [2, 4], ciervo: [3, 6], jabali: [2, 4], oveja: [4, 8], u
 export function spawnMobs(sim, biomeId, rand) {
   const set = BIOME_MOBS[biomeId];
   sim.mobs = [];
+  sim.mobBiome = biomeId;
   if (!set) return;
   let id = 0;
   let group = 0;
@@ -86,6 +88,60 @@ export function spawnMobs(sim, biomeId, rand) {
   // Hostiles: lejos del campamento.
   made = 0;
   for (let guard = 0; made < set.h && guard < 20; guard++) made += herd(set.hostile[Math.floor(rand() * set.hostile.length)], 110, 220, set.h - made);
+}
+
+// ---- Manadas de caballos que llegan solas -----------------------------------------------------------------------------------
+// Los caballos son un recurso indispensable (se domestican para las expediciones), así que cada cierto tiempo llega una manada nueva cerca de
+// la aldea aunque el bioma no sea de caballos, hasta un máximo de salvajes a la vez. Los animales viven en el servidor: todos ven los mismos.
+const HORSE_BIOMES = new Set(['grassland', 'steppe', 'savanna', 'forest', 'taiga', 'mountain']);
+export const MAX_WILD_HORSES = 9;
+const HORSE_EVERY = DAY_LENGTH_SECONDS * 0.3; // segundos de juego entre una manada y la siguiente (con variación)
+const HORSE_NEAR = [55, 130]; // a qué distancia de la fogata aparece
+
+export const nextMobId = (sim) => sim.mobs.reduce((n, m) => Math.max(n, m.id + 1), 0);
+
+export function wildHorses(sim) {
+  return sim.mobs.filter((m) => m.type === 'caballo' && !m.tamed && !m.order).length;
+}
+
+// Crea una manada de caballos salvajes a la distancia dada de la fogata. Devuelve cuántos puso.
+export function spawnHorseHerd(sim, rand = Math.random) {
+  if (!sim.camp) return 0;
+  const free = (x, z, margin) => sim.walkable(x, z, margin) && !sim.buildings.some((b) => Math.hypot(b.x - x, b.z - z) < 25) && !sim.nearRoad(x, z, 6);
+  let c = null;
+  for (let k = 0; k < 40 && !c; k++) {
+    const a = rand() * Math.PI * 2;
+    const r = HORSE_NEAR[0] + rand() * (HORSE_NEAR[1] - HORSE_NEAR[0]);
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    if (free(x, z, 1.5)) c = { x, z };
+  }
+  if (!c) return 0;
+  const [lo, hi] = GROUP.caballo;
+  const n = Math.min(MAX_WILD_HORSES - wildHorses(sim), lo + Math.floor(rand() * (hi - lo + 1)));
+  const g = sim.mobs.reduce((m, o) => Math.max(m, (o.g ?? -1) + 1), 0);
+  let id = nextMobId(sim);
+  let made = 0;
+  for (let i = 0; i < n; i++) {
+    const ox = i ? (rand() - 0.5) * 7 : 0;
+    const oz = i ? (rand() - 0.5) * 7 : 0;
+    const x = c.x + ox;
+    const z = c.z + oz;
+    if (!sim.walkable(x, z, 1)) continue;
+    sim.mobs.push({ id: id++, type: 'caballo', x, z, facing: rand() * Math.PI * 2, state: 0, wait: rand() * 4, tx: x, tz: z, cd: 0, target: null, g, leader: made === 0, ox, oz });
+    made++;
+  }
+  return made;
+}
+
+// Cada paso: cuenta atrás; al llegar a cero, si hay pocos caballos salvajes, llega una manada nueva.
+function horseTrickle(sim, dt) {
+  if (sim.remote || !sim.camp || !HORSE_BIOMES.has(sim.mobBiome ?? 'grassland')) return;
+  sim.horseTimer = (sim.horseTimer ?? 20 + Math.random() * 40) - dt;
+  if (sim.horseTimer > 0) return;
+  sim.horseTimer = HORSE_EVERY * (0.7 + Math.random() * 0.6);
+  if (wildHorses(sim) > MAX_WILD_HORSES - 3) return;
+  if (spawnHorseHerd(sim) > 0) sim.emit?.('notice', 'Una manada de caballos salvajes llegó cerca de la aldea');
 }
 
 // ¿Cuida a este colono alguna defensa (atalaya o fuerte terminados cerca)?
@@ -176,7 +232,9 @@ function tamedStep(sim, m, dt) {
 }
 
 export function updateMobs(sim, dt, isNight) {
-  if (!sim.mobs?.length || dt > 2) return;
+  if (dt > 2) return;
+  horseTrickle(sim, dt);
+  if (!sim.mobs?.length) return;
   const rand = Math.random;
   for (const m of sim.mobs) {
     const st = MOB_STATS[m.type];

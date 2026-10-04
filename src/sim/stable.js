@@ -142,11 +142,18 @@ export function serializeTamed(mobs) {
     .map((m) => ({ id: m.id, tamed: !!m.tamed, stableId: m.stableId ?? null, stall: m.stall ?? null, role: m.role ?? null, x: Math.round(m.x * 100) / 100, z: Math.round(m.z * 100) / 100 }));
 }
 
+// Los caballos que llegaron después de crear el mundo no salen de la semilla: los domesticados (o con orden) se guardan enteros y se recrean.
 export function restoreTamed(mobs, saved) {
   if (!Array.isArray(saved)) return;
   for (const s of saved) {
-    const m = mobs.find((o) => o.id === s.id && isHorse(o));
-    if (!m || !Number.isFinite(s.stableId)) continue;
+    if (!s || !Number.isInteger(s.id) || !Number.isFinite(s.stableId)) continue;
+    let m = mobs.find((o) => o.id === s.id);
+    if (m && !isHorse(m)) m = null;
+    if (!m) {
+      const id = mobs.some((o) => o.id === s.id) ? mobs.reduce((n, o) => Math.max(n, o.id + 1), 0) : s.id;
+      m = { id, type: 'caballo', x: s.x ?? 0, z: s.z ?? 0, facing: 0, state: 0, wait: 2, tx: s.x ?? 0, tz: s.z ?? 0, cd: 0, target: null, g: null, leader: false, ox: 0, oz: 0 };
+      mobs.push(m);
+    }
     m.stableId = s.stableId;
     m.stall = s.stall && Number.isFinite(s.stall.x) && Number.isFinite(s.stall.z) ? { x: s.stall.x, z: s.stall.z } : null;
     if (s.tamed) {

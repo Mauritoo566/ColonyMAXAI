@@ -11,6 +11,7 @@ import { GOODS } from '../../../src/sim/goods.js';
 import { naturalSurfaceHeight } from '../../../src/elevation.js';
 import { defImplemented, minAgeOf } from '../../../src/sim/progression.js';
 import { TAME_COST, stallsFree } from '../../../src/sim/stable.js';
+import { MAX_WILD_HORSES, wildHorses } from '../../../src/sim/mobs.js';
 
 const dir = new THREE.Vector3(-0.8984470605519815, 0.4271785546817849, 0.10154487582091702).normalize();
 function colony(n = 8, age = 3) {
@@ -175,6 +176,67 @@ assert.equal(TAME_COST, 3);
   assert.equal(sim.stock.apple, 1);
   fell(false, 0.01); // una piedra no da manzanas
   assert.equal(sim.stock.apple, 1);
+}
+
+// 7) Las manadas de caballos llegan solas cerca de la aldea (aunque el bioma no sea de caballos), sin pasarse de un máximo, y todos ven lo mismo.
+{
+  const sim = colony();
+  sim.mobBiome = 'grassland';
+  const notices = [];
+  sim.on('notice', (t) => notices.push(t));
+  assert.equal(wildHorses(sim), 0, 'en la pradera no había ninguno');
+  sim.horseTimer = 0.1;
+  tick(sim, 1);
+  const n = wildHorses(sim);
+  assert.ok(n >= 3 && n <= 6, `llegó una manada (${n})`);
+  assert.ok(notices.some((t) => /caballos salvajes/.test(t)), 'avisa');
+  const ids = sim.mobs.map((m) => m.id);
+  assert.equal(new Set(ids).size, ids.length, 'ids únicos');
+  for (const m of sim.mobs) {
+    const d = Math.hypot(m.x, m.z);
+    assert.ok(d > 40 && d < 160, `cerca de la aldea, no encima (${d.toFixed(0)} m)`);
+    assert.ok(!sim.buildings.some((b) => Math.hypot(b.x - m.x, b.z - m.z) < 20));
+  }
+  assert.equal(new Set(sim.mobs.map((m) => m.g)).size, 1, 'una sola manada');
+  // Llegan y llegan, pero con un máximo de salvajes.
+  for (let k = 0; k < 20; k++) {
+    sim.horseTimer = 0.1;
+    tick(sim, 1);
+  }
+  assert.ok(wildHorses(sim) <= MAX_WILD_HORSES, `tope de salvajes (${wildHorses(sim)})`);
+  // Los ve cualquier jugador que mire esta aldea: van en el estado que se manda.
+  const copy = new ColonySim();
+  copy.applyMobs(sim.snapshot('fast').mobs);
+  assert.equal(copy.mobs.length, sim.mobs.length);
+  // Una de las nuevas se domestica, se guarda y, tras recargar (sin esas manadas), vuelve a estar.
+  const b = stable(sim);
+  sim.stock.apple = 3;
+  const h = sim.mobs[sim.mobs.length - 1];
+  const id = h.id;
+  sim.tameHorse(id);
+  for (let t = 0; t < 400 && !h.tamed; t += 1) {
+    tick(sim, 1);
+    if (!h.order && !h.tamed) break;
+  }
+  assert.ok(h.tamed, 'se domesticó');
+  const data = JSON.parse(JSON.stringify(sim.serialize()));
+  const sim2 = colony();
+  sim2.mobBiome = 'grassland';
+  sim2.createBuilding(BUILDINGS.horse_stable, b.x, b.z, 0, 1, 0, 1);
+  sim2.restoreColony(data.colony);
+  const back = sim2.mobs.find((m) => m.id === id);
+  assert.ok(back?.tamed, 'el caballo domesticado vuelve tras recargar');
+  const ids2 = sim2.mobs.map((m) => m.id);
+  assert.equal(new Set(ids2).size, ids2.length);
+}
+
+// 8) En un desierto no llegan manadas.
+{
+  const sim = colony();
+  sim.mobBiome = 'desert';
+  sim.horseTimer = 0.1;
+  tick(sim, 2);
+  assert.equal(wildHorses(sim), 0);
 }
 
 console.log('stable.test.js: ok');
