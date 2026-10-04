@@ -662,36 +662,33 @@ export function cemeteryYard(p, tier) {
   if (tier >= 9) box(p, 7.2, 0.1, 1.5, GLASS, 0, wallH + 0.55, -3.0);
 }
 
-// Establo: un cobertizo abierto por delante, con boxes separados por tablones, un comedero en cada uno, pacas de heno y un cercado al frente.
-// A mayor edad, más boxes, mejores materiales y una cuadra cerrada con tejas. Los caballos esperan en el patio, junto al edificio.
+// Establo: una cuadra cerrada de troncos con un portón al frente (hueco oscuro: los caballos entran y salen por ahí y dentro no se ven), tejado a
+// dos aguas, pacas de heno y un cercado bajo delante. A mayor edad, más grande, con mejores materiales, chimenea y una linterna de ventilación.
 export function horseStable(p, tier) {
   const c = pal(tier);
-  const boxes = tier >= 7 ? 4 : tier >= 5 ? 3 : 2;
-  const w = 1.5 + boxes * 1.2;
+  const w = tier >= 7 ? 6.3 : tier >= 5 ? 5.1 : 3.9;
   const d = 2.6;
   const wood = tier >= 5 ? '#8a5a34' : '#7a4f2e';
   box(p, w + 0.4, 0.14, d + 0.4, tier >= 7 ? '#8f8a7c' : '#6a5a40', 0, 0.07, 0); // suelo de tierra y paja
-  // Muro del fondo y laterales de troncos.
   const H = tier >= 7 ? 2.6 : 1.9;
-  for (let i = 0; i < 6; i++) box(p, w, H / 6, 0.22, i % 2 ? wood : '#6b4a2e', 0, 0.25 + (i * H) / 6, -d / 2 + 0.11);
-  for (const s of [-1, 1]) for (let i = 0; i < 6; i++) box(p, 0.22, H / 6, d, i % 2 ? wood : '#6b4a2e', (s * (w - 0.22)) / 2, 0.25 + (i * H) / 6, 0);
-  // Tejado a dos aguas que cubre el cobertizo y asoma un poco al frente.
+  const layers = 6;
+  const lh = H / layers;
+  // Muro del fondo y laterales de troncos.
+  for (let i = 0; i < layers; i++) box(p, w, lh, 0.22, i % 2 ? wood : '#6b4a2e', 0, 0.25 + i * lh, -d / 2 + 0.11);
+  for (const s of [-1, 1]) for (let i = 0; i < layers; i++) box(p, 0.22, lh, d, i % 2 ? wood : '#6b4a2e', (s * (w - 0.22)) / 2, 0.25 + i * lh, 0);
+  // Frente cerrado con un portón en el centro: dos tramos de troncos, un dintel y el hueco oscuro de la puerta.
+  const gap = 1.5;
+  const side = (w - gap) / 2;
+  for (const s of [-1, 1]) for (let i = 0; i < layers; i++) box(p, side, lh, 0.22, i % 2 ? wood : '#6b4a2e', s * (gap / 2 + side / 2), 0.25 + i * lh, d / 2 - 0.11);
+  box(p, gap + 0.3, H - 1.55 + 0.25, 0.26, wood, 0, 1.55 + (H - 1.55 + 0.25) / 2 - 0.0, d / 2 - 0.12); // dintel
+  box(p, gap, 1.55, 0.1, DARK, 0, 0.25 + 0.775, d / 2 - 0.2); // el interior, a oscuras
+  for (const s of [-1, 1]) box(p, 0.16, 1.7, 0.3, '#5a3a22', s * (gap / 2 + 0.08), 0.25 + 0.85, d / 2 - 0.1); // jambas
+  // Tejado a dos aguas que cubre la cuadra y asoma un poco al frente.
   gable(p, w + 0.5, d + 0.7, 1.0, c.roof, H + 0.28, wood);
-  // Boxes: tablones divisorios y un comedero (con heno) en cada uno.
-  for (let i = 1; i < boxes; i++) {
-    const x = -w / 2 + (i * w) / boxes;
-    box(p, 0.12, 1.1, d * 0.75, wood, x, 0.6, -d * 0.12);
-    box(p, 0.16, 1.5, 0.16, '#5a3a22', x, 0.75, d / 2 - 0.2);
-  }
-  for (let i = 0; i < boxes; i++) {
-    const x = -w / 2 + ((i + 0.5) * w) / boxes;
-    box(p, 0.7, 0.28, 0.32, '#5a3a22', x, 0.28, -d / 2 + 0.55);
-    box(p, 0.6, 0.12, 0.24, '#d8c060', x, 0.38, -d / 2 + 0.55);
-  }
-  // Pacas de heno y un cubo junto a la entrada lateral.
+  // Pacas de heno y un barril junto a la cuadra.
   for (const [x, y] of [[w / 2 + 0.45, 0.2], [w / 2 + 0.45, 0.6], [w / 2 + 1.0, 0.2]]) box(p, 0.7, 0.36, 0.5, '#d8c060', x, y, -0.3);
   barrel(p, -w / 2 - 0.5, 0, 0.9, '#7a5230', 0.7);
-  // Cercado bajo al frente con un hueco: los caballos salen y entran por el centro.
+  // Cercado bajo al frente con un hueco central: los caballos salen y entran por el centro.
   const z = d / 2 + 0.55;
   for (let x = -w / 2; x <= w / 2 + 0.01; x += 0.9) if (Math.abs(x) > 0.7) box(p, 0.12, 0.85, 0.12, wood, x, 0.43, z);
   for (const s of [-1, 1]) box(p, w / 2 - 0.55, 0.07, 0.07, wood, s * (0.7 + (w / 2 - 0.55) / 2), 0.7, z);
@@ -700,7 +697,7 @@ export function horseStable(p, tier) {
     for (const x of [-w / 2 - 0.1, w / 2 + 0.1]) box(p, 0.3, 2.2, 0.3, c.wall, x, 1.1, d / 2 + 0.2);
     box(p, 0.9, 0.7, 0.9, wood, 0, H + 1.5, 0); // linterna de ventilación sobre la cumbrera
     box(p, 1.1, 0.12, 1.1, c.roof, 0, H + 1.9, 0);
-    for (let i = 0; i < boxes; i++) window_(p, -w / 2 + ((i + 0.5) * w) / boxes, 1.3, -d / 2 + 0.24, GLASS, 0.4, 0.4);
+    for (const x of [-w / 4, w / 4]) window_(p, x, 1.4, d / 2 + 0.03, GLASS, 0.5, 0.5);
   }
 }
 
