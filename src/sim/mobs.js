@@ -233,16 +233,29 @@ function tamedStep(sim, m, dt, isNight) {
   } else if (!shelter && m.state === 0) {
     m.wait = (m.wait ?? 0) - dt;
     if (m.wait > 0) return;
-    const a = Math.random() * Math.PI * 2;
-    const r = 0.5 + Math.random() * 1.2;
-    m.tx = home.x + Math.cos(a) * r;
-    m.tz = home.z + Math.sin(a) * r;
-    m.state = 1;
+    // Un paso corto a un sitio libre cerca de su hueco (si no hay ninguno, se queda quieto un rato más).
+    let picked = false;
+    for (let k = 0; k < 6 && !picked; k++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 1.2 + Math.random() * 1.6;
+      const x = home.x + Math.cos(a) * r;
+      const z = home.z + Math.sin(a) * r;
+      if (sim.walkable(x, z, 0.9) && !sim.accessBlocked?.(x, z)) {
+        m.tx = x;
+        m.tz = z;
+        m.state = 1;
+        picked = true;
+      }
+    }
+    if (!picked) {
+      m.wait = 4 + Math.random() * 4;
+      return;
+    }
   }
   const d = Math.hypot(m.tx - m.x, m.tz - m.z);
   if (d < 0.5) {
     m.state = 0;
-    m.wait = 3 + Math.random() * 6;
+    m.wait = 7 + Math.random() * 9;
     return;
   }
   const goal = mobGoal(sim, m, dt);
@@ -261,7 +274,10 @@ function tamedStep(sim, m, dt, isNight) {
       m.opath = null;
     }
   }
-  m.facing = Math.atan2(nx - m.x, nz - m.z);
+  // Gira poco a poco hacia donde va (un empujón del obstáculo no lo hace dar vueltas sobre sí mismo).
+  const heading = Math.atan2(goal.x - m.x, goal.z - m.z);
+  const turned = m.facing + Math.atan2(Math.sin(heading - m.facing), Math.cos(heading - m.facing)) * Math.min(1, dt * 5);
+  m.facing = Math.atan2(Math.sin(turned), Math.cos(turned));
   m.x = nx;
   m.z = nz;
 }

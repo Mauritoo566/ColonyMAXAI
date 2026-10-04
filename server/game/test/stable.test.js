@@ -307,4 +307,33 @@ assert.equal(TAME_COST, 3);
   assert.equal(h.inside, true, 'con lluvia también se resguarda');
 }
 
+// 10) En el patio no da vueltas sobre sí mismo: pasea poco, con pasos cortos y girando poco a poco.
+{
+  const sim = colony();
+  stable(sim);
+  sim.stock.apple = 3;
+  const h = horse(sim, 24, 26);
+  sim.tameHorse(h.id);
+  for (let t = 0; t < 300 && !(h.tamed && h.rider == null && !sim.colonists.some((c) => c.riding)); t += 1) tick(sim, 1);
+  tick(sim, 20);
+  let prev = h.facing;
+  let jumps = 0;
+  let moves = 0;
+  let px = h.x;
+  let pz = h.z;
+  for (let t = 0; t < 120; t += 0.1) {
+    for (const c of sim.colonists) c.needs.food = c.needs.water = c.needs.rest = c.needs.warmth = 100;
+    sim.update(0.1, { timeScale: 1, isNight: false, timeLabel: () => 'Día 1' });
+    const turn = Math.abs(Math.atan2(Math.sin(h.facing - prev), Math.cos(h.facing - prev)));
+    if (turn > 1.8) jumps++; // gira como mucho la mitad de lo que le falta en cada paso
+    prev = h.facing;
+    if (Math.hypot(h.x - px, h.z - pz) > 0.001) moves++;
+    px = h.x;
+    pz = h.z;
+    assert.ok(Math.abs(h.facing) <= Math.PI + 1e-9, 'el rumbo siempre normalizado');
+  }
+  assert.equal(jumps, 0, 'no gira de golpe');
+  assert.ok(moves < 700, `pasea poco, quieto casi todo el rato (${moves} pasos de 1200)`);
+}
+
 console.log('stable.test.js: ok');
