@@ -384,6 +384,17 @@ Desde la Edad del Bronce, trabajar con las manos desnudas es más lento (tarda u
 - Se guarda con la partida y llega al navegador. La ficha del colono (pestaña Trabajo) muestra cuál lleva, su desgaste y por qué no tiene.
 - Código en `src/sim/tools.js`; prueba en `server/game/test/tools.test.js`.
 
+## Ropa
+
+La ropa es un bien (`clothes`) que se fabrica en la **sastrería** (desde la Edad II; sube de nivel en la IV, VI y VIII: cuero cosido con fibras, telar de lino y lana, sastrería con tela, confección industrial). Cada colono lleva una prenda **de la edad en que se hizo**: pieles (I), cuero cosido (II), lino (III), lana (IV), túnica y manto (V), jubón (VI), ropa de corte (VII), mono de obrero (VIII), moderna (IX) y técnica (X).
+
+- **Abriga más cuanto más moderna:** de +25 (pieles, como antes) a +52 (técnica) en el objetivo de calor.
+- **Se gasta:** de dos días y medio (pieles) a siete (técnica) de uso, algo más rápido si trabaja. Al romperse hay aviso y el colono queda sin ropa hasta recoger otra.
+- **Quién la recoge:** sin ropa, la pila del campamento (las pieles del principio) y después el almacén; con ropa a punto de romperse o de una edad anterior, la cambia por una nueva del almacén sin prisa (de día y con lo básico cubierto). La vieja se desecha. Quien llega a la aldea trae ropa de la edad actual.
+- **Ánimo:** ropa de la edad actual +4, casi de su tiempo +1,5, raída o muy anticuada −3 y sin ropa −6 (desde la Edad II).
+- **Aspecto:** cada edad tiene su propia silueta, no sólo otro color: pieles con manto y faldilla de piel y brazos al aire (I), chaleco de cuero con costura y botas (II), túnica de lino de mangas cortas con ribete (III), túnica de lana con capita (IV), túnica larga y manto con fajín (V), jubón con hombreras y botas altas (VI), casaca con cuello y botones (VII), mono con peto y gorra (VIII), camisa y pantalón modernos (IX), traje técnico con franjas luminosas (X). El oficio sólo añade sombrero o delantal. Como la prenda se queda hasta que se rompe o se cambia, la aldea se ve evolucionar poco a poco al avanzar de edad.
+- Código en `src/sim/clothing.js` y `src/outfits.js`; pruebas en `clothing.test.js` y `outfits.test.js`. `node tools/render-outfits.mjs hoja.png` dibuja las diez ropas en una imagen.
+
 ## Ficha del colono
 
 Cinco pestañas: **Estado** (salud, bienestar, qué hace ahora, necesidades), **Ánimo** (se esconde en los niños), **Trabajo** (oficio y órdenes, herramienta, habilidades), **Vida** (familia y hogar, ropa, personalidad, biografía, actividad reciente) y **Genes**.

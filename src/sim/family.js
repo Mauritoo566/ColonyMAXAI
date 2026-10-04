@@ -10,6 +10,7 @@ import { levelOf } from './buildingTypes.js';
 import { limitsFor } from './progression.js';
 import { createChildProfile, createProfile, wellbeing, hasTrait, addLog, addMoodEvent } from '../needs.js';
 import { appearanceFromGenes } from '../genes.js';
+import { dress } from './clothing.js';
 import { pickName } from './names.js';
 
 const DAY = DAY_LENGTH_SECONDS;
@@ -455,6 +456,7 @@ export function arrive(colony, time) {
     { id: colony.nextColonistId++, name, sex, genome: profile.genome, traits: profile.traits, skills: profile.skills, bio: profile.bio, look, arrived: { time: colony.gameTime, day: time } },
     { needs: profile.needs, health: 100, log: [], flags: {}, growth: 1, age: profile.age, x: spot.x, z: spot.z, clothed: colony.age >= 2, desire: 15, mate: null, home: null },
   );
+  if (colonist.clothed) dress(colony, colonist, colony.age); // llega con ropa de su edad
   addLog(colonist, time, 'Llegó a la aldea buscando un lugar donde vivir');
   colony.colonists.push(colonist);
   colony.staticsRevision++;

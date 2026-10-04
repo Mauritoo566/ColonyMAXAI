@@ -4,6 +4,7 @@ import { diagnose, mainProblem, BANDS } from './sim/wellbeing.js';
 import { NEEDS, SKILLS, wellbeing, needStatus, completeSkill } from './needs.js';
 import { GENES, gene, genomeCode, lifeExpectancy } from './genes.js';
 import { SPEC_NAMES, isWorker } from './sim/specialties.js';
+import { tierName, lifeOf, warmthOf, clothesNote } from './sim/clothing.js';
 import { TOOL_GOODS, BARE_TIME, toolName, toolTrade, toolNote, toolsMatter } from './sim/tools.js';
 import { MOB_INFO, MOB_STATS, MOB_STATE_TEXT } from './sim/mobs.js';
 import { TAME_COST } from './sim/stable.js';
@@ -473,11 +474,13 @@ export class ColonyUI {
     this.panel.querySelector('[data-orderbox]').hidden = !!unavailable;
     this.refreshOrderOptions(c);
     const clothes = this.panel.querySelector('[data-clothes]');
-    const clothesText = c.clothed
-      ? 'Ropa de pieles: abriga contra el frío'
-      : this.colony.clothesLeft > 0
-        ? 'Sin ropa (sólo un taparrabos). Irá a buscarla a la pila del campamento cuando tenga frío.'
-        : 'Sin ropa (sólo un taparrabos) y no queda ropa en el campamento.';
+    let clothesText;
+    if (c.clothed) {
+      const tier = c.wear?.tier ?? this.colony.age;
+      const left = c.wear ? Math.max(0, Math.min(100, Math.round((c.wear.left / lifeOf(tier)) * 100))) : 100;
+      const behind = this.colony.age - tier;
+      clothesText = [`Lleva ropa de ${tierName(tier)} (Edad ${tier}): abriga +${warmthOf(tier)}. Le queda un ${left}% de uso.`, behind >= 1 ? 'Es de una edad anterior: se verá más moderna cuando la cambie.' : '', clothesNote(this.colony, c) ?? ''].filter(Boolean).join(' ');
+    } else clothesText = clothesNote(this.colony, c);
     if (clothes.textContent !== clothesText) clothes.textContent = clothesText;
 
     this.refreshTool(c);

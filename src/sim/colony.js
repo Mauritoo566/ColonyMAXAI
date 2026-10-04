@@ -28,6 +28,7 @@ import { pushSample } from '../interp.js';
 import { decideRun, RUN_FACTOR } from './running.js';
 import { RoadMap, roadRoute } from './roadpath.js';
 import { TOOL_GOODS, TOOL_IDS, wearTool } from './tools.js';
+import { dress, wearClothes, warmthOf, clothesMood, lifeOf } from './clothing.js';
 import { orderTame, tameProblem, herdOf, affordable, pendingTame, finishTame, serializeTamed, restoreTamed } from './stable.js';
 import { recordDeath, serializeDead, restoreDead, viewDead, urnsAtHome, stenchAt, seesBody, SAW_BODY, SAW_COOLDOWN } from './cemetery.js';
 import { TECHS_BY_ID } from './techs.js';
@@ -331,6 +332,7 @@ export class ColonySim {
           addMoodEvent(c, 'sawbody', SAW_BODY, this.gameTime);
           addLog(c, time, 'Vio un cuerpo sin enterrar y sintió un olor horrible');
         }
+        wearClothes(this, c, dt);
         updateNeeds(c, {
           dt,
           ambient,
@@ -338,6 +340,8 @@ export class ColonySim {
           nearFire: c.nearFire,
           sheltered: (c.sleeping && !c.outdoorSleep) || c.inside,
           clothed: c.clothed,
+          warmthBonus: c.wear ? warmthOf(c.wear.tier) : undefined,
+          clothesMood: clothesMood(this, c),
           companion: c.companion,
           walking: c.walking,
           running: !!c.running && !!c.moving,
@@ -862,8 +866,7 @@ export class ColonySim {
   takeClothes(c) {
     if (this.clothesLeft <= 0 || c.clothed) return false;
     this.clothesLeft--;
-    c.clothed = true;
-    this.emit('clothes');
+    dress(this, c, 1); // las pieles del campamento son ropa de la primera edad
     return true;
   }
 
@@ -1882,12 +1885,6 @@ export class ColonySim {
     this.setAge(status.next.n);
     this.ageChangedAt = this.gameTime;
     // Las viviendas evolucionan solas (mismo sitio, sin pagar); el resto se mejora a mano.
-    // La ropa evoluciona sola: nadie se queda sin vestir al cambiar de edad.
-    if (this.clothesLeft > 0 || this.colonists.some((c) => !c.clothed)) {
-      for (const c of this.colonists) c.clothed = true;
-      this.clothesLeft = 0;
-      this.emit('clothes');
-    }
     this.refreshAutoRoads();
     const evolved = evolveHouses(this);
     if (evolved) {
@@ -3551,6 +3548,7 @@ export class ColonySim {
           moodEvents: c.moodEvents,
           chatCooldown: c.chatCooldown,
           clothed: c.clothed,
+          wear: c.wear ? { tier: c.wear.tier, left: Math.round(c.wear.left) } : null,
           tool: c.tool ? { id: c.tool.id, left: Math.round(c.tool.left) } : null,
           x: c.x,
           z: c.z,
@@ -3863,6 +3861,7 @@ export class ColonySim {
         health: r2(c.health),
         log: c.log,
         clothed: c.clothed,
+        cw: c.wear ? [c.wear.tier, Math.round(c.wear.left)] : undefined,
         tl: c.tool ? [TOOL_IDS.indexOf(c.tool.id), Math.round(c.tool.left)] : undefined,
         activity: c.activity,
         job: c.job?.id ?? null,
@@ -3879,7 +3878,7 @@ export class ColonySim {
         age: c.age,
         // Por qué está como está (sim/wellbeing.js): hacia dónde tira el ánimo, su categoría y tendencia, los golpes recientes,
         // la tarea y lo que le impide resolver su necesidad. La réplica del navegador lo usa para explicarlo.
-        mf: [r2(c.moodTarget ?? c.needs.mood), c.moodBand ?? 2, c.moodTrend ?? 0, c.moodFx?.companion ?? 0, Math.round((c.moodFx?.homeless ?? 0) * 100), c.moodFx?.urns ?? 0, Math.round((c.moodFx?.stench ?? 0) * 100)],
+        mf: [r2(c.moodTarget ?? c.needs.mood), c.moodBand ?? 2, c.moodTrend ?? 0, c.moodFx?.companion ?? 0, Math.round((c.moodFx?.homeless ?? 0) * 100), c.moodFx?.urns ?? 0, Math.round((c.moodFx?.stench ?? 0) * 100), c.moodFx?.clothes ?? 0],
         me: c.moodEvents?.length ? c.moodEvents.map((e) => [e.id, r2(e.delta), r2(e.at)]) : undefined,
         tt: c.task?.type ?? null,
         bl: c.block ? [c.block.need, c.block.why] : undefined,
@@ -3971,6 +3970,7 @@ export class ColonySim {
       c.health = row.health;
       c.log = row.log;
       c.activity = row.activity;
+      c.wear = row.cw ? { tier: row.cw[0], left: row.cw[1] } : null;
       c.tool = row.tl && TOOL_IDS[row.tl[0]] ? { id: TOOL_IDS[row.tl[0]], left: row.tl[1] } : null;
       if (row.sk) SKILLS.forEach((sk, i) => (c.skills[sk.id] = parseInt(row.sk[i], 36) || c.skills[sk.id]));
       c.growth = row.growth ?? 1;
@@ -3985,7 +3985,7 @@ export class ColonySim {
         c.moodTarget = row.mf[0];
         c.moodBand = row.mf[1];
         c.moodTrend = row.mf[2];
-        c.moodFx = { companion: row.mf[3], homeless: row.mf[4] / 100, urns: row.mf[5] ?? 0, stench: (row.mf[6] ?? 0) / 100 };
+        c.moodFx = { companion: row.mf[3], homeless: row.mf[4] / 100, urns: row.mf[5] ?? 0, stench: (row.mf[6] ?? 0) / 100, clothes: row.mf[7] ?? 0 };
       }
       c.moodEvents = row.me ? row.me.map(([id, delta, at]) => ({ id, delta, at })) : undefined;
       c.taskType = row.tt ?? null;
@@ -4210,6 +4210,7 @@ export class ColonySim {
       const evs = Array.isArray(saved.moodEvents) ? saved.moodEvents.filter((e) => e && typeof e.id === 'string' && Number.isFinite(e.delta) && Number.isFinite(e.at) && e.id in EVENT_TEXT && this.gameTime - e.at < 0.5 * DAY_LENGTH_SECONDS) : [];
       c.moodEvents = evs.length ? evs.slice(0, 4).map((e) => ({ id: e.id, delta: Math.max(-40, Math.min(40, e.delta)), at: Math.min(e.at, this.gameTime) })) : undefined;
       c.clothed = !!saved.clothed;
+      c.wear = c.clothed ? (saved.wear && Number.isFinite(saved.wear.tier) && Number.isFinite(saved.wear.left) ? { tier: Math.max(1, Math.min(10, Math.round(saved.wear.tier))), left: saved.wear.left } : { tier: Math.max(1, Math.min(10, this.age)), left: lifeOf(this.age) }) : null;
       c.tool = saved.tool && TOOL_GOODS[saved.tool.id] && Number.isFinite(saved.tool.left) ? { id: saved.tool.id, left: Math.min(saved.tool.left, TOOL_GOODS[saved.tool.id].life) } : null;
       if (Number.isFinite(saved.x) && this.walkable(saved.x, saved.z, 0.2)) {
         c.x = saved.x;

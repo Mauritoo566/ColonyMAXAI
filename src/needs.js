@@ -241,7 +241,7 @@ export function updateNeeds(c, env) {
   // Calor: tiende al calor del ambiente (más o menos según la resistencia al frío). La
   // ropa de pieles abriga algo aunque haga mucho frío; sin ropa se nota mucho más el
   // frío. Junto a la fogata sube rápido.
-  const CLOTHES = env.clothed ? 25 : 0;
+  const CLOTHES = env.clothed ? (env.warmthBonus ?? 25) : 0;
   let target = CLOTHES + env.ambient * (100 - CLOTHES) + (gene(g, 'cold') - 0.5) * 30;
   if (env.sheltered) target = Math.max(target, 80); // dentro de la tienda
   if (env.nearFire) target = 100;
@@ -265,6 +265,8 @@ export function updateNeeds(c, env) {
   moodTarget += URN_BONUS * Math.min(MAX_URNS_BONUS, env.urns ?? 0);
   // El mal olor de cuerpos sin enterrar cerca baja el ánimo mientras dura.
   moodTarget -= STENCH_PENALTY * Math.min(1, env.stench ?? 0);
+  // La ropa de su tiempo anima; ir sin ropa o con harapos, no (sim/clothing.js).
+  moodTarget += env.clothesMood ?? 0;
   moodTarget = clamp(moodTarget);
   // Lo que explica el ánimo (sim/wellbeing.js): hacia dónde tira y qué condiciones lo empujan. Es estado de trabajo, no se guarda.
   c.moodTarget = moodTarget;
@@ -273,6 +275,7 @@ export function updateNeeds(c, env) {
   fx.stench = Math.min(1, env.stench ?? 0);
   fx.companion = env.companion ? 1 : 0;
   fx.homeless = env.homeless ?? 0;
+  fx.clothes = env.clothesMood ?? 0;
   const moodRate = 100 / (0.8 * DAY);
   n.mood += Math.sign(moodTarget - n.mood) * Math.min(Math.abs(moodTarget - n.mood), moodRate * dt);
 

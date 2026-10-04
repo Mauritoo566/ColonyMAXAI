@@ -102,6 +102,8 @@ export function moodFactors(colony, c) {
   if ((fx.stench ?? 0) > 0.05) causes.push({ id: 'stench', source: 'condition', text: 'Huele muy mal: hay cuerpos sin enterrar cerca', impact: -pts(STENCH_PENALTY * fx.stench), sev: fx.stench > 0.6 ? 2 : 1, short: 'mal olor' });
   if ((fx.homeless ?? 0) > 0.05) causes.push({ id: 'homeless', source: 'condition', text: 'No tiene una cama propia', impact: -pts(HOMELESS_PENALTY * fx.homeless), sev: fx.homeless > 0.6 ? 2 : 1, short: 'sin cama' });
   if ((fx.urns ?? 0) > 0) positives.push({ id: 'urns', source: 'condition', text: fx.urns > 1 ? 'Tiene en casa los jarrones de sus seres queridos' : 'Tiene en casa el jarrón de un ser querido', impact: pts(URN_BONUS * fx.urns) });
+  if ((fx.clothes ?? 0) <= -2) causes.push({ id: 'clothes', source: 'condition', text: c.clothed ? 'Su ropa está raída o es muy anticuada' : 'Va sin ropa', impact: pts(fx.clothes), sev: c.clothed ? 1 : 2, short: c.clothed ? 'ropa vieja' : 'sin ropa' });
+  if ((fx.clothes ?? 0) >= 1) positives.push({ id: 'clothes', source: 'condition', text: fx.clothes >= 3 ? 'Lleva ropa nueva de su tiempo' : 'Lleva ropa casi de su tiempo', impact: pts(fx.clothes) });
   if (hasTrait(c, 'pessimist')) causes.push({ id: 'trait-pessimist', source: 'trait', text: 'Es pesimista: su ánimo tiende a ser más bajo', impact: -12, sev: 0, short: 'pesimista' });
   if (hasTrait(c, 'optimist')) positives.push({ id: 'trait-optimist', source: 'trait', text: 'Es optimista', impact: 12 });
   if (fx.companion) {
@@ -157,7 +159,8 @@ function adviceFor(colony, c, cause) {
       break;
     case 'need-warmth':
       if (!c.clothed && colony.clothesLeft > 0) out.push({ text: `Irá a buscar ropa de pieles al campamento (quedan ${colony.clothesLeft}).` });
-      else if (!c.clothed) out.push({ text: 'No queda ropa en el campamento: sólo la fogata lo calienta.' });
+      else if (!c.clothed && (colony.stock?.clothes ?? 0) >= 1) out.push({ text: 'Hay ropa en el almacén: irá a recogerla.' });
+      else if (!c.clothed) out.push({ text: colony.age >= 2 ? 'No queda ropa: una sastrería la fabrica; mientras, sólo la fogata lo calienta.' : 'No queda ropa en el campamento: sólo la fogata lo calienta.' });
       out.push({ text: 'La fogata lo calienta rápido; dentro de una vivienda también se abriga.' });
       break;
     case 'homeless': {

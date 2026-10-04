@@ -295,6 +295,17 @@ export function workshopMark(p, tier, id) {
       box(p, 0.06, 1.1, 0.3, STEEL, -2.1, 0.9, -1.0);
       for (const [x, z] of [[1.6, 1.3], [2.0, 1.5]]) box(p, 0.5, 0.18, 0.3, '#bdb8ae', x, 0.1, z, 0.3);
       break;
+    case 'tailor':
+      // Percha con prendas colgadas, maniquí con una túnica y un fardo de pieles o telas.
+      box(p, 0.08, 1.9, 0.08, c.trim, -2.4, 0.95, 1.0);
+      box(p, 0.08, 1.9, 0.08, c.trim, -0.9, 0.95, 1.0);
+      box(p, 1.6, 0.08, 0.08, c.trim, -1.65, 1.85, 1.0);
+      for (const [i, col] of [[0, '#8a5a34'], [1, tier >= 4 ? '#c9a878' : '#a0764a'], [2, tier >= 6 ? '#6a4a8a' : '#7a8a5a']]) box(p, 0.34, 0.7, 0.06, col, -2.1 + i * 0.45, 1.45, 1.0);
+      stick(p, v(2.1, 0, 0.9), v(2.1, 1.3, 0.9), 0.05, c.trim, 4);
+      box(p, 0.5, 0.7, 0.3, tier >= 6 ? '#6a4a8a' : '#a0764a', 2.1, 1.0, 0.9);
+      box(p, 0.3, 0.3, 0.3, '#d8b48a', 2.1, 1.55, 0.9);
+      cyl(p, 0.4, 0.4, 0.5, tier >= 6 ? '#e8dcc0' : '#8a5a34', 1.8, 0.25, -0.4, 8);
+      break;
     case 'textile':
       // Telar de madera con hilos, balas de tela y tinas de tinte.
       box(p, 0.08, 1.7, 0.08, c.trim, -2.3, 0.85, 0.6);

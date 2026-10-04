@@ -527,6 +527,20 @@ workshop({
 });
 
 workshop({
+  id: 'tailor',
+  job: 'Costura',
+  skill: 'crafting',
+  icon: 'cloth',
+  cost: { wood: 20, fiber: 12 },
+  levels: [
+    L(2, 'Curtiduría y costura', 'Se curten pieles y se cosen con fibras: ropa de cuero cosido.', 'gen:workshop:2', { recipe: { in: { fiber: 4 }, out: { clothes: 2 }, time: 40 } }),
+    L(4, 'Telar de lino y lana', 'Telares de mano: túnicas de lino y lana teñida.', 'gen:workshop:4', { recipe: { in: { fiber: 4 }, out: { clothes: 3 }, time: 36 }, upgradeCost: { wood: 20, stone: 10, fiber: 10 } }),
+    L(6, 'Sastrería', 'Con tela del taller textil se cortan y cosen jubones, capas y ropa de corte.', 'gen:workshop:6', { recipe: { in: { cloth: 1 }, out: { clothes: 3 }, time: 32 }, upgradeCost: { planks: 10, cut_stone: 8, fiber: 10 } }),
+    L(8, 'Confección industrial', 'Máquinas de coser y patrones: ropa de serie.', 'gen:workshop:8', { recipe: { in: { cloth: 1 }, out: { clothes: 8 }, time: 26 }, upgradeCost: { steel: 5, machinery: 1, bricks: 10 }, energy: 2 }),
+  ],
+});
+
+workshop({
   id: 'precision_shop',
   job: 'Mecánico de precisión',
   skill: 'engineering',
@@ -954,7 +968,7 @@ defense({
 
 // Rango de ampliación visible por nivel (índice = nivel-1) de los edificios cuyo estilo no cambia entre edades.
 const GROW = {
-  coal_mine: [0, 1, 2], clay_pit: [0, 1], pottery: [0, 1], charcoal_kiln: [0, 1], bloomery: [0, 1], boiler: [0, 1], tool_workshop: [0, 1], bakery: [0, 1], blacksmith: [0, 1], powder_mill: [0, 1], water_works: [0, 1],
+  tailor: [0, 1, 2], coal_mine: [0, 1, 2], clay_pit: [0, 1], pottery: [0, 1], charcoal_kiln: [0, 1], bloomery: [0, 1], boiler: [0, 1], tool_workshop: [0, 1], bakery: [0, 1], blacksmith: [0, 1], powder_mill: [0, 1], water_works: [0, 1],
   station: [0, 1], market: [0, 0, 1], admin: [0, 1], academy: [0, 0, 1], school: [0, 1], barracks: [0, 1, 2], armory: [0, 1, 2],
   archery: [0, 1], siege_shop: [0, 1], motor_pool: [0, 1], wall: [0, 0, 0, 0, 0, 1], gate: [0, 1], fort: [0, 0, 1],
 };

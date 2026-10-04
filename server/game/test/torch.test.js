@@ -107,7 +107,13 @@ assert.equal(entranceOf(torch, 0, 0, 0), null, 'no tiene puerta');
   const xs = lights.map((l) => l.position.x).sort((a, b) => a - b);
   assert.deepEqual(xs.map((x) => Math.round(x)), [5, 15, 25, 35], 'son las 4 antorchas más cercanas a la cámara');
   assert.ok(lights.every((l) => l.intensity > 5), 'alumbran');
-  assert.ok(flames[0].halo.material.opacity > 0.7, 'de noche el halo se nota');
+  // El halo titila con una fase al azar: se mira lo más fuerte que llega a brillar en un par de segundos, no un solo fotograma.
+  let brightest = 0;
+  for (let t = 0; t < 2; t += 0.05) {
+    updateTorches((now += 0.05), camera, 1);
+    brightest = Math.max(brightest, flames[0].halo.material.opacity);
+  }
+  assert.ok(brightest > 0.7, 'de noche el halo se nota');
   // Se mueve la cámara: las luces pasan a las más cercanas.
   camera.position.set(80, 0, 0);
   run(0.2, 1);

@@ -15,6 +15,7 @@ import { SPROUT_KEY } from './resourceGen.js';
 import { stallReason } from './sim/economy.js';
 import { abandonTarget, farSpot, nextJob, cemeteryStatus, plotSpot, nicheSpot, freePlot, freeNiche, urnWanted, placeUrnHome, isCemetery, BURY_SECONDS, EXHUME_SECONDS, URN_SECONDS, TAKE_SECONDS, PLACE_SECONDS, THINK_SECONDS } from './sim/cemetery.js';
 import { TAME_SECONDS } from './sim/stable.js';
+import { clothesWanted, dressFromStock, DRESS_SECONDS, tierName } from './sim/clothing.js';
 import { toolTime, toolWanted, toolTrade, equipTool, toolName, EQUIP_SECONDS } from './sim/tools.js';
 import { hallFor, hallOpen, mealSource, reserveSeat, releaseSeat, leaveHall, finishMeal, finishDrink, URGENT } from './sim/dining.js';
 
@@ -206,8 +207,13 @@ export function chooseTask(colony, c, env) {
   }
   // Sin ropa y con frío: ir a buscar ropa a la pila del campamento (abriga para siempre,
   // así que lo prefiere a la fogata). Si no tiene frío, no se molesta en ir.
-  if (!c.clothed && colony.clothesLeft > 0 && n.warmth < 70) {
-    add(urgency(n.warmth) * 1.35 + 0.18, { type: 'dress' });
+  const garb = clothesWanted(colony, c);
+  if (!c.clothed && garb?.source === 'pile' && n.warmth < 70) {
+    add(urgency(n.warmth) * 1.35 + 0.18, { type: 'dress', source: 'pile' });
+  } else if (garb?.source === 'stock') {
+    // Con ropa del almacén: sin ropa y con frío corre; con ropa vieja o rota la renueva sin prisa (de día y con lo básico cubierto).
+    if (!c.clothed && n.warmth < 70) add(urgency(n.warmth) * 1.35 + 0.2, { type: 'dress', source: 'stock' });
+    else if (!env.isNight && Math.min(n.food, n.water, n.rest, n.warmth) > 35) add(c.clothed ? 0.4 : 0.55, { type: 'dress', source: 'stock' });
   }
 
   // Edades I y II (sin cementerio): un colono cualquiera carga a quien murió y lo deja lejos de la aldea. "Cualquiera": quien piensa justo ahora
@@ -390,7 +396,7 @@ export function failReason(colony, c, task) {
     case 'drink':
       return task.source === 'well' ? 'El pozo está seco' : 'Ya no queda agua en el almacén';
     case 'dress':
-      return 'Ya no queda ropa en el campamento';
+      return task.source === 'stock' ? 'Ya no queda ropa en el almacén' : 'Ya no queda ropa en el campamento';
     default:
       return 'No pudo completarla';
   }
@@ -795,6 +801,14 @@ export function runTask(colony, c, task, dt, env) {
     }
 
     case 'dress': {
+      if (task.source === 'stock') {
+        if (clothesWanted(colony, c)?.source !== 'stock') return 'done'; // ya no hace falta o no queda ropa
+        const spot = colony.layout.storage;
+        if (!go(colony, c, task, spot, dt, 1.4)) return task.failed ? 'failed' : 'running';
+        colony.faceTowards(c, spot.x, spot.z, dt);
+        if (!busy(task, dt, DRESS_SECONDS)) return 'running';
+        return dressFromStock(colony, c) ? 'done' : 'failed';
+      }
       if (c.clothed || colony.clothesLeft <= 0) return 'done';
       if (!go(colony, c, task, colony.clothesSpot, dt, 1.1)) return 'running';
       colony.faceTowards(c, colony.clothesSpot.x, colony.clothesSpot.z, dt);
@@ -1249,6 +1263,7 @@ export function taskActivity(colony, c, task) {
       if (walking) return 'Va a calentarse al fuego';
       return c.sitting === 'bench' ? 'Sentado en un tronco, calentándose' : c.sitting === 'ground' ? 'Sentado junto al fuego, calentándose' : 'Calentándose junto al fuego';
     case 'dress':
+      if (task.source === 'stock') return walking ? (c.clothed ? 'Va al almacén a cambiar su ropa' : 'Va al almacén a por ropa') : `Poniéndose ropa de ${tierName(colony.age)}`;
       return walking ? 'Tiene frío: va a buscar ropa' : 'Poniéndose ropa de pieles';
     case 'equip': {
       const name = toolName(toolTrade(colony, c) ?? 'building', task.good).toLowerCase();
@@ -1306,7 +1321,7 @@ export function taskLog(c, task) {
     case 'love':
       return task.role === 'ask' ? `Fue a buscar a ${task.partner.name}` : `Aceptó ir a casa con ${task.partner.name}`;
     case 'dress':
-      return 'Se vistió con ropa de pieles';
+      return task.source === 'stock' ? 'Se puso ropa nueva del almacén' : 'Se vistió con ropa de pieles';
     case 'equip':
       return 'Recogió una herramienta del almacén';
     case 'build':

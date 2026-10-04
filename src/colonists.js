@@ -95,7 +95,7 @@ function applyBody(object, look, build, growth) {
   hair.position.y = 1.72 - (headScale - 1) * 0.04;
 }
 
-function createPersonModel(look) {
+export function createPersonModel(look) {
   const root = new THREE.Group();
   const body = new THREE.Group(); // se balancea al caminar
   root.add(body);
@@ -127,7 +127,7 @@ function createPersonModel(look) {
   proxy.add(box(0.5, 1.4, 0.3, look.shirt, 0, 0.9, 0), box(0.3, 0.3, 0.3, look.skin, 0, 1.7, 0));
   proxy.visible = false;
   root.add(proxy);
-  root.userData = { body, armL, armR, legL, legR, torso, hip, head, hair, accessories, proxy, far: false };
+  root.userData = { body, armL, armR, legL, legR, torso, hip, head, hair, accessories, extras: [], proxy, far: false };
   return root;
 }
 
@@ -140,28 +140,77 @@ function mixHex(a, b, t) {
   return `#${ca.lerp(new THREE.Color(b), t).getHexString()}`;
 }
 
-function dressModel(object, look, clothed, outfit) {
-  const { torso, hip, armL, armR, legL, legR, accessories } = object.userData;
+// La prenda se ve de la edad en que se hizo: al renovarla pasa a la actual y se nota el cambio de época.
+const garmentTier = (sim, c) => (c.clothed ? c.wear?.tier ?? sim.age : sim.age);
+
+export function dressModel(object, look, clothed, outfit) {
+  const { torso, hip, armL, armR, legL, legR, accessories, extras } = object.userData;
+  const st = outfit?.style ?? {};
   const shirt = outfit ? mixHex(outfit.shirt, look.shirt, 0.22) : look.shirt;
   const pants = outfit ? mixHex(outfit.pants, look.pants, 0.22) : look.pants;
+  const sleeve = outfit?.sleeve ? mixHex(outfit.sleeve, look.shirt, 0.15) : shirt;
+  const sleeves = clothed ? st.sleeves ?? 'long' : 'bare';
+  const legs = clothed ? st.legs ?? 'long' : 'bare';
   torso.material = material(clothed ? shirt : look.skin);
   object.userData.proxy.children[0].material = material(clothed ? shirt : look.skin);
   hip.material = material(clothed ? pants : LOINCLOTH);
-  for (const arm of [armL, armR]) arm.children[0].material = material(clothed ? shirt : look.skin);
-  for (const leg of [legL, legR]) leg.children[0].material = material(clothed ? pants : look.skin);
-  // Prendas distintivas (sólo con ropa puesta).
+  for (const arm of [armL, armR]) arm.children[0].material = material(sleeves === 'long' ? sleeve : look.skin);
+  for (const leg of [legL, legR]) leg.children[0].material = material(legs === 'long' ? pants : look.skin);
+  // Lo añadido a brazos y piernas (mangas cortas, botas, hombreras...) y las prendas del cuerpo se quitan para volver a vestir.
+  for (const { parent, mesh } of extras.splice(0)) {
+    parent.remove(mesh);
+    mesh.geometry.dispose();
+  }
   for (const child of [...accessories.children]) {
     accessories.remove(child);
     child.geometry.dispose();
   }
   if (!clothed || !outfit) return;
+  const onLimb = (parent, mesh) => {
+    parent.add(mesh);
+    extras.push({ parent, mesh });
+  };
+  // Mangas cortas: sólo el tramo de arriba va cubierto. Hombreras abullonadas y franjas luminosas en el brazo.
+  for (const [arm, side] of [[armL, -1], [armR, 1]]) {
+    if (sleeves === 'short') onLimb(arm, box(0.145, 0.24, 0.155, shirt, 0, -0.12, 0));
+    if (st.puff) onLimb(arm, box(0.21, 0.16, 0.21, st.puff, 0, -0.07, 0));
+    if (st.glow) onLimb(arm, box(0.02, 0.5, 0.05, st.glow, side * 0.075, -0.3, 0));
+  }
+  for (const [leg, side] of [[legL, -1], [legR, 1]]) {
+    if (st.boots) {
+      const h = 0.84 * st.boots.h;
+      onLimb(leg, box(0.205, h, 0.235, st.boots.color, 0, -0.84 + h / 2 + 0.02, 0.01));
+    }
+    if (st.glow) onLimb(leg, box(0.02, 0.6, 0.05, st.glow, side * 0.095, -0.4, 0));
+  }
+  // Prendas del cuerpo.
+  if (st.hem) {
+    accessories.add(box(0.55, st.hem.len, 0.34, st.hem.color, 0, 0.93 - st.hem.len / 2, 0));
+    if (st.hem.trim) accessories.add(box(0.57, 0.05, 0.36, st.hem.trim, 0, 0.93 - st.hem.len + 0.03, 0));
+  }
+  if (st.bib) {
+    accessories.add(box(0.34, 0.3, 0.3, st.bib, 0, 1.06, 0.01));
+    accessories.add(box(0.06, 0.4, 0.3, st.bib, -0.13, 1.35, 0), box(0.06, 0.4, 0.3, st.bib, 0.13, 1.35, 0));
+  }
+  if (st.stripe) accessories.add(box(0.05, 0.56, 0.3, st.stripe, 0, 1.2, 0));
+  if (st.glow) accessories.add(box(0.025, 0.56, 0.3, st.glow, -0.16, 1.2, 0), box(0.025, 0.56, 0.3, st.glow, 0.16, 1.2, 0));
+  if (st.belt) {
+    accessories.add(box(0.53, 0.07, 0.31, st.belt, 0, 0.93, 0));
+    accessories.add(box(0.1, 0.09, 0.02, '#d9b45a', 0, 0.93, 0.16));
+  }
+  if (st.pelt) {
+    accessories.add(box(0.66, 0.12, 0.42, st.pelt, 0, 1.5, 0));
+    accessories.add(box(0.22, 0.34, 0.06, st.pelt, -0.12, 1.34, 0.18), box(0.18, 0.28, 0.06, st.pelt, 0.14, 1.38, -0.18));
+    accessories.add(box(0.1, 0.1, 0.07, '#4a2e18', 0.1, 1.5, 0.2));
+  }
+  if (st.shortCape) accessories.add(box(0.56, 0.36, 0.05, st.shortCape, 0, 1.32, -0.18), box(0.62, 0.1, 0.4, st.shortCape, 0, 1.49, 0));
   if (outfit.hat) accessories.add(...hatMeshes(outfit.hat));
   if (outfit.apron) accessories.add(box(0.42, 0.5, 0.04, outfit.apron, 0, 1.1, 0.16));
   if (outfit.coat) {
     accessories.add(box(0.54, 0.7, 0.32, outfit.coat, 0, 1.05, 0));
     accessories.add(box(0.5, 0.45, 0.3, outfit.coat, 0, 0.7, 0));
   }
-  if (outfit.cape) accessories.add(box(0.5, 0.75, 0.04, outfit.cape, 0, 1.05, -0.17));
+  if (outfit.cape) accessories.add(box(0.5, st.hem?.len > 0.7 ? 1.05 : 0.75, 0.04, outfit.cape, 0, st.hem?.len > 0.7 ? 0.95 : 1.05, -0.17));
   if (outfit.collar) accessories.add(box(0.36, 0.08, 0.3, outfit.collar, 0, 1.52, 0));
   if (outfit.weapon === 'spear') accessories.add(box(0.04, 1.9, 0.04, '#9a7446', 0.42, 0.95, 0.12));
   if (outfit.weapon === 'sword') accessories.add(box(0.05, 0.75, 0.03, '#c6ced6', 0.42, 0.85, 0.15));
@@ -281,7 +330,7 @@ export class ColonyView {
       const object = createPersonModel(c.look);
       const build = appearanceFromGenes(c.genome, c.age).build;
       applyBody(object, c.look, build, c.growth ?? 1);
-      const outfit = outfitFor(this.sim.age, c);
+      const outfit = outfitFor(garmentTier(this.sim, c), c);
       dressModel(object, c.look, c.clothed, outfit);
       this.group.add(object);
       // Etiqueta sobre la cabeza: nombre y barra de salud. Se puede hacer clic en ella.
@@ -308,7 +357,7 @@ export class ColonyView {
     for (const e of this.entries.values()) {
       if (e.clothed !== e.c.clothed) {
         e.clothed = e.c.clothed;
-        const outfit = outfitFor(this.sim.age, e.c);
+        const outfit = outfitFor(garmentTier(this.sim, e.c), e.c);
         e.outfitKey = outfit.key;
         dressModel(e.object, e.c.look, e.clothed, outfit);
       }
@@ -550,7 +599,7 @@ export class ColonyView {
     const lying = c.sleeping && c.outdoorSleep;
     object.visible = (!c.sleeping || lying) && !c.inside;
     // La ropa cambia sola con la edad de la aldea y con el oficio del colono.
-    const outfit = outfitFor(this.sim.age, c);
+    const outfit = outfitFor(garmentTier(this.sim, c), c);
     if (outfit.key !== e.outfitKey) {
       e.outfitKey = outfit.key;
       dressModel(object, c.look, c.clothed, outfit);
