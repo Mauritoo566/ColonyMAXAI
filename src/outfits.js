@@ -64,6 +64,7 @@ function soldierWear(age, tier = age) {
 }
 
 import { UNITS_BY_ID } from './sim/units.js';
+import { lifeOf, RENEW_BELOW } from './sim/clothing.js';
 
 // Arma que lleva un soldado según su unidad.
 function weaponFor(c) {
@@ -92,8 +93,11 @@ export function outfitFor(age, c) {
     coat: trade?.coat ?? null,
     collar: base.collar ?? null,
     weapon: c.soldier ? weaponFor(c) : c.spear ? 'spear' : null,
+    // Ropa a punto de romperse: se ve raída (remiendos oscuros y colores deslucidos), para
+    // que se note antes de que se rompa de verdad (mismo umbral que cuando va a cambiarla).
+    ragged: !!(c.wear && c.wear.left < lifeOf(c.wear.tier) * RENEW_BELOW),
   };
-  out.key = `${age}|${skill ?? ''}|${hunter ? 'h' : ''}|${c.soldier ? 's' + (c.soldier.unit ?? '') : ''}|${out.weapon ?? ''}`;
+  out.key = `${age}|${skill ?? ''}|${hunter ? 'h' : ''}|${c.soldier ? 's' + (c.soldier.unit ?? '') : ''}|${out.weapon ?? ''}|${out.ragged ? 'r' : ''}`;
   return out;
 }
 

@@ -148,9 +148,11 @@ const garmentTier = (sim, c) => (c.clothed ? c.wear?.tier ?? sim.age : sim.age);
 export function dressModel(object, look, clothed, outfit) {
   const { torso, hip, armL, armR, legL, legR, accessories, extras } = object.userData;
   const st = outfit?.style ?? {};
-  const shirt = outfit ? mixHex(outfit.shirt, look.shirt, 0.22) : look.shirt;
-  const pants = outfit ? mixHex(outfit.pants, look.pants, 0.22) : look.pants;
-  const sleeve = outfit?.sleeve ? mixHex(outfit.sleeve, look.shirt, 0.15) : shirt;
+  const ragged = !!outfit?.ragged;
+  const fade = (hex) => (ragged ? mixHex(hex, '#4a4136', 0.4) : hex);
+  const shirt = fade(outfit ? mixHex(outfit.shirt, look.shirt, 0.22) : look.shirt);
+  const pants = fade(outfit ? mixHex(outfit.pants, look.pants, 0.22) : look.pants);
+  const sleeve = fade(outfit?.sleeve ? mixHex(outfit.sleeve, look.shirt, 0.15) : shirt);
   const sleeves = clothed ? st.sleeves ?? 'long' : 'bare';
   const legs = clothed ? st.legs ?? 'long' : 'bare';
   torso.material = material(clothed ? shirt : look.skin);
@@ -184,6 +186,11 @@ export function dressModel(object, look, clothed, outfit) {
       onLimb(leg, box(0.205, h, 0.235, st.boots.color, 0, -0.84 + h / 2 + 0.02, 0.01));
     }
     if (st.glow) onLimb(leg, box(0.02, 0.6, 0.05, st.glow, side * 0.095, -0.4, 0));
+  }
+  // Ropa raída: remiendos oscuros asimétricos sobre el torso y la cadera (además del color deslucido de arriba).
+  if (ragged) {
+    accessories.add(box(0.1, 0.13, 0.32, '#2a241c', -0.1, 1.25, 0), box(0.08, 0.09, 0.32, '#2a241c', 0.13, 1.42, 0));
+    accessories.add(box(0.12, 0.1, 0.32, '#2a241c', 0.1, 0.97, 0));
   }
   // Prendas del cuerpo.
   if (st.hem) {
