@@ -526,6 +526,38 @@ workshop({
   ],
 });
 
+// Cazadores: una casa con un cupo de colonos (según el nivel) que se arman con lanzas (hechas en la casa de lanzas), defienden la aldea de los animales
+// hostiles y, si el jugador lo manda, salen a cazar: carne para el almacén y pieles para la sastrería.
+add({
+  id: 'hunter_lodge',
+  category: 'production',
+  job: 'Cazador',
+  skill: 'combat',
+  icon: 'sword',
+  cost: { wood: 24, stone: 8, fiber: 8 },
+  buildTime: 60,
+  footprint: 3,
+  workers: 3,
+  hunt: true,
+  levels: [
+    L(2, 'Casa de cazadores', 'Cabaña con pieles secándose y un soporte de lanzas: hasta 3 cazadores defienden la aldea de las fieras y salen a cazar carne y pieles.', 'gen:lodge:2', { workers: 3 }),
+    L(4, 'Pabellón de caza', 'Más espacio, cobertizo de despiece y trofeos: hasta 5 cazadores.', 'gen:lodge:4', { workers: 5, upgradeCost: { wood: 30, stone: 12, fiber: 10 } }),
+    L(6, 'Gran pabellón de caza', 'Sala de armas, curtidos y perreras: hasta 8 cazadores.', 'gen:lodge:6', { workers: 8, upgradeCost: { planks: 16, cut_stone: 10, fiber: 12 } }),
+  ],
+});
+
+workshop({
+  id: 'spear_maker',
+  job: 'Lancero artesano',
+  skill: 'crafting',
+  icon: 'sword',
+  cost: { wood: 18, stone: 8, fiber: 6 },
+  levels: [
+    L(2, 'Casa de lanzas', 'Se afilan astas de madera y se les ata una punta de piedra: lanzas para los cazadores.', 'gen:workshop:2', { recipe: { in: { wood: 2, stone: 1 }, out: { spear: 2 }, time: 30 } }),
+    L(4, 'Taller de lanzas de hierro', 'Puntas de hierro forjadas: más lanzas y más resistentes.', 'gen:workshop:4', { recipe: { in: { wood: 1, stone: 1 }, out: { spear: 3 }, time: 28 }, upgradeCost: { wood: 20, stone: 10, fiber: 6 } }),
+  ],
+});
+
 workshop({
   id: 'tailor',
   job: 'Costura',
@@ -533,7 +565,7 @@ workshop({
   icon: 'cloth',
   cost: { wood: 20, fiber: 12 },
   levels: [
-    L(2, 'Curtiduría y costura', 'Se curten pieles y se cosen con fibras: ropa de cuero cosido.', 'gen:workshop:2', { recipe: { in: { fiber: 4 }, out: { clothes: 2 }, time: 40 } }),
+    L(2, 'Curtiduría y costura', 'Se curten las pieles que traen los cazadores y se cosen con fibras: ropa de cuero cosido.', 'gen:workshop:2', { recipe: { in: { hide: 1, fiber: 2 }, out: { clothes: 2 }, time: 40 } }),
     L(4, 'Telar de lino y lana', 'Telares de mano: túnicas de lino y lana teñida.', 'gen:workshop:4', { recipe: { in: { fiber: 4 }, out: { clothes: 3 }, time: 36 }, upgradeCost: { wood: 20, stone: 10, fiber: 10 } }),
     L(6, 'Sastrería', 'Con tela del taller textil se cortan y cosen jubones, capas y ropa de corte.', 'gen:workshop:6', { recipe: { in: { cloth: 1 }, out: { clothes: 3 }, time: 32 }, upgradeCost: { planks: 10, cut_stone: 8, fiber: 10 } }),
     L(8, 'Confección industrial', 'Máquinas de coser y patrones: ropa de serie.', 'gen:workshop:8', { recipe: { in: { cloth: 1 }, out: { clothes: 8 }, time: 26 }, upgradeCost: { steel: 5, machinery: 1, bricks: 10 }, energy: 2 }),
@@ -968,7 +1000,7 @@ defense({
 
 // Rango de ampliación visible por nivel (índice = nivel-1) de los edificios cuyo estilo no cambia entre edades.
 const GROW = {
-  tailor: [0, 1, 2], coal_mine: [0, 1, 2], clay_pit: [0, 1], pottery: [0, 1], charcoal_kiln: [0, 1], bloomery: [0, 1], boiler: [0, 1], tool_workshop: [0, 1], bakery: [0, 1], blacksmith: [0, 1], powder_mill: [0, 1], water_works: [0, 1],
+  tailor: [0, 1, 2], spear_maker: [0, 1], coal_mine: [0, 1, 2], clay_pit: [0, 1], pottery: [0, 1], charcoal_kiln: [0, 1], bloomery: [0, 1], boiler: [0, 1], tool_workshop: [0, 1], bakery: [0, 1], blacksmith: [0, 1], powder_mill: [0, 1], water_works: [0, 1],
   station: [0, 1], market: [0, 0, 1], admin: [0, 1], academy: [0, 0, 1], school: [0, 1], barracks: [0, 1, 2], armory: [0, 1, 2],
   archery: [0, 1], siege_shop: [0, 1], motor_pool: [0, 1], wall: [0, 0, 0, 0, 0, 1], gate: [0, 1], fort: [0, 0, 1],
 };

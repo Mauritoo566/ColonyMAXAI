@@ -9,7 +9,7 @@ import {
 } from './modelParts.js';
 import {
   quarryPit, clayPit, shaftMine, pottery, bakery, charcoalKiln, brickKiln, smelterMark, bloomeryMark, workshopMark, sawmill, millMark, powderMill,
-  factoryMark, barracksMark, upgradeKit, waterWorks, farmMark, stockpileMark, gathererMark, woodcutterMark, diningMark, cemeteryYard, horseStable,
+  factoryMark, barracksMark, upgradeKit, waterWorks, farmMark, stockpileMark, gathererMark, woodcutterMark, diningMark, cemeteryYard, horseStable, hunterLodge,
 } from './buildingModelsSig.js';
 
 // ---- Viviendas ------------------------------------------------------------------------------
@@ -622,7 +622,7 @@ function fort(p, tier) {
   box(p, 1.0, 1.4, 0.14, DARK, 0, 0.7, 2.5);
 }
 
-const STYLES = { cemetery: cemeteryYard, horsestable: horseStable, house, block, hut, cabin, hall, market, hospital, mine, farm, well, kiln, smelter, workshop, mill, factory, boiler, plant, pole, station, barracks: barracksWithMark, tower, wall, gate, fort };
+const STYLES = { cemetery: cemeteryYard, horsestable: horseStable, lodge: hunterLodge, house, block, hut, cabin, hall, market, hospital, mine, farm, well, kiln, smelter, workshop, mill, factory, boiler, plant, pole, station, barracks: barracksWithMark, tower, wall, gate, fort };
 
 // Dibuja un modelo «gen:estilo:edad:tipo». Devuelve false si el estilo no existe.
 // Medio lado aproximado de cada estilo, para colocar la ampliación de los niveles que repiten edad.

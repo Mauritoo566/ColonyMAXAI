@@ -28,6 +28,7 @@ import { pushSample } from '../interp.js';
 import { decideRun, RUN_FACTOR } from './running.js';
 import { RoadMap, roadRoute } from './roadpath.js';
 import { TOOL_GOODS, TOOL_IDS, wearTool } from './tools.js';
+import { SPEAR_LIFE } from './hunting.js';
 import { dress, wearClothes, warmthOf, clothesMood, lifeOf } from './clothing.js';
 import { orderTame, tameProblem, herdOf, affordable, pendingTame, finishTame, serializeTamed, restoreTamed } from './stable.js';
 import { recordDeath, serializeDead, restoreDead, viewDead, urnsAtHome, stenchAt, seesBody, SAW_BODY, SAW_COOLDOWN } from './cemetery.js';
@@ -854,7 +855,7 @@ export class ColonySim {
   carryOf(c) {
     const t = c.task;
     if (!t || t.phase !== 'returning') return null;
-    if (t.type === 'harvest' && t.load) return { ...t.load };
+    if ((t.type === 'harvest' || t.type === 'hunt') && t.load) return { ...t.load };
     if (t.type === 'work' && t.building?.def?.stock) {
       const def = t.building.def;
       const amount = t.litter ? def.scavenge?.yield : levelOf(t.building)?.yield;
@@ -1393,7 +1394,7 @@ export class ColonySim {
     if (c.pendingSpec && (!c.task || !WORK_TYPES.has(c.task.type) || c.task.ordered)) this.applySpec(c);
     if (isWorker(c) && !c.spec) specOf(this, c);
     // Práctica: trabajar sube poco a poco el nivel de esa categoría (también con una orden temporal).
-    if (c.working && c.task && WORK_TYPES.has(c.task.type)) this.practice(c, c.task, dt);
+    if (c.working && c.task && (WORK_TYPES.has(c.task.type) || c.task.type === 'hunt')) this.practice(c, c.task, dt);
     c.activity = c.task ? taskActivity(this, c, c.task) : 'Descansando un momento';
     if (c.task?.type === 'wander' && c.idle) c.activity = c.idle;
     if (c.running && c.runWhy) c.activity += ` (corriendo: ${c.runWhy})`;
@@ -1408,6 +1409,15 @@ export class ColonySim {
   // Estado visible de una obra: { state, label, why } (se calcula aquí o llega del servidor).
   siteInfo(b) {
     return b.site ?? siteStatus(this, b, this.nightNow);
+  }
+
+  // Casa de cazadores: salir a cazar (true) o sólo vigilar y defender la aldea (false).
+  setHunt(b, on) {
+    if (this.remote) return this.remote('setHunt', [b.id, !!on]);
+    if (!b.def.hunt || !b.done) return false;
+    b.hunt = !!on;
+    this.emit('buildings');
+    return true;
   }
 
   setPriority(b, level) {
@@ -1466,6 +1476,7 @@ export class ColonySim {
     if (task.type === 'build') return 'building';
     if (task.type === 'work') return task.building.def.skill;
     if (task.type === 'harvest') return spotCategory(task.spot, this.age);
+    if (task.type === 'hunt') return 'combat';
     return null;
   }
 
@@ -3564,6 +3575,7 @@ export class ColonySim {
           chatCooldown: c.chatCooldown,
           clothed: c.clothed,
           wear: c.wear ? { tier: c.wear.tier, left: Math.round(c.wear.left) } : null,
+          spear: c.spear ? { left: Math.round(c.spear.left) } : null,
           tool: c.tool ? { id: c.tool.id, left: Math.round(c.tool.left) } : null,
           x: c.x,
           z: c.z,
@@ -3605,6 +3617,7 @@ export class ColonySim {
         upgrading: b.upgrading,
         priority: b.priority,
         paused: b.paused,
+        hunt: !!b.hunt,
         gate: !!b.gate,
         store: b.store,
         worker: b.worker ? b.worker.id : null,
@@ -3628,6 +3641,7 @@ export class ColonySim {
       const b = this.createBuilding(def, s.x, s.z, s.yaw, s.upgrading ? 1 : s.progress, s.produced || 0, level, s.id);
       b.store = s.store || 0;
       if (PRIORITY[s.priority]) b.priority = s.priority;
+      b.hunt = !!s.hunt && !!def.hunt;
       b.paused = !!s.paused && !b.done;
       b.gate = !!s.gate && !!def.line;
       b.cycle = Number.isFinite(s.cycle) ? s.cycle : 0;
@@ -3701,6 +3715,10 @@ export class ColonySim {
         if (!b || !c || !b.workers.includes(c)) return false;
         this.releaseWorker(b, c);
         return true;
+      }
+      case 'setHunt': {
+        const b = this.building(args[0]);
+        return !!b && this.setHunt(b, args[1]);
       }
       case 'setPriority': {
         const b = this.building(args[0]);
@@ -3881,6 +3899,7 @@ export class ColonySim {
           return carry ? Object.entries(carry) : undefined;
         })(),
         cw: c.wear ? [c.wear.tier, Math.round(c.wear.left)] : undefined,
+        sp: c.spear ? Math.round(c.spear.left) : undefined,
         tl: c.tool ? [TOOL_IDS.indexOf(c.tool.id), Math.round(c.tool.left)] : undefined,
         activity: c.activity,
         job: c.job?.id ?? null,
@@ -3925,6 +3944,7 @@ export class ColonySim {
         pf: r2(b.pf),
         op: b.operating,
         prio: b.priority,
+        hunt: b.hunt ? 1 : undefined,
         gate: !!b.gate,
         paused: b.paused,
         site: b.done ? undefined : siteStatus(this, b, this.nightNow),
@@ -3989,6 +4009,7 @@ export class ColonySim {
       c.health = row.health;
       c.log = row.log;
       c.activity = row.activity;
+      c.spear = row.sp != null ? { left: row.sp } : null;
       c.carry = row.cy ? Object.fromEntries(row.cy) : null;
       c.wear = row.cw ? { tier: row.cw[0], left: row.cw[1] } : null;
       c.tool = row.tl && TOOL_IDS[row.tl[0]] ? { id: TOOL_IDS[row.tl[0]], left: row.tl[1] } : null;
@@ -4107,6 +4128,7 @@ export class ColonySim {
         status: row.status,
         cycle: row.cycle ?? 0,
         priority: row.prio ?? 'normal',
+        hunt: !!row.hunt,
         gate: !!row.gate,
         paused: !!row.paused,
         site: row.site ?? null,
@@ -4229,6 +4251,7 @@ export class ColonySim {
       // Golpes recientes al ánimo (se validan: la partida puede venir de otra versión).
       const evs = Array.isArray(saved.moodEvents) ? saved.moodEvents.filter((e) => e && typeof e.id === 'string' && Number.isFinite(e.delta) && Number.isFinite(e.at) && e.id in EVENT_TEXT && this.gameTime - e.at < 0.5 * DAY_LENGTH_SECONDS) : [];
       c.moodEvents = evs.length ? evs.slice(0, 4).map((e) => ({ id: e.id, delta: Math.max(-40, Math.min(40, e.delta)), at: Math.min(e.at, this.gameTime) })) : undefined;
+      c.spear = saved.spear && Number.isFinite(saved.spear.left) && saved.spear.left > 0 ? { left: Math.min(saved.spear.left, SPEAR_LIFE) } : null;
       c.clothed = !!saved.clothed;
       c.wear = c.clothed ? (saved.wear && Number.isFinite(saved.wear.tier) && Number.isFinite(saved.wear.left) ? { tier: Math.max(1, Math.min(10, Math.round(saved.wear.tier))), left: saved.wear.left } : { tier: Math.max(1, Math.min(10, this.age)), left: lifeOf(this.age) }) : null;
       c.tool = saved.tool && TOOL_GOODS[saved.tool.id] && Number.isFinite(saved.tool.left) ? { id: saved.tool.id, left: Math.min(saved.tool.left, TOOL_GOODS[saved.tool.id].life) } : null;

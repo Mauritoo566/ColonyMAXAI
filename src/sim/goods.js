@@ -15,6 +15,8 @@ export const GOODS = [
   { id: 'tree_seed', name: 'semilla de árbol', icon: 'leaf', color: '#8a6a3a', age: 2, group: 'seed', use: 'Cae a veces al talar un árbol. Los colonos la plantan solos en su tiempo libre y nace el árbol propio de ese bioma.' },
   { id: 'apple', name: 'manzanas', icon: 'food', color: '#d9473a', age: 2, group: 'food', use: 'Fruta (frutas y verduras). Cae a veces al talar un árbol. Sirve para domesticar caballos: 3 por cada uno.' },
   { id: 'clothes', name: 'ropa', icon: 'cloth', color: '#b08a5a', age: 2, group: 'processed', use: 'Abriga a los colonos y los anima. Se gasta y hay que renovarla; cada edad abriga más.' },
+  { id: 'hide', name: 'pieles', icon: 'cloth', color: '#a8794a', age: 2, group: 'raw', use: 'Se consiguen cazando. La sastrería las convierte en ropa.' },
+  { id: 'spear', name: 'lanzas', icon: 'sword', color: '#b08a58', age: 2, group: 'tool', use: 'Armas de los cazadores: con ellas defienden la aldea y salen a cazar. Se gastan con el uso.' },
   { id: 'clay', name: 'arcilla', icon: 'clay', color: '#b86a44', age: 2, group: 'raw', use: 'Cerámica y ladrillos.' },
   { id: 'copper', name: 'cobre', icon: 'ore', color: '#c8743c', age: 3, group: 'raw', use: 'Con estaño se funde en bronce; después, electrónica.' },
   { id: 'tin', name: 'estaño', icon: 'ore', color: '#9fb0b8', age: 3, group: 'raw', use: 'Aleación del bronce.' },
@@ -61,7 +63,7 @@ export const BASE_GOODS = ['food', 'water', 'wood', 'stone', 'fiber'];
 export const TRADE_VALUE = {
   food: 1, water: 0.5, wood: 1, stone: 1.2, fiber: 1, grain: 1.2, vegetables: 1.3, clay: 1, copper: 2.5, tin: 2.5, bronze: 6,
   bronze_tools: 10, pottery: 3, bread: 3, iron_ore: 2.5, charcoal: 2, iron: 7, iron_tools: 14, cut_stone: 4,
-  planks: 3, flour: 3, cloth: 5, clothes: 4, coal: 3, steel: 12, bricks: 5, concrete: 6,
+  planks: 3, flour: 3, cloth: 5, clothes: 4, hide: 3, spear: 4, coal: 3, steel: 12, bricks: 5, concrete: 6,
 };
 
 // Lo que está disponible hoy: los bienes cuya edad ya llegó.

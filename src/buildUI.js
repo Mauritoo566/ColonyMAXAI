@@ -9,6 +9,7 @@ import { productionEstimate, estimateLine } from './sim/estimates.js';
 import { FOOD_SPOIL_SECONDS, zoneCapacity } from './sim/colony.js';
 import { villageReport } from './sim/report.js';
 import { eatingNow } from './sim/dining.js';
+import { lodgeReport } from './sim/hunting.js';
 import { cemeteryStatus, plotsOf, nichesOf, usedPlots, usedNiches } from './sim/cemetery.js';
 import { enableHScroll, revealInScroller } from './hscroll.js';
 import { storageKey } from './storage.js';
@@ -587,7 +588,7 @@ export class BuildUI {
     // Clave para no redibujar si nada cambió.
     const site = b.done ? null : colony.siteInfo(b);
     const siteKey = site ? [site.state, site.why, (site.ids ?? []).join(), (site.ordered ?? []).join(), b.priority, b.paused, colony.colonists.map((c) => (c.growth ?? 1) < 1 || c.soldier ? '' : c.id).join('.')].join('~') : '';
-    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, b.accessIssue, upgradeProblem, stored, b.def.id === 'dining_hall' ? eatingNow(colony, b) : '', b.def.id === 'cemetery' || b.def.levels[0].housing != null ? (colony.dead ?? []).map((r) => `${r.id}${r.state}${r.plot ?? ''}${r.niche ?? ''}${r.home ?? ''}`).join(',') : '', b.gate, est?.lines[0], (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), Math.floor(colony.stock.tree_seed ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
+    const key = [this.confirmDemolish === b.id, state, siteKey, colony.colonists.map((c) => (c.home === b.id ? c.id : '')).join(''), b.level, crew.map((w) => w.id).join(), Math.floor(b.produced), b.status, b.reason, b.accessIssue, upgradeProblem, stored, b.def.id === 'dining_hall' ? eatingNow(colony, b) : '', b.def.id === 'cemetery' || b.def.levels[0].housing != null ? (colony.dead ?? []).map((r) => `${r.id}${r.state}${r.plot ?? ''}${r.niche ?? ''}${r.home ?? ''}`).join(',') : '', b.gate, b.hunt, b.def.hunt ? Object.values(lodgeReport(colony, b)).join(':') : '', est?.lines[0], (colony.weather?.rain ?? 0) > 0.05, Math.floor(colony.colonists.length), colony.age, Math.floor((b.cycle ?? 0) * 20), Math.floor(colony.tradeUsed ?? 0), colony.techs.size, Math.floor(colony.stock.knowledge ?? 0), Math.floor(colony.stock.coin ?? 0), Math.floor(colony.stock.tree_seed ?? 0), ranking.map((c) => `${c.id}${c.job?.id ?? ''}`).join()].join('|');
     if (this.renderedFor === key) return;
     this.renderedFor = key;
 
@@ -787,6 +788,7 @@ export class BuildUI {
       colony.demolish(b);
     });
     for (const button of this.panel.querySelectorAll('[data-prio]')) button.addEventListener('click', () => colony.setPriority(b, button.dataset.prio));
+    for (const button of this.panel.querySelectorAll('[data-hunt]')) button.addEventListener('click', () => colony.setHunt(b, button.dataset.hunt === '1'));
     this.panel.querySelector('[data-pause]')?.addEventListener('click', () => colony.pauseSite(b, !b.paused));
     for (const button of this.panel.querySelectorAll('[data-site-assign]')) {
       button.addEventListener('click', () => {
@@ -886,11 +888,32 @@ export class BuildUI {
     </section>`;
   }
 
+  // Casa de cazadores: cuántos hay, cuántos con lanza, qué hay cerca y la misión (defender o salir a cazar).
+  lodgeHtml(b, level) {
+    const r = lodgeReport(this.colony, b);
+    return `<section class="cp-section">
+      <h3>Cazadores</h3>
+      <div class="stat-line"><span>Cazadores</span><strong>${r.hunters}/${level.workers}</strong></div>
+      <div class="stat-line"><span>Con lanza</span><strong>${r.armed}</strong></div>
+      <div class="stat-line"><span>Lanzas en el almacén</span><strong>${r.spears}</strong></div>
+      <div class="stat-line"><span>Fieras cerca de la aldea</span><strong>${r.hostiles}</strong></div>
+      <div class="stat-line"><span>Presas a la vista</span><strong>${r.prey}</strong></div>
+      <div class="prio-row" role="group" aria-label="Misión de los cazadores">
+        <span>Misión</span>
+        <button type="button" class="seg ${b.hunt ? '' : 'is-on'}" data-hunt="0" aria-pressed="${!b.hunt}">Defender</button>
+        <button type="button" class="seg ${b.hunt ? 'is-on' : ''}" data-hunt="1" aria-pressed="${!!b.hunt}">Salir a cazar</button>
+      </div>
+      <p class="reason">${b.hunt ? 'De día salen a cazar presas: la carne va al almacén como comida y las pieles las usa la sastrería. Si aparece una fiera, la atacan primero.' : 'Esperan junto a la casa y salen a por cualquier lobo u oso que ande cerca de la aldea, de día o de noche.'} Sin lanza no salen: las hace una casa de lanzas.</p>
+      ${r.armed < r.hunters && r.spears < 1 ? '<p class="order-msg is-bad">Faltan lanzas en el almacén: construye una casa de lanzas.</p>' : ''}
+    </section>`;
+  }
+
   // Hospitales, escuelas y administración: si están funcionando y qué aportan.
   serviceNote(b, level) {
-    if (!['hospital', 'school', 'admin', 'dining_hall', 'cemetery'].includes(b.def.id)) return '';
+    if (!['hospital', 'school', 'admin', 'dining_hall', 'cemetery', 'hunter_lodge'].includes(b.def.id)) return '';
     const lines = [];
     if (b.def.id === 'cemetery') return this.cemeteryHtml(b, level);
+    if (b.def.id === 'hunter_lodge') return this.lodgeHtml(b, level);
     if (b.def.id === 'dining_hall') {
       lines.push(['Plazas', `${eatingNow(this.colony, b)} comiendo ahora · ${level.seats} a la vez`]);
       lines.push(['Bienestar', `+${level.mood} por comida (dura ${level.mealTime} s)`]);

@@ -395,6 +395,17 @@ La ropa es un bien (`clothes`) que se fabrica en la **sastrería** (desde la Eda
 - **Aspecto:** cada edad tiene su propia silueta, no sólo otro color: pieles con manto y faldilla de piel y brazos al aire (I), chaleco de cuero con costura y botas (II), túnica de lino de mangas cortas con ribete (III), túnica de lana con capita (IV), túnica larga y manto con fajín (V), jubón con hombreras y botas altas (VI), casaca con cuello y botones (VII), mono con peto y gorra (VIII), camisa y pantalón modernos (IX), traje técnico con franjas luminosas (X). El oficio sólo añade sombrero o delantal. Como la prenda se queda hasta que se rompe o se cambia, la aldea se ve evolucionar poco a poco al avanzar de edad.
 - Código en `src/sim/clothing.js` y `src/outfits.js`; pruebas en `clothing.test.js` y `outfits.test.js`. `node tools/render-outfits.mjs hoja.png` dibuja las diez ropas en una imagen.
 
+## Cazadores
+
+- **Casa de cazadores** (Edad II; niveles en la IV y la VI): tiene un **cupo** de cazadores según el nivel (3, 5 y 8). Se asignan como en cualquier puesto (a mano desde la ficha, o la colonia completa el cupo sola con quien tiene Combate entre sus especialidades).
+- **Casa de lanzas** (Edad II y IV, otro edificio): fabrica lanzas (`spear`) con madera y piedra. Los cazadores recogen **una lanza cada uno** del almacén y se les gasta: 40 golpes. Al romperse hay aviso y van a por otra. Sin lanza no salen.
+- **Misión** (botones en la ficha de la casa): **Defender** (por defecto) o **Salir a cazar**.
+  - Armados, **defienden la aldea**: van a por cualquier lobo u oso que ande a menos de 60 m (45 m de noche), a cualquier hora. Un cazador armado no huye hacia la fogata; si baja de 35 de salud, se retira.
+  - Con **Salir a cazar**, de día y cuando no hay fieras cerca, van a por la presa libre más cercana a la casa (hasta 90 m): conejos, ciervos, jabalíes, ovejas y uros. Un cazador por presa.
+- **Botín:** la carne va al almacén como comida (ciervo 12, uro 18, jabalí 10, oveja 9, conejo 3, oso 14, lobo 3) y las **pieles** (`hide`) también; la sastrería de la Edad II las usa para hacer ropa (cada prenda lleva 1 piel). Los hostiles también dan pieles. Lo que llevan se ve en el inventario.
+- Los animales tienen vida (conejo 4, lobo 24, ciervo 20, oso 70…); el daño de la lanza crece con el nivel de Combate y con la edad. La caza se **repone** poco a poco (un rebaño de presas lejos de la aldea cuando quedan pocas; una fiera lejana si faltan).
+- Aspecto: ropa de monte con capa de piel y gorro, y la lanza en la mano. Código en `src/sim/hunting.js`; prueba en `hunting.test.js`.
+
 ## Filas y obras
 
 - **Filas:** cuando varios colonos van a lo mismo a la vez a un punto compartido (el almacén para comer, beber, coger herramienta o ropa; la pila de ropa del campamento; un pozo), el primero llega al punto y los demás esperan en **fila** detrás, a un paso de distancia, en lugar de amontonarse. Al terminar el primero, avanza el siguiente (el orden es el de llegada). La ficha dice «Esperando su turno en la fila». Código en `lineUp` de `src/ai.js`; el comedor ya reservaba plaza y no cambia.

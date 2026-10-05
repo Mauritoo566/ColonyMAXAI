@@ -52,6 +52,11 @@ function tradeWear(age, skill, jobId) {
   }
 }
 
+// Cazadores (casa de cazadores): ropa de monte con capa de piel y gorro.
+function hunterWear(age) {
+  return { shirt: age >= 4 ? '#5a6a3a' : '#7a5a3a', cape: age >= 4 ? '#6a5a42' : '#8a6a44', hat: age >= 3 ? { kind: 'cap', color: '#4a5a3a' } : { kind: 'band', color: '#8a5a34' } };
+}
+
 // Soldados: la armadura crece con la edad (y con las mejoras que se pagan, ver el rango).
 function soldierWear(age, tier = age) {
   const steel = tier >= 8 ? '#6a7a68' : tier >= 6 ? '#aab2ba' : tier >= 4 ? '#8a9098' : tier >= 3 ? '#a87a3a' : '#7a5a3a';
@@ -74,7 +79,8 @@ function weaponFor(c) {
 export function outfitFor(age, c) {
   const base = AGE_WEAR[Math.min(10, Math.max(1, age))];
   const skill = c.soldier ? 'combat' : c.job?.def?.skill;
-  const trade = c.soldier ? soldierWear(age, c.soldier.tier ?? age) : skill ? tradeWear(age, skill, c.job?.def?.id) : null;
+  const hunter = !c.soldier && c.job?.def?.id === 'hunter_lodge';
+  const trade = c.soldier ? soldierWear(age, c.soldier.tier ?? age) : hunter ? hunterWear(age) : skill ? tradeWear(age, skill, c.job?.def?.id) : null;
   const out = {
     shirt: trade?.shirt ?? base.shirt,
     pants: base.pants,
@@ -85,9 +91,9 @@ export function outfitFor(age, c) {
     cape: trade?.cape !== undefined ? trade.cape : base.cape ?? null,
     coat: trade?.coat ?? null,
     collar: base.collar ?? null,
-    weapon: c.soldier ? weaponFor(c) : null,
+    weapon: c.soldier ? weaponFor(c) : c.spear ? 'spear' : null,
   };
-  out.key = `${age}|${skill ?? ''}|${c.soldier ? 's' + (c.soldier.unit ?? '') : ''}`;
+  out.key = `${age}|${skill ?? ''}|${hunter ? 'h' : ''}|${c.soldier ? 's' + (c.soldier.unit ?? '') : ''}|${out.weapon ?? ''}`;
   return out;
 }
 

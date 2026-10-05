@@ -295,6 +295,15 @@ export function workshopMark(p, tier, id) {
       box(p, 0.06, 1.1, 0.3, STEEL, -2.1, 0.9, -1.0);
       for (const [x, z] of [[1.6, 1.3], [2.0, 1.5]]) box(p, 0.5, 0.18, 0.3, '#bdb8ae', x, 0.1, z, 0.3);
       break;
+    case 'spear_maker':
+      // Astas de madera apiladas, un banco con lanzas a medio acabar y virutas y esquirlas de piedra por el suelo.
+      for (let i = 0; i < 4; i++) stick(p, v(2.0, 0.1 + i * 0.2, -1.1 + i * 0.05), v(2.0, 0.1 + i * 0.2, 0.9), 0.07, i % 2 ? '#9a7446' : '#b08a58', 5);
+      bench(p, -2.1, 0.4, 1.3, 0.6, 0.8);
+      stick(p, v(-2.7, 0.88, 0.4), v(-1.5, 0.88, 0.4), 0.04, '#b08a58', 4);
+      box(p, 0.12, 0.2, 0.05, tier >= 4 ? STEEL : '#9a958c', -1.45, 0.9, 0.4, 0, 0, 1.4);
+      for (let i = 0; i < 5; i++) stick(p, v(-2.9, 0, -0.9 + i * 0.28), v(-2.5, 1.9, -0.9 + i * 0.28), 0.03, '#b08a58', 4);
+      for (let k = 0; k < 6; k++) box(p, 0.14, 0.04, 0.08, k % 2 ? '#c9a26a' : '#9a958c', 1.2 + (k % 3) * 0.35, 0.03, 1.4 + (k % 2) * 0.35, k);
+      break;
     case 'tailor':
       // Percha con prendas colgadas, maniquí con una túnica y un fardo de pieles o telas.
       box(p, 0.08, 1.9, 0.08, c.trim, -2.4, 0.95, 1.0);
@@ -709,6 +718,74 @@ export function horseStable(p, tier) {
     box(p, 0.9, 0.7, 0.9, wood, 0, H + 1.5, 0); // linterna de ventilación sobre la cumbrera
     box(p, 1.1, 0.12, 1.1, c.roof, 0, H + 1.9, 0);
     for (const x of [-w / 4, w / 4]) window_(p, x, 1.4, d / 2 + 0.03, GLASS, 0.5, 0.5);
+  }
+}
+
+// Casa de cazadores: una cabaña larga de troncos con cornamentas sobre la puerta, pieles secándose en un bastidor, un soporte con lanzas de punta de piedra
+// y, con la edad, cobertizo de despiece, trofeos y más espacio.
+export function hunterLodge(p, tier) {
+  const c = pal(tier);
+  const w = tier >= 6 ? 5.0 : tier >= 4 ? 4.2 : 3.6;
+  const d = 2.8;
+  const H = 1.8;
+  const wood = tier >= 4 ? '#8a5a34' : '#7a4f2e';
+  box(p, w + 0.4, 0.2, d + 0.4, tier >= 4 ? '#8f8a82' : '#7a6a50', 0, 0.1, 0);
+  // Paredes de troncos horizontales con un hueco para la puerta (en el centro de la fachada).
+  const layers = 6;
+  const lh = H / layers;
+  for (let i = 0; i < layers; i++) {
+    const col = i % 2 ? wood : '#6b4a2e';
+    const y = 0.2 + lh / 2 + i * lh;
+    box(p, w, lh, 0.22, col, 0, y, -d / 2 + 0.11);
+    for (const s of [-1, 1]) box(p, 0.22, lh, d, col, (s * (w - 0.22)) / 2, y, 0);
+    const gap = 1.0;
+    for (const s of [-1, 1]) box(p, (w - gap) / 2, lh, 0.22, col, s * (gap / 2 + (w - gap) / 4), y, d / 2 - 0.11);
+  }
+  box(p, 1.3, 0.3, 0.26, wood, 0, 0.2 + H - 0.1, d / 2 - 0.12); // dintel
+  box(p, 1.0, 1.5, 0.1, DARK, 0, 0.2 + 0.75, d / 2 - 0.2); // la puerta, a oscuras
+  gable(p, w + 0.5, d + 0.6, 1.2, c.roof, 0.2 + H, wood);
+  // Cornamenta sobre la puerta y un cráneo.
+  const ay = 0.2 + H + 0.2;
+  for (const s of [-1, 1]) {
+    stick(p, v(s * 0.1, ay, d / 2 + 0.42), v(s * 0.55, ay + 0.35, d / 2 + 0.46), 0.04, '#d8cdb0', 4);
+    stick(p, v(s * 0.35, ay + 0.2, d / 2 + 0.44), v(s * 0.3, ay + 0.55, d / 2 + 0.46), 0.03, '#d8cdb0', 4);
+    stick(p, v(s * 0.5, ay + 0.3, d / 2 + 0.45), v(s * 0.75, ay + 0.45, d / 2 + 0.46), 0.03, '#d8cdb0', 4);
+  }
+  box(p, 0.28, 0.2, 0.16, '#e6dcc4', 0, ay - 0.02, d / 2 + 0.4);
+  // Bastidor de secado con pieles, a la izquierda.
+  const rx = -w / 2 - 0.9;
+  for (const z of [-0.8, 0.8]) {
+    stick(p, v(rx, 0, z), v(rx, 1.6, z), 0.06, '#5a3a22', 5);
+  }
+  box(p, 0.07, 0.07, 1.9, '#5a3a22', rx, 1.55, 0);
+  for (const [z, col, len] of [[-0.5, '#a8794a', 0.9], [0, '#8a6a44', 1.05], [0.5, '#b88a58', 0.85]]) box(p, 0.05, len, 0.4, col, rx, 1.5 - len / 2, z, 0, 0.05, 0);
+  // Soporte de lanzas, a la derecha: una barra baja y varias lanzas apoyadas con punta de piedra.
+  const sx = w / 2 + 0.7;
+  stick(p, v(sx - 0.2, 0, -0.7), v(sx - 0.2, 1.0, -0.7), 0.05, '#5a3a22', 4);
+  stick(p, v(sx - 0.2, 0, 0.7), v(sx - 0.2, 1.0, 0.7), 0.05, '#5a3a22', 4);
+  box(p, 0.06, 0.06, 1.5, '#5a3a22', sx - 0.2, 0.95, 0);
+  for (let i = 0; i < 5; i++) {
+    const z = -0.6 + i * 0.3;
+    stick(p, v(sx + 0.35, 0, z), v(sx - 0.2, 2.1, z), 0.03, '#b08a58', 4);
+    box(p, 0.08, 0.2, 0.04, tier >= 4 ? STEEL : '#9a958c', sx - 0.2, 2.18, z, 0, 0, 0.25);
+  }
+  // Pieles clavadas en la pared del fondo y leña apilada junto a la puerta.
+  box(p, 0.7, 0.9, 0.05, '#7a6a5a', -w / 4, 1.2, -d / 2 - 0.05);
+  box(p, 0.6, 0.8, 0.05, '#8a6a44', w / 4, 1.1, -d / 2 - 0.05);
+  if (tier >= 4) {
+    // Cobertizo de despiece al fondo con un animal colgado y una mesa; chimenea.
+    box(p, 1.6, 0.08, 1.1, c.roof, -w / 2 + 0.3, 1.55, -d / 2 - 0.9, 0, 0, 0.12);
+    for (const x of [-w / 2 - 0.4, -w / 2 + 1.0]) stick(p, v(x, 0, -d / 2 - 1.3), v(x, 1.5, -d / 2 - 1.3), 0.05, '#5a3a22', 4);
+    box(p, 0.3, 0.7, 0.25, '#a8794a', -w / 2 + 0.3, 1.0, -d / 2 - 1.0);
+    box(p, 1.0, 0.1, 0.5, '#6b4a2e', -w / 2 + 0.3, 0.55, -d / 2 - 0.5);
+    chimney(p, w / 2 - 0.6, 0.2 + H + 0.3, -d / 2 + 0.5, 1.0, c.base);
+  }
+  if (tier >= 6) {
+    // Trofeo grande (piel de oso) sobre la fachada y una perrera con su valla.
+    box(p, 1.0, 0.8, 0.05, '#4a3a2a', -w / 3, 1.3, d / 2 + 0.06);
+    box(p, 1.1, 0.8, 0.9, '#6b4a2e', w / 2 + 0.2, 0.4, d / 2 + 0.9);
+    box(p, 1.3, 0.1, 1.1, c.roof, w / 2 + 0.2, 0.85, d / 2 + 0.9, 0, 0, 0.15);
+    for (const x of [-w / 2 + 0.6, w / 2 - 0.6]) window_(p, x, 1.2, d / 2 + 0.03, GLASS, 0.5, 0.5);
   }
 }
 

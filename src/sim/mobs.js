@@ -8,16 +8,47 @@ import { DAY_LENGTH_SECONDS } from '../daynight.js';
 export const MOB_TYPES = ['conejo', 'ciervo', 'jabali', 'oveja', 'uro', 'caballo', 'lobo', 'oso'];
 
 // speed: m/s al andar · dmg/hp/range: sólo hostiles (daño por golpe, golpe cada 1,4 s)
+// hp: lo que aguanta antes de caer (los cazadores los matan con lanza; ver sim/hunting.js)
 export const MOB_STATS = {
-  conejo: { speed: 1.4, hostile: false },
-  ciervo: { speed: 2.2, hostile: false },
-  jabali: { speed: 1.7, hostile: false },
-  oveja: { speed: 1.2, hostile: false },
-  uro: { speed: 1.4, hostile: false },
-  caballo: { speed: 3, hostile: false },
-  lobo: { speed: 3.2, hostile: true, dmg: 7, sight: 30 },
-  oso: { speed: 2.4, hostile: true, dmg: 14, sight: 24 },
+  conejo: { speed: 1.4, hostile: false, hp: 4 },
+  ciervo: { speed: 2.2, hostile: false, hp: 20 },
+  jabali: { speed: 1.7, hostile: false, hp: 28 },
+  oveja: { speed: 1.2, hostile: false, hp: 14 },
+  uro: { speed: 1.4, hostile: false, hp: 40 },
+  caballo: { speed: 3, hostile: false, hp: 30 },
+  lobo: { speed: 3.2, hostile: true, dmg: 7, sight: 30, hp: 24 },
+  oso: { speed: 2.4, hostile: true, dmg: 14, sight: 24, hp: 70 },
 };
+
+// Lo que da cada animal al cazarlo: carne (va al almacén como comida) y pieles. Los hostiles dan sobre todo pieles.
+export const MOB_DROPS = {
+  conejo: { food: 3, hide: 1 },
+  ciervo: { food: 12, hide: 2 },
+  jabali: { food: 10, hide: 2 },
+  oveja: { food: 9, hide: 1 },
+  uro: { food: 18, hide: 3 },
+  lobo: { food: 3, hide: 2 },
+  oso: { food: 14, hide: 4 },
+};
+// Presas que se cazan por carne y piel (los caballos se domestican, no se cazan).
+export const HUNTABLE = new Set(['conejo', 'ciervo', 'jabali', 'oveja', 'uro']);
+export const isHostile = (m) => !!MOB_STATS[m.type]?.hostile;
+export const isHuntable = (m) => HUNTABLE.has(m.type) && !m.tamed && !m.order;
+
+// Un golpe de lanza: baja la vida del animal; si cae, desaparece del mundo. Devuelve true si murió. Un hostil herido ataca a quien lo hirió.
+export function hitMob(sim, m, dmg, by) {
+  m.hp = (m.hp ?? MOB_STATS[m.type].hp) - dmg;
+  if (m.hp > 0) {
+    if (isHostile(m) && by) {
+      m.state = 2;
+      m.target = by.id;
+    }
+    return false;
+  }
+  const i = sim.mobs.indexOf(m);
+  if (i >= 0) sim.mobs.splice(i, 1);
+  return true;
+}
 
 // Qué vive en cada bioma (ids de biomes.js).
 const BIOME_MOBS = {
@@ -132,6 +163,50 @@ export function spawnHorseHerd(sim, rand = Math.random) {
     made++;
   }
   return made;
+}
+
+// Los animales que se cazan se reponen despacio: cada cierto tiempo llega un rebaño de presas (si hay pocas) o, más lejos, una fiera (si faltan).
+const GAME_EVERY = DAY_LENGTH_SECONDS * 0.18;
+function spawnWild(sim, type, range, rand = Math.random) {
+  const free = (x, z) => sim.walkable(x, z, 1.5) && !sim.buildings.some((b) => Math.hypot(b.x - x, b.z - z) < 20);
+  let c = null;
+  for (let k = 0; k < 40 && !c; k++) {
+    const a = rand() * Math.PI * 2;
+    const r = range[0] + rand() * (range[1] - range[0]);
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    if (free(x, z)) c = { x, z };
+  }
+  if (!c) return 0;
+  const [lo, hi] = GROUP[type];
+  const n = lo + Math.floor(rand() * (hi - lo + 1));
+  const g = sim.mobs.reduce((m, o) => Math.max(m, (o.g ?? -1) + 1), 0);
+  let id = nextMobId(sim);
+  let made = 0;
+  for (let i = 0; i < n; i++) {
+    const ox = i ? (rand() - 0.5) * 7 : 0;
+    const oz = i ? (rand() - 0.5) * 7 : 0;
+    const x = c.x + ox;
+    const z = c.z + oz;
+    if (!sim.walkable(x, z, 1)) continue;
+    sim.mobs.push({ id: id++, type, x, z, facing: rand() * Math.PI * 2, state: 0, wait: rand() * 4, tx: x, tz: z, cd: 0, target: null, g, leader: made === 0, ox, oz });
+    made++;
+  }
+  return made;
+}
+
+export function gameTrickle(sim, dt) {
+  if (sim.remote || !sim.camp) return;
+  const set = BIOME_MOBS[sim.mobBiome ?? 'grassland'];
+  if (!set) return;
+  sim.gameTimer = (sim.gameTimer ?? 30 + Math.random() * 30) - dt;
+  if (sim.gameTimer > 0) return;
+  sim.gameTimer = GAME_EVERY * (0.7 + Math.random() * 0.6);
+  const prey = set.peaceful.filter((t) => HUNTABLE.has(t));
+  const alive = sim.mobs.filter((m) => HUNTABLE.has(m.type) && !m.tamed && !m.order).length;
+  if (prey.length && alive < Math.ceil(set.n * 1.6) * 0.75) spawnWild(sim, prey[Math.floor(Math.random() * prey.length)], [70, 170]);
+  const beasts = sim.mobs.filter((m) => isHostile(m)).length;
+  if (set.hostile.length && beasts < set.h) spawnWild(sim, set.hostile[Math.floor(Math.random() * set.hostile.length)], [140, 220]);
 }
 
 // Cada paso: cuenta atrás; al llegar a cero, si hay pocos caballos salvajes, llega una manada nueva.
@@ -285,6 +360,7 @@ function tamedStep(sim, m, dt, isNight) {
 export function updateMobs(sim, dt, isNight) {
   if (dt > 2) return;
   horseTrickle(sim, dt);
+  gameTrickle(sim, dt);
   if (!sim.mobs?.length) return;
   const rand = Math.random;
   for (const m of sim.mobs) {
@@ -435,14 +511,14 @@ export function updateMobs(sim, dt, isNight) {
 
 // Ficha de cada animal (para la interfaz).
 export const MOB_INFO = {
-  conejo: { name: 'Conejo', text: 'Pequeño y muy asustadizo. Vive en grupos pequeños y huye de todo.', gives: 'Presa fácil: comida (cuando se pueda cazar).' },
-  ciervo: { name: 'Ciervo', text: 'Vive en rebaños y se aleja corriendo de los depredadores.', gives: 'Carne y pieles (cuando se pueda cazar).' },
-  jabali: { name: 'Jabalí', text: 'Manso mientras nadie lo moleste. Va en pequeños grupos por el bosque.', gives: 'Carne (cuando se pueda cazar).' },
-  oveja: { name: 'Oveja salvaje', text: 'Rebaño numeroso que pasta tranquilo.', gives: 'Carne y lana (cuando se pueda cazar o domesticar).' },
-  uro: { name: 'Uro', text: 'Bovino salvaje de gran tamaño. Se mueve en rebaños.', gives: 'Carne y cuero (cuando se pueda cazar).' },
+  conejo: { name: 'Conejo', text: 'Pequeño y muy asustadizo. Vive en grupos pequeños y huye de todo.', gives: 'Los cazadores obtienen 3 de carne y 1 piel.' },
+  ciervo: { name: 'Ciervo', text: 'Vive en rebaños y se aleja corriendo de los depredadores.', gives: 'Los cazadores obtienen 12 de carne y 2 pieles.' },
+  jabali: { name: 'Jabalí', text: 'Manso mientras nadie lo moleste. Va en pequeños grupos por el bosque.', gives: 'Los cazadores obtienen 10 de carne y 2 pieles.' },
+  oveja: { name: 'Oveja salvaje', text: 'Rebaño numeroso que pasta tranquilo.', gives: 'Los cazadores obtienen 9 de carne y 1 piel.' },
+  uro: { name: 'Uro', text: 'Bovino salvaje de gran tamaño. Se mueve en rebaños.', gives: 'Los cazadores obtienen 18 de carne y 3 pieles.' },
   caballo: { name: 'Caballo salvaje', text: 'Veloz; recorre la pradera en manadas.', gives: 'Se puede domesticar con manzanas (hace falta un establo).' },
-  lobo: { name: 'Lobo', text: 'Caza en manada, sobre todo de noche. Ataca a quien esté al descubierto y teme al fuego.', gives: 'Peligro: 7 de daño por golpe.' },
-  oso: { name: 'Oso', text: 'Solitario y fuerte. Ataca a los colonos que se acercan, de día o de noche. Teme al fuego.', gives: 'Peligro: 14 de daño por golpe.' },
+  lobo: { name: 'Lobo', text: 'Caza en manada, sobre todo de noche. Ataca a quien esté al descubierto y teme al fuego.', gives: 'Peligro: 7 de daño por golpe. Los cazadores lo matan con lanza (2 pieles).' },
+  oso: { name: 'Oso', text: 'Solitario y fuerte. Ataca a los colonos que se acercan, de día o de noche. Teme al fuego.', gives: 'Peligro: 14 de daño por golpe. Los cazadores lo matan con lanza (4 pieles y carne).' },
 };
 
 export const MOB_STATE_TEXT = ['Descansando', 'Caminando', 'Atacando'];

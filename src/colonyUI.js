@@ -6,6 +6,7 @@ import { GENES, gene, genomeCode, lifeExpectancy } from './genes.js';
 import { SPEC_NAMES, isWorker } from './sim/specialties.js';
 import { tierName, lifeOf, warmthOf, clothesNote } from './sim/clothing.js';
 import { GOOD_NAMES } from './sim/goods.js';
+import { SPEAR_LIFE } from './sim/hunting.js';
 import { UNITS_BY_ID } from './sim/units.js';
 import { TOOL_GOODS, BARE_TIME, toolName, toolTrade, toolNote, toolsMatter } from './sim/tools.js';
 import { MOB_INFO, MOB_STATS, MOB_STATE_TEXT } from './sim/mobs.js';
@@ -532,6 +533,8 @@ export class ColonyUI {
     } else rows.push(row('Ropa', 'Ninguna (sólo un taparrabos)'));
     // Equipo de combate
     if (c.soldier) rows.push(row('Equipo', UNITS_BY_ID[c.soldier.unit]?.name ?? 'Soldado'));
+    else if (c.spear) rows.push(row('Arma', 'Lanza', pct((c.spear.left / SPEAR_LIFE) * 100)));
+    else if (c.job?.def?.id === 'hunter_lodge') rows.push(row('Arma', 'Sin lanza'));
     // Lo que lleva encima ahora mismo
     const load = c.carrying === 'body' ? 'Un cuerpo' : c.carrying === 'urn' ? 'Un jarrón con cenizas' : c.carry ? Object.entries(c.carry).map(([good, n]) => `${n} de ${GOOD_NAMES[good] ?? good}`).join(', ') : '';
     rows.push(row('Lleva', load || 'Nada'));

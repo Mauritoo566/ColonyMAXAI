@@ -6,7 +6,7 @@
 // Una tarea es un objeto { type, ... } que runTask() ejecuta paso a paso. Tipos:
 //   eat, drink, sleep, warm, chat, build, work, harvest, plant, wander
 
-import { hasTrait } from './needs.js';
+import { hasTrait, addLog } from './needs.js';
 import { isChild, loveOptions, runLove, endLove, homeOf } from './sim/family.js';
 import { levelOf, STOCK_NAMES } from './sim/buildingTypes.js';
 import { DAY_LENGTH_SECONDS } from './daynight.js';
@@ -15,6 +15,8 @@ import { SPROUT_KEY } from './resourceGen.js';
 import { stallReason } from './sim/economy.js';
 import { abandonTarget, farSpot, nextJob, cemeteryStatus, plotSpot, nicheSpot, freePlot, freeNiche, urnWanted, placeUrnHome, isCemetery, BURY_SECONDS, EXHUME_SECONDS, URN_SECONDS, TAKE_SECONDS, PLACE_SECONDS, THINK_SECONDS } from './sim/cemetery.js';
 import { TAME_SECONDS } from './sim/stable.js';
+import { huntTarget, spearWanted, equipSpear, useSpear, spearDamage, dropsOf, lodgeOf, HIT_EVERY, HIT_RANGE, RETREAT_HEALTH, ARM_SECONDS } from './sim/hunting.js';
+import { hitMob, MOB_INFO } from './sim/mobs.js';
 import { clothesWanted, dressFromStock, DRESS_SECONDS, tierName } from './sim/clothing.js';
 import { toolTime, toolWanted, toolTrade, equipTool, toolName, EQUIP_SECONDS } from './sim/tools.js';
 import { hallFor, hallOpen, mealSource, reserveSeat, releaseSeat, leaveHall, finishMeal, finishDrink, URGENT } from './sim/dining.js';
@@ -199,7 +201,8 @@ export function chooseTask(colony, c, env) {
   }
 
   // Un animal hostil cerca: huye hacia la fogata (allí no se acercan).
-  if (!c.soldier && colony.mobThreat?.(c)) add(1.6, { type: 'warm' });
+  // (un cazador armado no huye: va a por el animal)
+  if (!c.soldier && !(lodgeOf(c) && c.spear) && colony.mobThreat?.(c)) add(1.6, { type: 'warm' });
 
   // Calentarse junto al fuego si tiene frío.
   if (n.warmth < 55) {
@@ -228,6 +231,16 @@ export function chooseTask(colony, c, env) {
   if (!c.soldier && !isChild(c) && !env.isNight && Math.min(n.food, n.water, n.rest, n.warmth) > 35) {
     const horse = colony.pendingTame(c);
     if (horse) add(0.6 / (1 + dist(c, horse) / 200), { type: 'tame', mobId: horse.id });
+  }
+
+  // Cazadores (casa de cazadores): sin lanza van a por una al almacén; armados defienden la aldea de los hostiles (también de noche si están cerca) y, si la
+  // casa tiene orden de cazar, salen de día a por presas. Los demás no se meten.
+  if (!c.soldier && !isChild(c) && lodgeOf(c)) {
+    if (spearWanted(colony, c) && Math.min(n.food, n.water, n.rest, n.warmth) > 25) add(0.7 / (1 + dist(c, storage) / 300), { type: 'arm' });
+    const prey = huntTarget(colony, c, env.isNight);
+    if (prey && Math.min(n.food, n.water, n.warmth) > 30 && c.health >= RETREAT_HEALTH) {
+      add(prey.mode === 'defend' ? 1.15 : 0.8, { type: 'hunt', mobId: prey.mob.id, mode: prey.mode, phase: 'go' });
+    }
   }
 
   // Sin herramienta (o con una peor que la que hay en el almacén): pasa a recoger una, de día y con lo básico cubierto.
@@ -361,6 +374,8 @@ export function shouldSwitch(current, next) {
     if (same) current.ordered = true;
     return !same;
   }
+  // El cazador que espera junto a su casa (no es trabajo con punto seguro) sale en cuanto hay algo mejor que hacer.
+  if (current.type === 'work' && current.building?.def?.hunt) return next.score > (current.score || 0) + 0.05;
   // Una acción de trabajo se mantiene hasta su punto seguro (cada unidad recogida, ciclo o tanda de obra); sólo la
   // interrumpen necesidades urgentes o peligro, no otra tarea de trabajo que aparezca.
   if (WORK_TYPES.has(current.type)) return next.score > 0.95;
@@ -409,6 +424,56 @@ function lineUp(colony, c, task, key, anchor, from, dt, stop = 1.6) {
   if (colony.walkable(slot.x, slot.z, 0.3)) colony.walk(c, slot.x, slot.z, dt, 0.3);
   colony.faceTowards(c, q.anchor.x, q.anchor.z, dt);
   return false;
+}
+
+// Cazar o defender: ir hasta el animal, pelear con la lanza y, si cae, llevar la carne y las pieles al almacén.
+function runHunt(colony, c, task, dt) {
+  if (task.phase === 'returning') {
+    task.drop ??= colony.layout.storage;
+    if (!go(colony, c, task, task.drop, dt, 1.6)) return 'running';
+    for (const [k, n] of Object.entries(task.load)) colony.produce(k, n);
+    const lodge = lodgeOf(c);
+    if (lodge) lodge.produced += task.load.food ?? 0;
+    task.delivered = true;
+    return 'done';
+  }
+  const m = colony.mobs.find((o) => o.id === task.mobId);
+  if (!m || !c.spear) return 'done';
+  if (c.health < RETREAT_HEALTH) {
+    task.failWhy = 'Está herido: se retira';
+    return 'failed';
+  }
+  if (task.mode === 'game') {
+    const other = m.huntedBy != null && m.huntedBy !== c.id ? colony.colonist(m.huntedBy) : null;
+    if (other?.task?.type === 'hunt' && other.task.mobId === m.id) return 'done'; // otro cazador llegó antes
+    m.huntedBy = c.id;
+  }
+  const d = Math.hypot(m.x - c.x, m.z - c.z);
+  if (d > HIT_RANGE) {
+    if (d > 160) return 'done';
+    if (colony.walk(c, m.x, m.z, dt, HIT_RANGE - 0.5) === 'stuck') {
+      task.failed = true;
+      task.failWhy = 'No logra llegar hasta el animal';
+      return 'failed';
+    }
+    return 'running';
+  }
+  c.working = true;
+  colony.faceTowards(c, m.x, m.z, dt);
+  task.timer = (task.timer ?? 0) + dt;
+  if (task.timer < HIT_EVERY) return 'running';
+  task.timer = 0;
+  const type = m.type;
+  const killed = hitMob(colony, m, spearDamage(colony, c), c);
+  useSpear(colony, c);
+  if (!killed) return 'running';
+  task.load = dropsOf({ type });
+  task.kill = type;
+  const name = (MOB_INFO[type]?.name ?? type).toLowerCase();
+  addLog(c, colony.timeLabel(), task.mode === 'defend' ? `Mató a un ${name} que amenazaba la aldea` : `Cazó: ${name}`);
+  if (task.mode === 'defend') colony.emit('notice', `${c.name} mató a un ${name} que amenazaba la aldea`);
+  task.phase = 'returning';
+  return 'running';
 }
 
 // Qué necesidad atiende cada tarea (para registrar qué le impide resolverla si la tarea falla).
@@ -849,6 +914,17 @@ export function runTask(colony, c, task, dt, env) {
     case 'tame':
       return runTame(colony, c, task, dt, env);
 
+    case 'arm': {
+      if (!spearWanted(colony, c)) return 'done';
+      if (!lineUp(colony, c, task, 'storage', colony.layout.storage, ORIGIN, dt, 1.4)) return task.failed ? 'failed' : 'running';
+      colony.faceTowards(c, colony.layout.storage.x, colony.layout.storage.z, dt);
+      if (!busy(task, dt, ARM_SECONDS)) return 'running';
+      return equipSpear(colony, c) ? 'done' : 'failed';
+    }
+
+    case 'hunt':
+      return runHunt(colony, c, task, dt, env);
+
     case 'equip': {
       if (toolWanted(colony, c) !== task.good) return 'done'; // ya no hace falta o se acabaron en el almacén
       if (!lineUp(colony, c, task, 'storage', colony.layout.storage, ORIGIN, dt, 1.4)) return task.failed ? 'failed' : 'running';
@@ -1056,6 +1132,13 @@ function runWork(colony, c, task, dt, env) {
   }
   // Con el almacén lleno no tiene sentido traer más: espera (y avisa en la ficha).
   if (isCemetery(b)) return runCemetery(colony, c, task, dt, env);
+  // Casa de cazadores: mientras no hay nada que cazar o defender, el cazador espera junto a la casa.
+  if (def.hunt) {
+    if (!go(colony, c, task, edgeOf(b, c), dt, 1.6)) return 'running';
+    colony.faceTowards(c, b.x, b.z, dt);
+    b.status = null;
+    return 'running';
+  }
   if (colony.isFull(def.stock) && task.phase !== 'returning' && task.phase !== 'hauling') {
     // No se queda parado esperando: termina la tarea y sigue con su siguiente trabajo (chooseTask no le ofrece éste mientras
     // el almacén esté lleno y se lo vuelve a ofrecer en cuanto haya sitio).
@@ -1234,6 +1317,15 @@ function runHarvest(colony, c, task, dt, env) {
 // Al abandonar una tarea (por otra más urgente), liberar lo que tenía reservado.
 export function endTask(colony, c, task) {
   if (task.spot && task.spot.taken === c) task.spot.taken = null;
+  // Caza: libera la presa reservada; la carne y las pieles que llevaba no se pierden.
+  if (task.type === 'hunt') {
+    const prey = colony.mobs.find((o) => o.id === task.mobId);
+    if (prey && prey.huntedBy === c.id) prey.huntedBy = null;
+    if (task.phase === 'returning' && !task.delivered && task.load) {
+      for (const [k, n] of Object.entries(task.load)) colony.produce(k, n);
+      task.delivered = true;
+    }
+  }
   // Cementerio: lo que llevaba no se pierde ni se duplica. Un cuerpo a medio llevar queda donde esté; los restos siguen en su tumba;
   // un jarrón a medio llevar vuelve a su hueco (o, si ya no hay, se queda en la casa del familiar).
   if (task.rec && (task.type === 'work' || task.type === 'urn' || task.type === 'abandon') && task.rec.claim === c.id) {
@@ -1323,6 +1415,14 @@ export function taskActivity(colony, c, task) {
     case 'dress':
       if (task.source === 'stock') return walking ? (c.clothed ? 'Va al almacén a cambiar su ropa' : 'Va al almacén a por ropa') : `Poniéndose ropa de ${tierName(colony.age)}`;
       return walking ? 'Tiene frío: va a buscar ropa' : 'Poniéndose ropa de pieles';
+    case 'arm':
+      return walking ? 'Va al almacén a por una lanza' : 'Recogiendo una lanza';
+    case 'hunt': {
+      const prey = (MOB_INFO[colony.mobs.find((o) => o.id === task.mobId)?.type ?? task.kill]?.name ?? 'un animal').toLowerCase();
+      if (task.phase === 'returning') return 'Lleva la caza al almacén';
+      if (task.mode === 'defend') return c.working ? `Peleando con ${prey}` : `Va a defender la aldea de ${prey}`;
+      return c.working ? `Cazando: ${prey}` : `Va a cazar: ${prey}`;
+    }
     case 'equip': {
       const name = toolName(toolTrade(colony, c) ?? 'building', task.good).toLowerCase();
       return walking ? `Va al almacén a por ${name}` : `Cogiendo ${name} del almacén`;
@@ -1382,6 +1482,10 @@ export function taskLog(c, task) {
       return task.source === 'stock' ? 'Se puso ropa nueva del almacén' : 'Se vistió con ropa de pieles';
     case 'equip':
       return 'Recogió una herramienta del almacén';
+    case 'arm':
+      return 'Recogió una lanza del almacén';
+    case 'hunt':
+      return task.mode === 'defend' ? 'Salió a defender la aldea de un animal' : 'Salió a cazar';
     case 'build':
       return `Ayudó a ${task.building.upgrading ? 'mejorar' : 'construir'}: ${task.building.name}`;
     case 'work':
