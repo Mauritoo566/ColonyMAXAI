@@ -850,6 +850,19 @@ export class ColonySim {
     return { id: c.id, name: c.name, sex: c.sex, genome: c.genome, traits: c.traits.map((t) => t.id), skills: c.skills, bio: c.bio, look: c.look, born: c.born, arrived: c.arrived ?? null };
   }
 
+  // Lo que lleva encima ahora mismo para el inventario: { bien: cantidad } mientras lo transporta al almacén (o null).
+  carryOf(c) {
+    const t = c.task;
+    if (!t || t.phase !== 'returning') return null;
+    if (t.type === 'harvest' && t.load) return { ...t.load };
+    if (t.type === 'work' && t.building?.def?.stock) {
+      const def = t.building.def;
+      const amount = t.litter ? def.scavenge?.yield : levelOf(t.building)?.yield;
+      return amount ? { [def.stock]: amount, ...(def.extra ?? {}) } : null;
+    }
+    return null;
+  }
+
   // Máximo de colonos que admite la colonia ahora (10 del campamento + viviendas).
   get maxPopulation() {
     // En el navegador el servidor manda el máximo; en el servidor se calcula.
@@ -1341,6 +1354,7 @@ export class ColonySim {
     c.sitting = null; // 'ground' | 'bench' mientras se calienta sentado (lo fija la tarea cada paso)
     c.carrying = null; // 'body' | 'urn' mientras lleva un cuerpo o un jarrón (lo fija la tarea cada paso)
     c.waiting = false;
+    c.waitingTurn = false; // en una fila esperando su turno (lo fija la tarea cada paso)
     c.moveTick = false;
     c.thinkTimer -= dt;
     if (c.thinkTimer <= 0 || !c.task) {
@@ -1384,6 +1398,7 @@ export class ColonySim {
     if (c.task?.type === 'wander' && c.idle) c.activity = c.idle;
     if (c.running && c.runWhy) c.activity += ` (corriendo: ${c.runWhy})`;
     if (c.waiting && c.task) c.activity += ' (esperando paso)';
+    if (c.waitingTurn && c.task) c.activity = 'Esperando su turno en la fila';
     c.orderState = !c.order ? null : c.task?.ordered ? 'active' : 'interrupted';
     if (c.orderState === 'interrupted') c.activity += ' (orden en pausa: necesidad urgente)';
   }
@@ -3861,6 +3876,10 @@ export class ColonySim {
         health: r2(c.health),
         log: c.log,
         clothed: c.clothed,
+        cy: (() => {
+          const carry = this.carryOf(c);
+          return carry ? Object.entries(carry) : undefined;
+        })(),
         cw: c.wear ? [c.wear.tier, Math.round(c.wear.left)] : undefined,
         tl: c.tool ? [TOOL_IDS.indexOf(c.tool.id), Math.round(c.tool.left)] : undefined,
         activity: c.activity,
@@ -3970,6 +3989,7 @@ export class ColonySim {
       c.health = row.health;
       c.log = row.log;
       c.activity = row.activity;
+      c.carry = row.cy ? Object.fromEntries(row.cy) : null;
       c.wear = row.cw ? { tier: row.cw[0], left: row.cw[1] } : null;
       c.tool = row.tl && TOOL_IDS[row.tl[0]] ? { id: TOOL_IDS[row.tl[0]], left: row.tl[1] } : null;
       if (row.sk) SKILLS.forEach((sk, i) => (c.skills[sk.id] = parseInt(row.sk[i], 36) || c.skills[sk.id]));

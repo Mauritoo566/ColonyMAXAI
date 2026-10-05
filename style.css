@@ -1907,6 +1907,38 @@ canvas.is-harvesting {
   list-style: none;
 }
 
+.inv-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inv-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.inv-slot {
+  color: var(--ui-muted);
+  font: 600 12px/1.5 var(--font-display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.inv-item {
+  display: grid;
+  gap: 4px;
+}
+
+.inv-item .bar {
+  --bar: var(--accent);
+}
+
 .skill-row {
   display: grid;
   grid-template-columns: 120px minmax(0, 1fr) 36px;

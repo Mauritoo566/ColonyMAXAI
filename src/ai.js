@@ -384,6 +384,33 @@ function go(colony, c, task, point, dt, stop = 0.8) {
   return r === 'arrived';
 }
 
+// Fila en un punto compartido (almacén, pila de ropa, pozo): el primero llega hasta el punto y los demás esperan en fila detrás, a un paso de distancia
+// unos de otros, en lugar de amontonarse. "from" es el centro de lo que se atiende: la fila se alarga hacia fuera de él. Devuelve true cuando el colono
+// ya está en el punto y le toca. El orden es el de llegada; sólo cuenta quien sigue con esa tarea (lo demás se limpia solo).
+const QUEUE_GAP = 0.95;
+const ORIGIN = { x: 0, z: 0 }; // el centro del campamento
+function lineUp(colony, c, task, key, anchor, from, dt, stop = 1.6) {
+  colony.queues ??= new Map();
+  let q = colony.queues.get(key);
+  if (!q) colony.queues.set(key, (q = { ids: [], anchor: { x: anchor.x, z: anchor.z } }));
+  q.ids = q.ids.filter((id) => colony.colonist(id)?.task?.queueKey === key);
+  if (!q.ids.length) q.anchor = { x: anchor.x, z: anchor.z };
+  task.queueKey = key;
+  if (!q.ids.includes(c.id)) q.ids.push(c.id);
+  const idx = q.ids.indexOf(c.id);
+  if (idx === 0) return go(colony, c, task, q.anchor, dt, stop);
+  // Hueco en la fila: hacia fuera del centro, cada vez más lejos del punto. Si ahí no se puede estar, espera donde esté (mirando al punto).
+  const dx = q.anchor.x - from.x;
+  const dz = q.anchor.z - from.z;
+  const len = Math.hypot(dx, dz) || 1;
+  const d = stop + idx * QUEUE_GAP;
+  const slot = { x: q.anchor.x + (dx / len) * d, z: q.anchor.z + (dz / len) * d };
+  c.waitingTurn = true;
+  if (colony.walkable(slot.x, slot.z, 0.3)) colony.walk(c, slot.x, slot.z, dt, 0.3);
+  colony.faceTowards(c, q.anchor.x, q.anchor.z, dt);
+  return false;
+}
+
 // Qué necesidad atiende cada tarea (para registrar qué le impide resolverla si la tarea falla).
 export const NEED_OF_TASK = { eat: 'food', drink: 'water', sleep: 'rest', warm: 'warmth', dress: 'warmth' };
 
@@ -749,14 +776,14 @@ export function runTask(colony, c, task, dt, env) {
       }
       if (task.source === 'bread') {
         if ((stock.bread ?? 0) < 1) return 'failed';
-        if (!go(colony, c, task, colony.layout.storage, dt, 1.6)) return 'running';
+        if (!lineUp(colony, c, task, 'storage', colony.layout.storage, ORIGIN, dt)) return 'running';
         if (!busy(task, dt, 5)) return 'running';
         colony.takeStock('bread', 1);
         n.food = Math.min(100, n.food + 80);
         return 'done';
       }
       if (stock.food < 1) return 'failed';
-      if (!go(colony, c, task, colony.layout.storage, dt, 1.6)) return 'running';
+      if (!lineUp(colony, c, task, 'storage', colony.layout.storage, ORIGIN, dt)) return 'running';
       if (!busy(task, dt, 5)) return 'running';
       colony.takeStock('food', 1);
       n.food = Math.min(100, n.food + 55);
@@ -765,8 +792,8 @@ export function runTask(colony, c, task, dt, env) {
 
     case 'drink': {
       if (task.source === 'hall') return runHall(colony, c, task, dt, env, 'drink');
-      const point = task.source === 'water' ? task.spot : task.source === 'well' ? edgeOf(task.building, c) : colony.layout.storage;
-      if (!go(colony, c, task, point, dt, 1.6)) return 'running';
+      const queued = task.source === 'well' ? lineUp(colony, c, task, `well:${task.building.id}`, edgeOf(task.building, c), task.building, dt) : task.source === 'water' ? go(colony, c, task, task.spot, dt, 1.6) : lineUp(colony, c, task, 'storage', colony.layout.storage, ORIGIN, dt);
+      if (!queued) return 'running';
       if (!busy(task, dt, 4)) return 'running';
       if (task.source === 'stock') {
         if (stock.water < 1) return 'failed';
@@ -804,13 +831,13 @@ export function runTask(colony, c, task, dt, env) {
       if (task.source === 'stock') {
         if (clothesWanted(colony, c)?.source !== 'stock') return 'done'; // ya no hace falta o no queda ropa
         const spot = colony.layout.storage;
-        if (!go(colony, c, task, spot, dt, 1.4)) return task.failed ? 'failed' : 'running';
+        if (!lineUp(colony, c, task, 'storage', spot, ORIGIN, dt, 1.4)) return task.failed ? 'failed' : 'running';
         colony.faceTowards(c, spot.x, spot.z, dt);
         if (!busy(task, dt, DRESS_SECONDS)) return 'running';
         return dressFromStock(colony, c) ? 'done' : 'failed';
       }
       if (c.clothed || colony.clothesLeft <= 0) return 'done';
-      if (!go(colony, c, task, colony.clothesSpot, dt, 1.1)) return 'running';
+      if (!lineUp(colony, c, task, 'clothes-pile', colony.clothesSpot, ORIGIN, dt, 1.1)) return 'running';
       colony.faceTowards(c, colony.clothesSpot.x, colony.clothesSpot.z, dt);
       if (!busy(task, dt, 5)) return 'running';
       return colony.takeClothes(c) ? 'done' : 'failed';
@@ -824,7 +851,7 @@ export function runTask(colony, c, task, dt, env) {
 
     case 'equip': {
       if (toolWanted(colony, c) !== task.good) return 'done'; // ya no hace falta o se acabaron en el almacén
-      if (!go(colony, c, task, colony.layout.storage, dt, 1.4)) return task.failed ? 'failed' : 'running';
+      if (!lineUp(colony, c, task, 'storage', colony.layout.storage, ORIGIN, dt, 1.4)) return task.failed ? 'failed' : 'running';
       colony.faceTowards(c, colony.layout.storage.x, colony.layout.storage.z, dt);
       if (!busy(task, dt, EQUIP_SECONDS)) return 'running';
       return equipTool(colony, c, task.good) ? 'done' : 'failed';
@@ -903,7 +930,7 @@ export function runTask(colony, c, task, dt, env) {
     case 'build': {
       const b = task.building;
       if (b.done || b.removed) return 'done';
-      if (!go(colony, c, task, edgeOf(b, c), dt, 0.9)) return 'running';
+      if (!go(colony, c, task, buildSpot(colony, c, task, b), dt, 0.9)) return 'running';
       c.working = true;
       colony.faceTowards(c, b.x, b.z, dt);
       // Trabajo necesario según el edificio; los hábiles construyen más rápido.
@@ -976,6 +1003,37 @@ function release(spot) {
 // Dónde se acerca un colono a un edificio. Uno terminado se usa por su entrada (puerta o punto de trabajo,
 // ver sim/access.js): nadie atraviesa las paredes ni entra por donde no hay puerta. Una obra, en cambio, se
 // trabaja desde el lado por el que se llega.
+// Puestos alrededor de una obra: los constructores la rodean y trabajan juntos, cada uno en su sitio, en vez de apiñarse en el mismo punto. Cada uno
+// toma el hueco libre más alejado de los ya ocupados (el primero, el más cercano a por donde llega) y lo conserva mientras dure la obra.
+const BUILD_SLOTS = 12;
+function buildSpot(colony, c, task, b) {
+  if (task.berth?.b === b) return task.berth.p;
+  const r = (b.def.footprint ?? 3) + 0.9;
+  const taken = new Set();
+  for (const o of colony.colonists) if (o !== c && o.task?.type === 'build' && o.task.building === b && o.task.berth?.b === b) taken.add(o.task.berth.k);
+  const want = Math.atan2(c.z - b.z, c.x - b.x);
+  let best = null;
+  let bd = Infinity;
+  for (let k = 0; k < BUILD_SLOTS; k++) {
+    const a = (k / BUILD_SLOTS) * Math.PI * 2;
+    const p = { x: b.x + Math.cos(a) * r, z: b.z + Math.sin(a) * r };
+    if (!colony.walkable(p.x, p.z, 0.35)) continue;
+    const diff = Math.abs((((a - want + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI);
+    // Cuanto más lejos del hueco ocupado más cercano, mejor (cuenta mucho); a igualdad, el más cercano a por donde llega.
+    let gap = BUILD_SLOTS;
+    for (const t of taken) gap = Math.min(gap, Math.abs(((k - t + BUILD_SLOTS * 1.5) % BUILD_SLOTS) - BUILD_SLOTS / 2));
+    const free = taken.has(k) ? -20 : taken.size ? gap : 0;
+    const score = diff - free * 2;
+    if (score < bd) {
+      bd = score;
+      best = { b, k, p };
+    }
+  }
+  if (!best) return edgeOf(b, c); // ningún hueco libre alrededor: como antes
+  task.berth = best;
+  return best.p;
+}
+
 function edgeOf(b, c) {
   if (b.done && b.entrance) return b.entrance.approach;
   const a = Math.atan2(c.z - b.z, c.x - b.x);

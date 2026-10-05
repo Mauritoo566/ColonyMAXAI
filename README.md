@@ -395,7 +395,15 @@ La ropa es un bien (`clothes`) que se fabrica en la **sastrería** (desde la Eda
 - **Aspecto:** cada edad tiene su propia silueta, no sólo otro color: pieles con manto y faldilla de piel y brazos al aire (I), chaleco de cuero con costura y botas (II), túnica de lino de mangas cortas con ribete (III), túnica de lana con capita (IV), túnica larga y manto con fajín (V), jubón con hombreras y botas altas (VI), casaca con cuello y botones (VII), mono con peto y gorra (VIII), camisa y pantalón modernos (IX), traje técnico con franjas luminosas (X). El oficio sólo añade sombrero o delantal. Como la prenda se queda hasta que se rompe o se cambia, la aldea se ve evolucionar poco a poco al avanzar de edad.
 - Código en `src/sim/clothing.js` y `src/outfits.js`; pruebas en `clothing.test.js` y `outfits.test.js`. `node tools/render-outfits.mjs hoja.png` dibuja las diez ropas en una imagen.
 
+## Filas y obras
+
+- **Filas:** cuando varios colonos van a lo mismo a la vez a un punto compartido (el almacén para comer, beber, coger herramienta o ropa; la pila de ropa del campamento; un pozo), el primero llega al punto y los demás esperan en **fila** detrás, a un paso de distancia, en lugar de amontonarse. Al terminar el primero, avanza el siguiente (el orden es el de llegada). La ficha dice «Esperando su turno en la fila». Código en `lineUp` de `src/ai.js`; el comedor ya reservaba plaza y no cambia.
+- **Obras:** en una construcción no hay fila: los constructores **rodean la estructura** y trabajan juntos, cada uno en su propio sitio (12 huecos alrededor). El primero toma el más cercano a por donde llega y los siguientes el más alejado de los ya ocupados, de modo que se reparten por todos los lados. Hasta tres a la vez (cinco con prioridad alta, como antes). Prueba en `queue.test.js`.
+
 ## Ficha del colono
+
+La pestaña **Trabajo** incluye el **Inventario**: herramienta (con desgaste), ropa (con desgaste), equipo si es soldado, lo que lleva encima ahora mismo (recolectado de camino al almacén, un cuerpo o un jarrón) y si monta un caballo.
+
 
 Cinco pestañas: **Estado** (salud, bienestar, qué hace ahora, necesidades), **Ánimo** (se esconde en los niños), **Trabajo** (oficio y órdenes, herramienta, habilidades), **Vida** (familia y hogar, ropa, personalidad, biografía, actividad reciente) y **Genes**.
 

@@ -141,4 +141,21 @@ const tick = (sim, seconds) => {
   assert.equal(mirror.colonists[1].tool, null);
 }
 
+// 7) Inventario: lo que lleva encima (recolectado, camino al almacén) se ve en el servidor y llega al navegador.
+{
+  const sim = colony(2, 3);
+  const c = sim.colonists[0];
+  assert.equal(sim.carryOf(c), null, 'sin tarea no lleva nada');
+  c.task = { type: 'harvest', phase: 'returning', load: { wood: 4, fiber: 1 } };
+  assert.deepEqual(sim.carryOf(c), { wood: 4, fiber: 1 });
+  c.task = { type: 'harvest', phase: 'going', load: { wood: 4 } };
+  assert.equal(sim.carryOf(c), null, 'antes de recogerlo todavía no lo lleva');
+  c.task = { type: 'harvest', phase: 'returning', load: { wood: 4, fiber: 1 } };
+  const full = JSON.parse(JSON.stringify(sim.snapshot('full')));
+  const mirror = colony(2, 3);
+  mirror.applySnapshot(full);
+  assert.deepEqual(mirror.colonists[0].carry, { wood: 4, fiber: 1 }, 'el navegador ve lo que lleva');
+  assert.equal(mirror.colonists[1].carry, null);
+}
+
 console.log('tools.test.js: ok');

@@ -5,6 +5,8 @@ import { NEEDS, SKILLS, wellbeing, needStatus, completeSkill } from './needs.js'
 import { GENES, gene, genomeCode, lifeExpectancy } from './genes.js';
 import { SPEC_NAMES, isWorker } from './sim/specialties.js';
 import { tierName, lifeOf, warmthOf, clothesNote } from './sim/clothing.js';
+import { GOOD_NAMES } from './sim/goods.js';
+import { UNITS_BY_ID } from './sim/units.js';
 import { TOOL_GOODS, BARE_TIME, toolName, toolTrade, toolNote, toolsMatter } from './sim/tools.js';
 import { MOB_INFO, MOB_STATS, MOB_STATE_TEXT } from './sim/mobs.js';
 import { TAME_COST } from './sim/stable.js';
@@ -337,9 +339,8 @@ export class ColonyUI {
           </div>
         </section>
         <section class="cp-section" data-toolbox>
-          <h3>Herramienta</h3>
-          <div class="meter-row"><span class="meter-label" data-tool-name></span><strong class="meter-value" data-tool-wear></strong></div>
-          <div class="bar" data-tool-bar><i></i></div>
+          <h3>Inventario</h3>
+          <ul class="inv-list" data-inv></ul>
           <p class="activity-now" data-tool-note></p>
         </section>
         <section class="cp-section">
@@ -517,27 +518,39 @@ export class ColonyUI {
   refreshTool(c) {
     const box = this.panel.querySelector('[data-toolbox]');
     const trade = toolTrade(this.colony, c);
-    box.hidden = !isWorker(c);
-    if (box.hidden) return;
+    const pct = (v) => Math.max(0, Math.min(100, Math.round(v)));
+    const row = (slot, text, left = null, tone = '') =>
+      `<li class="inv-row"><span class="inv-slot">${slot}</span><span class="inv-item"><span>${escapeHtml(text)}</span>${left == null ? '' : `<span class="bar" title="Le queda ${left}% de uso"><i style="width:${left}%"></i></span>`}</span></li>`;
+    const rows = [];
+    // Herramienta (sim/tools.js)
     const g = c.tool && TOOL_GOODS[c.tool.id];
-    const name = g ? toolName(trade ?? 'building', c.tool.id) : 'Sin herramienta';
-    const left = g ? Math.max(0, Math.min(100, (c.tool.left / g.life) * 100)) : 0;
-    box.querySelector('[data-tool-name]').textContent = name;
-    box.querySelector('[data-tool-wear]').textContent = g ? `Desgaste ${Math.round(100 - left)}%` : '';
-    const bar = box.querySelector('[data-tool-bar]');
-    bar.hidden = !g;
-    if (g) {
-      setBar(bar.querySelector('i'), left);
-      setTone(box.querySelector('.meter-row'), left);
+    if (isWorker(c)) rows.push(g ? row('Herramienta', toolName(trade ?? 'building', c.tool.id), pct((c.tool.left / g.life) * 100)) : row('Herramienta', 'Ninguna'));
+    // Ropa (sim/clothing.js)
+    if (c.clothed) {
+      const tier = c.wear?.tier ?? this.colony.age;
+      rows.push(row('Ropa', `${tierName(tier)} (Edad ${tier})`, c.wear ? pct((c.wear.left / lifeOf(tier)) * 100) : 100));
+    } else rows.push(row('Ropa', 'Ninguna (sólo un taparrabos)'));
+    // Equipo de combate
+    if (c.soldier) rows.push(row('Equipo', UNITS_BY_ID[c.soldier.unit]?.name ?? 'Soldado'));
+    // Lo que lleva encima ahora mismo
+    const load = c.carrying === 'body' ? 'Un cuerpo' : c.carrying === 'urn' ? 'Un jarrón con cenizas' : c.carry ? Object.entries(c.carry).map(([good, n]) => `${n} de ${GOOD_NAMES[good] ?? good}`).join(', ') : '';
+    rows.push(row('Lleva', load || 'Nada'));
+    if (c.riding) rows.push(row('Monta', 'Un caballo'));
+    const html = rows.join('');
+    const list = box.querySelector('[data-inv]');
+    if (list.dataset.html !== html) {
+      list.dataset.html = html;
+      list.innerHTML = html;
     }
     const effect = g
-      ? `Tarda un ${Math.round((1 - g.time) * 100)} % menos en cada tarea de su oficio.`
+      ? `La herramienta le hace tardar un ${Math.round((1 - g.time) * 100)} % menos en cada tarea de su oficio.`
       : toolsMatter(this.colony) && trade
         ? `Sin herramienta tarda un ${Math.round((BARE_TIME - 1) * 100)} % más en cada tarea.`
         : '';
-    const text = [toolNote(this.colony, c), effect].filter(Boolean).join(' ');
+    const text = [isWorker(c) ? toolNote(this.colony, c) : '', effect].filter(Boolean).join(' ');
     const note = box.querySelector('[data-tool-note]');
     if (note.textContent !== text) note.textContent = text;
+    note.hidden = !text;
   }
 
   // Ánimo explicado (sim/wellbeing.js): qué le pasa, qué intenta, qué se lo impide y qué se puede hacer.
