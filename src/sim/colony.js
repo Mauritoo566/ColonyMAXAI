@@ -3591,6 +3591,7 @@ export class ColonySim {
           pendingSpec: c.pendingSpec,
           xp: c.xp,
           age: c.age,
+          ageP: Math.round((c.ageProgress ?? 0) * 100) / 100,
           soldier: c.soldier,
           static: c.id >= START_COLONISTS ? this.staticOf(c) : undefined, // los nacidos o llegados no salen de la semilla
         })),
@@ -4244,6 +4245,7 @@ export class ColonySim {
       c.order = saved.order?.kind === 'build' ? { kind: 'build', building: saved.order.building } : saved.order?.kind === 'harvest' ? { kind: 'harvest' } : null;
       c.soldier = saved.soldier && UNITS_BY_ID[saved.soldier.unit] ? { unit: saved.soldier.unit, tier: saved.soldier.tier ?? UNITS_BY_ID[saved.soldier.unit].age } : null;
       if (Number.isFinite(saved.age)) c.age = saved.age;
+      c.ageProgress = Number.isFinite(saved.ageP) ? Math.max(0, Math.min(0.99, saved.ageP)) : 0;
       Object.assign(c.needs, saved.needs);
       c.health = saved.health ?? c.health;
       c.log = Array.isArray(saved.log) ? saved.log : c.log;

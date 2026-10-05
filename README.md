@@ -396,6 +396,10 @@ La ropa es un bien (`clothes`) que se fabrica en la **sastrería** (desde la Eda
 - **Aspecto:** cada edad tiene su propia silueta, no sólo otro color: pieles con manto y faldilla de piel y brazos al aire (I), chaleco de cuero con costura y botas (II), túnica de lino de mangas cortas con ribete (III), túnica de lana con capita (IV), túnica larga y manto con fajín (V), jubón con hombreras y botas altas (VI), casaca con cuello y botones (VII), mono con peto y gorra (VIII), camisa y pantalón modernos (IX), traje técnico con franjas luminosas (X). El oficio sólo añade sombrero o delantal. Como la prenda se queda hasta que se rompe o se cambia, la aldea se ve evolucionar poco a poco al avanzar de edad.
 - Código en `src/sim/clothing.js` y `src/outfits.js`; pruebas en `clothing.test.js` y `outfits.test.js`. `node tools/render-outfits.mjs hoja.png` dibuja las diez ropas en una imagen.
 
+## Edad y vejez de los colonos
+
+Los adultos cumplen **2 años por día de juego** (`YEARS_PER_DAY` en `src/sim/family.js`; los niños crecen más deprisa, 17 años en 3 días, para que haya relevo): un adulto de 18 llega a los ~70 en unos 26 días. Sólo corre el tiempo con el dueño presente. Cada cumpleaños se anota en el registro de los múltiplos de 10. Desde **8 años antes de su esperanza de vida** (55 a 85 años según los genes; se ve en la pestaña Genes) cada cumpleaños puede ser el último: el riesgo sube hasta ser seguro 8 años después. Muere «de vejez a los N años», con aviso, y su cuerpo sigue el circuito normal (entierro o urna). Una mujer de más de 45 años ya no concibe. Prueba: `aging.test.js`.
+
 ## Cazadores
 
 - **Casa de cazadores** (Edad II; niveles en la IV y la VI): tiene un **cupo** de cazadores según el nivel (3, 5 y 8). Se asignan como en cualquier puesto (a mano desde la ficha, o la colonia completa el cupo sola con quien tiene Combate entre sus especialidades).

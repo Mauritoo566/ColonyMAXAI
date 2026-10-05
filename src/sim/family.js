@@ -9,7 +9,7 @@ import { DAY_LENGTH_SECONDS } from '../daynight.js';
 import { levelOf } from './buildingTypes.js';
 import { limitsFor } from './progression.js';
 import { createChildProfile, createProfile, wellbeing, hasTrait, addLog, addMoodEvent } from '../needs.js';
-import { appearanceFromGenes } from '../genes.js';
+import { appearanceFromGenes, lifeExpectancy } from '../genes.js';
 import { dress } from './clothing.js';
 import { pickName } from './names.js';
 
@@ -22,6 +22,20 @@ const DESIRE_FULL_SECONDS = 3 * DAY; // con buen bienestar, ganas al máximo en 
 const INVITE_SECONDS = 30;
 const SHIRTS = ['#8a5a34', '#a0764a', '#b8905a', '#7a5230', '#9a6a3e', '#c2a06a'];
 const PANTS = ['#5a3a22', '#6b4a2e', '#4a3220', '#7a5a3a'];
+
+// Los adultos cumplen 2 años por día de juego (los niños crecen más deprisa: 17 años en 3 días, para que haya relevo). Un adulto de 18 llega así a los ~70 en
+// unos 26 días. Desde unos años antes de su esperanza de vida (según los genes) cada cumpleaños puede ser el último. Una prueba puede fijar `colony.yearsPerDay`.
+export const YEARS_PER_DAY = 2;
+export const OLD_AGE_WINDOW = 8; // años antes de la esperanza de vida en que empieza el riesgo; a esos años después, es seguro
+export const FERTILE_UNTIL = 45; // una mujer mayor ya no concibe
+
+// Probabilidad de que el cumpleaños de este colono sea el último (0 si es joven; 1 mucho después de su esperanza de vida).
+export function deathChance(c) {
+  const over = c.age - (lifeExpectancy(c.genome) - OLD_AGE_WINDOW);
+  if (over <= 0) return 0;
+  if (over >= OLD_AGE_WINDOW * 2) return 1;
+  return Math.min(1, (over / (OLD_AGE_WINDOW * 2)) * 0.5);
+}
 
 export const isChild = (c) => (c.growth ?? 1) < 1;
 export const isAdult = (c) => !isChild(c);
@@ -326,7 +340,7 @@ function finishLove(colony, a, b, pact, env) {
   const man = woman === a ? b : a;
   addLog(a, env.time, `Pasó un rato a solas con ${b.name}`);
   addLog(b, env.time, `Pasó un rato a solas con ${a.name}`);
-  const fertility = 0.6 * (0.5 + wellbeing(woman) / 200);
+  const fertility = woman.age > FERTILE_UNTIL ? 0 : 0.6 * (0.5 + wellbeing(woman) / 200);
   if (!woman.pregnant && populationRoom(colony) > 0 && colony.birthRand() < fertility) {
     woman.pregnant = { father: man.id, due: colony.gameTime + PREGNANCY_SECONDS };
     addLog(woman, env.time, `Espera un hijo de ${man.name}`);
@@ -356,6 +370,20 @@ export function updateFamily(colony, dt, time) {
         colony.emit('changed');
       }
       continue;
+    }
+    // Los adultos cumplen años (sólo con el dueño presente) y, ya mayores, pueden morir de vejez.
+    if (!colony.absent) {
+      c.ageProgress = (c.ageProgress ?? 0) + (dt / DAY) * (colony.yearsPerDay ?? YEARS_PER_DAY);
+      while (c.ageProgress >= 1) {
+        c.ageProgress -= 1;
+        c.age = (c.age ?? 18) + 1;
+        if (c.age % 10 === 0) addLog(c, time, `Cumplió ${c.age} años`);
+        if (colony.birthRand() < deathChance(c)) {
+          colony.die(c, `de vejez a los ${c.age} años`);
+          break;
+        }
+      }
+      if (!colony.colonists.includes(c)) continue;
     }
     // Las ganas crecen cuando se está bien y se enfrían si no.
     const w = wellbeing(c);

@@ -156,6 +156,7 @@ assert.equal(YEAR_SECONDS, YEAR_DAYS * DAY);
 
   // Un invierno completo (un cuarto de año) a ~53° de latitud: con el dueño presente, nadie muere de frío.
   const sim = make();
+  sim.yearsPerDay = 0; // (esta prueba es de frío, no de vejez: pasan 12 días)
   const phase0 = 0.75; // arranca el invierno boreal
   const WINTER_DAYS = YEAR_DAYS / 4;
   for (let t = 0; t < WINTER_DAYS * DAY; t += 6) {
