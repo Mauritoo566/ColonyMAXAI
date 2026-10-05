@@ -6,6 +6,7 @@ import { appearanceFromGenes } from './genes.js';
 import { CenterView } from './center.js';
 import { outfitFor } from './outfits.js';
 import { MOBS, setMobLOD } from './mobs.js';
+import { CombatFx, damageFromDrop } from './combatFx.js';
 import { MOB_STATS } from './sim/mobs.js';
 import { sampleTrack, clock } from './interp.js';
 
@@ -23,6 +24,7 @@ const PICK_RADIUS_PX = 26; // tolerancia al hacer clic sobre un colono
 const LOINCLOTH = '#6b4a2e'; // lo único que llevan al llegar
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
 // ---------------------------------------------------------------------------
 // Modelo low poly de una persona, con brazos y piernas que se mueven al caminar
@@ -212,7 +214,11 @@ export function dressModel(object, look, clothed, outfit) {
   }
   if (outfit.cape) accessories.add(box(0.5, st.hem?.len > 0.7 ? 1.05 : 0.75, 0.04, outfit.cape, 0, st.hem?.len > 0.7 ? 0.95 : 1.05, -0.17));
   if (outfit.collar) accessories.add(box(0.36, 0.08, 0.3, outfit.collar, 0, 1.52, 0));
-  if (outfit.weapon === 'spear') accessories.add(box(0.04, 1.9, 0.04, '#9a7446', 0.42, 0.95, 0.12));
+  if (outfit.weapon === 'spear') {
+    // En la mano derecha: sube y baja con el brazo (la estocada del cazador la mueve).
+    onLimb(armR, box(0.045, 1.9, 0.045, '#9a7446', 0, -0.5, 0.13));
+    onLimb(armR, box(0.09, 0.22, 0.05, '#a8a39a', 0, 0.56, 0.13));
+  }
   if (outfit.weapon === 'sword') accessories.add(box(0.05, 0.75, 0.03, '#c6ced6', 0.42, 0.85, 0.15));
   if (outfit.weapon === 'bow') accessories.add(box(0.04, 0.9, 0.06, '#8a5a34', 0.42, 1.0, 0.12));
   if (outfit.weapon === 'rifle') accessories.add(box(0.06, 0.06, 0.95, '#3a3a40', 0.38, 1.0, 0.3));
@@ -536,8 +542,15 @@ export class ColonyView {
   updateMobs(animDelta, delta) {
     const sim = this.sim;
     this.mobViews ??= new Map();
+    this.mobDying ??= [];
+    this.fx ??= new CombatFx(this.group);
     if (this.mobCamp !== sim.camp) {
-      for (const e of this.mobViews.values()) this.group.remove(e.object);
+      for (const e of this.mobViews.values()) {
+        this.group.remove(e.object);
+        this.fx.removeBar(e);
+      }
+      for (const e of this.mobDying) this.group.remove(e.object);
+      this.mobDying.length = 0;
       this.mobViews.clear();
       this.mobCamp = sim.camp;
     }
@@ -552,7 +565,7 @@ export class ColonyView {
         if (e) this.group.remove(e.object);
         const def = MOBS[m.type];
         if (!def) continue;
-        e = { type: m.type, def, object: def.create(m.id + 1), x: m.x, z: m.z, facing: m.facing, speed: 0 };
+        e = { type: m.type, def, object: def.create(m.id + 1), x: m.x, z: m.z, facing: m.facing, speed: 0, pct: m.hpPct ?? 100 };
         this.group.add(e.object);
         this.mobViews.set(m.id, e);
       }
@@ -580,16 +593,68 @@ export class ColonyView {
       e.object.position.copy(world).multiplyScalar(RADIUS + h);
       e.object.quaternion.copy(sim.camp.quaternion).multiply(yaw.setFromAxisAngle(Y_AXIS, e.facing));
       e.object.visible = m.tame !== 3; // dentro del establo no se ve
-      e.object.userData.state = m.state === 2 ? 'attack' : 'idle';
+      // Estado visible: ataque, miedo (3) o nada; herido por debajo del 35 % de vida.
+      const ud = e.object.userData;
+      ud.state = m.state === 2 ? 'attack' : m.state === 3 ? 'fear' : 'idle';
+      const pct = m.hpPct ?? 100;
+      ud.hurt = pct < 35 && !m.tame;
+      const height = ud.size?.height ?? 1;
+      e.height = height;
+      e.hpWidth = Math.max(0.7, Math.min(1.5, (ud.size?.length ?? 1) * 0.8));
+      // Un golpe: la cifra del daño sube flotando con la chispa del impacto y el animal se sobresalta.
+      if (pct < (e.pct ?? 100) - 0.5) {
+        const dmg = damageFromDrop(e.pct, pct, MOB_STATS[m.type]?.hp ?? 20);
+        this.fx.hit(e.object.position, height, dmg, { big: dmg >= 18 });
+        ud.flinch = 1;
+      }
+      e.pct = pct;
+      // Susto: el globito con "!" sobre el animal cada pocos segundos mientras tiene miedo.
+      if (m.state === 3) {
+        if (e.fearAt === undefined || this.mobTime - e.fearAt > 2.6) {
+          e.fearAt = this.mobTime;
+          this.fx.fear(e.object, height);
+        }
+      } else e.fearAt = undefined;
+      // Barra de vida (sólo si está herido) con estela de lo que acaba de perder.
+      this.fx.bar(e, e.object.position, height + 0.35, e.object.visible && !m.tame ? pct : 100, delta, this.camera);
       setMobLOD(e.object, this.camera.position.distanceToSquared(e.object.position) > MOB_PROXY_DISTANCE * MOB_PROXY_DISTANCE);
       e.def.animate(e.object, this.mobTime, e.speed);
     }
     for (const [id, e] of this.mobViews) {
       if (alive.has(id)) continue;
-      this.group.remove(e.object);
       this.mobViews.delete(id);
       if (this.selectedMob === id) this.selectMob(null);
+      this.fx.removeBar(e);
+      const hpMax = MOB_STATS[e.type]?.hp ?? 20;
+      if ((e.pct ?? 100) < 100 && e.object.visible) {
+        // Abatido: la última cifra (dorada), una nube de polvo y el animal se desploma sobre un costado, se queda un momento y se hunde.
+        this.fx.hit(e.object.position, e.height ?? 1, Math.max(1, Math.round(((e.pct ?? 1) / 100) * hpMax)), { kill: true });
+        this.fx.dust(e.object.position, 0.5 * (e.height ?? 1));
+        e.object.userData.dead = true;
+        e.object.userData.state = 'idle';
+        e.dying = { age: 0, side: Math.random() < 0.5 ? -1 : 1, base: e.object.quaternion.clone(), pos: e.object.position.clone() };
+        this.mobDying.push(e);
+        continue;
+      }
+      this.group.remove(e.object);
     }
+    // Los que caen: giran sobre un costado con un pequeño rebote, quedan un rato y se hunden en el suelo.
+    for (let i = this.mobDying.length - 1; i >= 0; i--) {
+      const e = this.mobDying[i];
+      const d = e.dying;
+      d.age += delta;
+      const t = Math.min(1, d.age / 0.5);
+      const roll = d.side * (Math.PI / 2) * (1 - Math.pow(1 - t, 3)) * (1 + Math.sin(t * Math.PI) * 0.08);
+      e.object.quaternion.copy(d.base).multiply(this.tmp.lie.setFromAxisAngle(Z_AXIS, roll));
+      const sink = d.age > 1.5 ? Math.min(1, (d.age - 1.5) / 0.8) : 0;
+      e.object.position.copy(d.pos).addScaledVector(this.tmp.local.copy(d.pos).normalize(), -sink * (e.height ?? 1) * 0.6 + Math.sin(t * Math.PI) * 0.12);
+      e.def.animate(e.object, this.mobTime, 0);
+      if (d.age > 2.4) {
+        this.group.remove(e.object);
+        this.mobDying.splice(i, 1);
+      }
+    }
+    this.fx.update(delta, this.camera);
   }
 
   place(e, animDelta) {
@@ -657,6 +722,7 @@ export class ColonyView {
     }
     if (far) return;
     const { body, armL, armR, legL, legR } = ud;
+    e.lean = 0;
     const swing = Math.sin(e.phase) * 0.65 * e.moving * (1 + 0.55 * e.run);
     // Piernas: sentado en el suelo, estiradas hacia delante; en un tronco, colgando un poco adelantadas.
     const legPose = e.sitKind === 'bench' ? -0.8 : -Math.PI / 2;
@@ -666,6 +732,26 @@ export class ColonyView {
       // Las manos descansan sobre las rodillas.
       armL.rotation.x = -0.45;
       armR.rotation.x = -0.45;
+    } else if (c.working && c.spear) {
+      // Cazando con lanza: prepara el brazo atrás (y se echa un poco atrás), estocada rápida hacia delante y recupera. Un golpe cada ~1,1 s, como en el servidor.
+      e.atk = (e.atk ?? 0) + animDelta / 1.1;
+      const k = e.atk % 1;
+      let arm;
+      if (k < 0.4) {
+        const u = k / 0.4;
+        arm = -0.35 + u * 0.95;
+        e.lean = -0.12 * u;
+      } else if (k < 0.52) {
+        const u = (k - 0.4) / 0.12;
+        arm = 0.6 - u * 2.7;
+        e.lean = -0.12 + u * 0.46;
+      } else {
+        const u = (k - 0.52) / 0.48;
+        arm = -2.1 + u * 1.75;
+        e.lean = 0.34 * (1 - u);
+      }
+      armR.rotation.x = arm;
+      armL.rotation.x = -0.9 + arm * 0.3;
     } else if (c.working) {
       // Trabajando: los dos brazos golpean hacia delante (talar, picar, recoger).
       e.workPhase += animDelta * 7;
@@ -674,12 +760,13 @@ export class ColonyView {
       armR.rotation.x = hit;
     } else {
       armL.rotation.x = -swing * 0.8;
-      armR.rotation.x = swing * 0.8;
+      // Con la lanza en la mano, ese brazo apenas se balancea.
+      armR.rotation.x = c.spear ? swing * 0.2 - 0.1 : swing * 0.8;
     }
     this.updateHearts(e, animDelta);
     const breathe = Math.sin(performance.now() * 0.0018 + e.phase) * 0.01 * (1 - e.moving);
     body.position.y = Math.abs(Math.cos(e.phase)) * 0.05 * e.moving * (1 + 0.6 * e.run) + breathe;
-    body.rotation.x = 0.14 * e.run;
+    body.rotation.x = 0.14 * e.run + (e.lean ?? 0);
   }
 
   // Corazones sobre la casa mientras están juntos (la posición es la de la casa).
@@ -725,6 +812,7 @@ export class ColonyView {
   dispose() {
     for (const e of this.entries.values()) e.label.remove();
     this.entries.clear();
+    this.fx?.dispose();
     this.group.removeFromParent();
     this.clothesPile?.removeFromParent();
     this.totem?.removeFromParent();

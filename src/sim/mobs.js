@@ -32,6 +32,13 @@ export const MOB_DROPS = {
 };
 // Presas que se cazan por carne y piel (los caballos se domestican, no se cazan).
 export const HUNTABLE = new Set(['conejo', 'ciervo', 'jabali', 'oveja', 'uro']);
+export const FEAR_AFTER_HIT = 5; // segundos de miedo tras un golpe
+export const FEAR_RADIUS = 12; // metros a los que un cazador que va a por una presa la asusta
+export const HURT_BELOW = 0.3; // por debajo de esta fracción de vida, la presa va herida: apenas corre
+export const hpFraction = (m) => Math.max(0, Math.min(1, (m.hp ?? MOB_STATS[m.type].hp) / MOB_STATS[m.type].hp));
+// Lo que manda el servidor al navegador: vida en % y el estado (3 = asustado).
+export const hpPercent = (m) => (m.hp == null ? 100 : Math.max(1, Math.round(hpFraction(m) * 100)));
+export const wireState = (m) => (m.fear > 0 && !MOB_STATS[m.type]?.hostile && m.state !== 2 ? 3 : m.state);
 export const isHostile = (m) => !!MOB_STATS[m.type]?.hostile;
 export const isHuntable = (m) => HUNTABLE.has(m.type) && !m.tamed && !m.order;
 
@@ -42,6 +49,9 @@ export function hitMob(sim, m, dmg, by) {
     if (isHostile(m) && by) {
       m.state = 2;
       m.target = by.id;
+    } else if (by) {
+      m.fear = FEAR_AFTER_HIT; // la presa herida entra en pánico y huye de quien la hirió
+      m.fearFrom = { x: by.x, z: by.z };
     }
     return false;
   }
@@ -413,6 +423,31 @@ export function updateMobs(sim, dt, isNight) {
         fleeing = true;
       }
     }
+    // Miedo a los cazadores: la presa a la que va un cazador armado (o que acaba de ser herida) huye de él, a mitad de velocidad (herida, casi se arrastra):
+    // así se la alcanza, pero se la ve asustada y corriendo.
+    if (!st.hostile) {
+      m.fear = Math.max(0, (m.fear ?? 0) - dt);
+      let scare = m.fear > 0 ? m.fearFrom : null;
+      for (const c of sim.colonists) {
+        if (c.task?.type !== 'hunt' || c.task.mobId !== m.id) continue;
+        const d = Math.hypot(c.x - m.x, c.z - m.z);
+        if (d < FEAR_RADIUS) {
+          scare = { x: c.x, z: c.z };
+          m.fear = Math.max(m.fear, 1.2);
+          m.fearFrom = scare;
+        }
+      }
+      if (scare && !fleeing) {
+        const dx = m.x - scare.x;
+        const dz = m.z - scare.z;
+        const d = Math.hypot(dx, dz) || 1;
+        m.tx = Math.max(-MAX_ROAM, Math.min(MAX_ROAM, m.x + (dx / d) * 14));
+        m.tz = Math.max(-MAX_ROAM, Math.min(MAX_ROAM, m.z + (dz / d) * 14));
+        m.state = 1;
+        m.wait = 0;
+        fleeing = 'fear';
+      }
+    }
     // Los seguidores acompañan a su líder (los lobos también cazan en manada).
     if (!fleeing && !target && m.g != null && !m.leader) {
       const lead = sim.mobs.find((o) => o.g === m.g && o.leader && !o.tamed && !o.order);
@@ -470,7 +505,8 @@ export function updateMobs(sim, dt, isNight) {
       }
       continue;
     }
-    const speed = st.speed * (m.state === 2 ? 1 : fleeing ? 1 : m.g != null && !m.leader ? 0.9 : 0.6) * dt;
+    const fearPace = hpFraction(m) < HURT_BELOW ? 0.22 : 0.55;
+    const speed = st.speed * (m.state === 2 ? 1 : fleeing === 'fear' ? fearPace : fleeing ? 1 : m.g != null && !m.leader ? 0.9 : 0.6) * dt;
     // Rodea lo que haya en medio (edificios, muros, troncos) en vez de empujar contra ello.
     const goal = mobGoal(sim, m, dt);
     const gd = Math.hypot(goal.x - m.x, goal.z - m.z) || 1;

@@ -9,7 +9,8 @@ import { WeatherState } from '../../../src/sim/weather.js';
 import { BUILDINGS } from '../../../src/sim/buildingTypes.js';
 import { GOODS_BY_ID } from '../../../src/sim/goods.js';
 import { naturalSurfaceHeight } from '../../../src/elevation.js';
-import { MOB_STATS, MOB_DROPS, hitMob, gameTrickle } from '../../../src/sim/mobs.js';
+import { MOB_STATS, MOB_DROPS, hitMob, gameTrickle, wireState, hpPercent, FEAR_AFTER_HIT } from '../../../src/sim/mobs.js';
+import { damageFromDrop, hpColor } from '../../../src/combatFx.js';
 import { SPEAR_LIFE, useSpear, lodgeReport } from '../../../src/sim/hunting.js';
 import { outfitFor } from '../../../src/outfits.js';
 
@@ -215,6 +216,61 @@ const post = (sim, b, n) => {
   const soldier = outfitFor(2, { soldier: { unit: 'spearman', tier: 2 }, job: null });
   assert.notEqual(soldier.cape, o.cape, 'el soldado no lleva la capa de piel del cazador');
   assert.notEqual(soldier.key, o.key);
+}
+
+// 10) Miedo y herida: un golpe asusta a la presa (huye de quien la hirió, a medio paso); herida casi no corre; el navegador recibe la vida en % y el estado de susto.
+{
+  const sim = colony(8);
+  const hunter = sim.colonists[0];
+  hunter.x = 30;
+  hunter.z = 30;
+  const deer = mob(sim, 'ciervo', 34, 30);
+  assert.equal(hpPercent(deer), 100);
+  assert.equal(wireState(deer), 0, 'tranquilo');
+  assert.equal(hitMob(sim, deer, 5, hunter), false);
+  assert.equal(deer.fear, FEAR_AFTER_HIT, 'el golpe la asusta');
+  assert.equal(hpPercent(deer), 75, 'vida en %');
+  assert.equal(wireState(deer), 3, 'se manda como asustada');
+  const start = { x: deer.x, z: deer.z };
+  const spot = { x: hunter.x, z: hunter.z }; // (donde estaba quien la hirió)
+  tick(sim, 3);
+  const away = Math.hypot(deer.x - spot.x, deer.z - spot.z) - Math.hypot(start.x - spot.x, start.z - spot.z);
+  const moved = Math.hypot(deer.x - start.x, deer.z - start.z);
+  assert.ok(away > 1.5, `huye de quien la hirió (+${away.toFixed(1)} m)`);
+  assert.ok(moved < MOB_STATS.ciervo.speed * 3 * 0.8, `pero no a toda velocidad, se la puede alcanzar (${moved.toFixed(1)} m en 3 s)`);
+  // Herida de gravedad, apenas se arrastra.
+  deer.hp = 4;
+  deer.fear = 5;
+  deer.fearFrom = { x: deer.x - 5, z: deer.z };
+  const x0 = deer.x;
+  tick(sim, 4);
+  assert.ok(deer.x - x0 < MOB_STATS.ciervo.speed * 4 * 0.35, `herida de gravedad casi no avanza (${(deer.x - x0).toFixed(1)} m)`);
+  // Un cazador que va a por ella también la asusta, sin haberla tocado.
+  const hare = mob(sim, 'conejo', 50, 50);
+  const c2 = sim.colonists[1];
+  c2.x = 54;
+  c2.z = 50;
+  c2.task = { type: 'hunt', mobId: hare.id, mode: 'game', phase: 'go' };
+  const before = hare.x;
+  tick(sim, 1);
+  assert.ok(hare.fear > 0 && wireState(hare) === 3, 'la presa a la que va un cazador se asusta');
+  assert.ok(hare.x < before, 'y se aleja de él');
+  // El navegador recibe la vida y el susto.
+  deer.hp = 15;
+  const mirror = colony(8);
+  mirror.applyMobs(sim.snapshot('fast').mobs);
+  const seenDeer = mirror.mobs.find((m) => m.id === deer.id);
+  assert.equal(seenDeer.hpPct, 75);
+  assert.equal(mirror.mobs.find((m) => m.id === hare.id).state, 3);
+}
+
+// 11) Efectos del navegador: el daño sale de la bajada de vida y la barra cambia de verde a rojo.
+{
+  assert.equal(damageFromDrop(100, 75, 20), 5);
+  assert.equal(damageFromDrop(60, 60, 20), 0);
+  assert.equal(damageFromDrop(50, 70, 20), 0, 'curarse no es daño');
+  assert.ok(hpColor(100).g > hpColor(100).r, 'verde con la vida llena');
+  assert.ok(hpColor(10).r > hpColor(10).g, 'rojo con poca vida');
 }
 
 console.log('hunting.test.js: ok');

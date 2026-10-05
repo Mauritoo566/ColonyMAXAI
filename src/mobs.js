@@ -217,7 +217,13 @@ export function animateQuadruped(group, t, speed = 0) {
   const moving = velocity > 0.01;
   const attack = data.hostile && data.state === 'attack';
   const strength = clamp(velocity / config.walkSpeed, 0, 1);
-  const cycle = t * config.gaitFrequency + data.phase;
+  // Miedo (corre más deprisa y tembloroso), herido (cojea, más despacio) y sobresalto al recibir un golpe (data.flinch, se apaga solo).
+  const afraid = data.state === 'fear';
+  const hurt = !!data.hurt;
+  const dt = data.lastT == null ? 0 : clamp(t - data.lastT, 0, 0.1);
+  data.lastT = t;
+  data.flinch = Math.max(0, (data.flinch || 0) - dt * 3.2);
+  const cycle = t * config.gaitFrequency * (afraid ? 1.7 : hurt ? 0.7 : 1) + data.phase;
 
   body.position.y = rest.bodyY;
   body.rotation.set(0, 0, 0);
@@ -225,6 +231,17 @@ export function animateQuadruped(group, t, speed = 0) {
   tail.rotation.copy(rest.tailRotation);
   for (const leg of legs) leg.rotation.set(0, 0, 0);
   head.rotation.y = clamp(data.lookYaw || 0, -0.65, 0.65);
+
+  // Caído: el cuerpo se afloja, la cabeza cuelga y las patas se abren un poco.
+  if (data.dead) {
+    body.position.y = rest.bodyY * 0.88;
+    head.rotation.x = rest.headRotation.x + 0.4;
+    legs.forEach((leg, i) => {
+      leg.rotation.x = (i < 2 ? 0.35 : -0.25);
+      leg.rotation.z = (i % 2 ? 1 : -1) * 0.16;
+    });
+    return;
+  }
 
   if (attack) {
     const pulse = (Math.sin(t * 9 + data.phase) + 1) * 0.5;
@@ -260,6 +277,29 @@ export function animateQuadruped(group, t, speed = 0) {
     body.position.y += Math.sin(t * 1.8 + data.phase) * 0.003;
     head.rotation.x += Math.sin(t * 1.2 + data.phase) * 0.025;
     tail.rotation.y = Math.sin(t * 1.4 + data.phase) * 0.055;
+  }
+
+  if (afraid) {
+    // Cabeza alta y alerta, cola metida, temblor rápido; si no se mueve, encogido.
+    head.rotation.x -= 0.22;
+    tail.rotation.x -= 0.6;
+    body.rotation.z += Math.sin(t * 36 + data.phase) * (moving ? 0.022 : 0.04);
+    if (!moving) body.position.y -= 0.035;
+  }
+  if (hurt) {
+    // Herido: cabeza gacha, cojea de una pata delantera y se ladea.
+    head.rotation.x += 0.3;
+    legs[0].rotation.x *= 0.35;
+    body.rotation.z += 0.05;
+    body.position.y -= 0.02;
+  }
+  if (data.flinch > 0) {
+    // Sobresalto del golpe: se echa atrás y levanta la cabeza de golpe.
+    const f = data.flinch;
+    body.rotation.x -= 0.32 * f;
+    body.position.y += 0.07 * f;
+    head.rotation.x -= 0.45 * f;
+    tail.rotation.y += Math.sin(t * 50) * 0.3 * f;
   }
 }
 

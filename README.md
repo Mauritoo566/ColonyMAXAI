@@ -409,6 +409,12 @@ Los adultos cumplen **2 años por día de juego** (`YEARS_PER_DAY` en `src/sim/f
   - Con **Salir a cazar**, de día y cuando no hay fieras cerca, van a por la presa libre más cercana a la casa (hasta 90 m): conejos, ciervos, jabalíes, ovejas y uros. Un cazador por presa.
 - **Botín:** la carne va al almacén como comida (ciervo 12, uro 18, jabalí 10, oveja 9, conejo 3, oso 14, lobo 3) y las **pieles** (`hide`) también; la sastrería (Edad II y IV) las usa como entrada opcional: sin pieles hace ropa de fibras; con una piel por tanda sale el doble (+2 prendas). Así nadie se queda sin ropa por no tener cazadores. Los hostiles también dan pieles. Lo que llevan se ve en el inventario.
 - Los animales tienen vida (conejo 4, lobo 24, ciervo 20, oso 70…); el daño de la lanza crece con el nivel de Combate y con la edad. La caza se **repone** poco a poco (un rebaño de presas lejos de la aldea cuando quedan pocas; una fiera lejana si faltan).
+- **Combate a la vista** (sólo navegador, `src/combatFx.js`):
+  - El cazador **ataca de verdad**: prepara el brazo atrás, estocada rápida con la lanza y recupera, un golpe cada ~1,1 s, igual que el servidor.
+  - Cada golpe hace subir **flotando el daño** sobre el animal (cifra clara con borde rojo; naranja si es fuerte; dorada y más grande al abatirlo), con una **chispa** de impacto y un sobresalto del animal.
+  - Una **barra de vida** sobre el animal herido baja suave y deja una estela clara de lo que acaba de perder (verde → ámbar → rojo).
+  - **Miedo:** la presa a la que va un cazador (a menos de 12 m) o que acaba de ser herida **se asusta**: globito con «!», cabeza alta, cola metida, tembloroso, y huye a medio paso (se la alcanza). Si le queda menos del 30 % de vida, apenas se arrastra (cojea con la cabeza gacha).
+  - Al caer, el animal suelta una **nube de polvo**, se desploma sobre un costado, queda un momento y se hunde en el suelo.
 - Aspecto: ropa de monte con capa de piel y gorro, y la lanza en la mano. Código en `src/sim/hunting.js`; prueba en `hunting.test.js`.
 
 ## Filas y obras

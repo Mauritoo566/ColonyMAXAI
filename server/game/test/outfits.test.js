@@ -72,6 +72,18 @@ for (let i = 1; i < 10; i++) {
   assert.notDeepEqual(parts(m), naked);
 }
 
+// 3b) La lanza va en la mano (se mueve con el brazo en la estocada) y no suelta piezas al cambiar de ropa.
+{
+  const m = person();
+  const spearman = { soldier: null, job: { def: { id: 'hunter_lodge', skill: 'combat' } }, spear: { left: 3 } };
+  dressModel(m, look, true, outfitFor(2, spearman));
+  const armR = m.userData.armR;
+  assert.ok(m.userData.extras.some((x) => x.parent === armR), 'la lanza cuelga del brazo derecho');
+  assert.ok(m.userData.extras.filter((x) => x.parent === armR).length >= 2, 'asta y punta');
+  dressModel(m, look, true, outfitFor(2, { ...spearman, spear: null }));
+  assert.ok(!m.userData.extras.some((x) => x.parent === armR && x.mesh.geometry.parameters?.height === 1.9), 'sin lanza no queda el asta');
+}
+
 // 4) La edad de la prenda decide el aspecto, no la de la aldea: el oficio sólo añade un sombrero o delantal.
 {
   const lumberjack = { soldier: null, job: { def: { skill: 'woodcutting', id: 'woodcutter' } } };
