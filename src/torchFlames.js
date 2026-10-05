@@ -36,7 +36,7 @@ function glowTexture() {
 export function initTorchLights(scene) {
   if (pool.length) return;
   for (let i = 0; i < LIGHTS; i++) {
-    const light = new THREE.PointLight('#ffae5e', 0, 34, 2);
+    const light = new THREE.PointLight('#ffae5e', 0, 60, 1.6);
     light.visible = false;
     scene.add(light);
     pool.push(light);

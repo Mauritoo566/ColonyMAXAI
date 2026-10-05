@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { RADIUS, surfaceHeight } from './elevation.js';
+import { pickSurface } from './camp.js';
 
 const MIN_CLEARANCE = 7; // metros mínimos sobre el suelo (se puede acercar casi a ras de los colonos)
 const MAX_ALTITUDE = RADIUS * 4;
@@ -59,6 +60,8 @@ export class PlanetControls {
     this.focusDir = new THREE.Vector3();
     this.flightUp = new THREE.Vector3();
     this.flatLook = new THREE.Vector3();
+    this.dblRaycaster = new THREE.Raycaster();
+    this.dblNdc = new THREE.Vector2();
 
     element.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     element.addEventListener('pointermove', (e) => this.onPointerMove(e));
@@ -66,6 +69,7 @@ export class PlanetControls {
     element.addEventListener('pointercancel', (e) => this.onPointerUp(e));
     element.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     element.addEventListener('contextmenu', (e) => e.preventDefault());
+    element.addEventListener('dblclick', (e) => this.onDoubleClick(e));
   }
 
   // Metros de superficie que ocupa un píxel a la altitud actual.
@@ -378,6 +382,18 @@ export class PlanetControls {
     this.pointers.delete(e.pointerId);
     this.pinch = null;
     if (!this.pointers.size) this.orbit = null;
+  }
+
+  // Doble clic: la cámara vuela hasta ese punto (o la estructura que haya ahí) y se queda
+  // orbitando alrededor, igual que al ir a una aldea desde la lista del mundo.
+  onDoubleClick(e) {
+    const rect = this.element.getBoundingClientRect();
+    this.dblNdc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    this.dblRaycaster.setFromCamera(this.dblNdc, this.camera);
+    const hit = pickSurface(this.dblRaycaster.ray);
+    if (!hit) return;
+    const current = Math.max(1, this.target.altitude - this.groundHeight);
+    this.flyTo(hit.dir.clone(), Math.min(current, 55), { orbit: true });
   }
 
   onWheel(e) {
