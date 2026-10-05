@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Parts, mat, stick, v } from './modelKit.js';
 import { BUILDINGS, BUILDING_TYPES } from './sim/buildingTypes.js';
 import { generate } from './buildingModelsGen.js';
-import { modelVariant } from './modelParts.js';
+import { modelVariant, box, cyl, rock, gable, door, window_, chimney, tone } from './modelParts.js';
 import { polish } from './modelPolish.js';
 
 export { modelVariant };
@@ -30,24 +30,79 @@ function gathererModel2(p) {
   }
 }
 
+// Cabaña del leñador: una cabaña de troncos de verdad (troncos redondos que se cruzan en las esquinas, puerta y ventana con contraventanas, tejado de
+// corteza, chimenea de piedra) con un cobertizo de leña apilada a un lado, un tocón con el hacha y un caballete para serrar delante.
 function woodcutterModel2(p) {
-  p.add(new THREE.BoxGeometry(3.6, 0.35, 3), '#6b4a2e', mat(0, 0.17, 0));
-  p.add(new THREE.BoxGeometry(3.4, 1.8, 2.8), '#8a5a34', mat(0, 1.2, 0));
-  p.add(prism(1.7, 3.5), '#8a5a34', mat(0, 2.95, 0));
-  p.add(new THREE.BoxGeometry(3.9, 0.16, 2.1), '#5a3a22', mat(0, 3.05, 0.78, 0.62, 0, 0));
-  p.add(new THREE.BoxGeometry(3.9, 0.16, 2.1), '#5a3a22', mat(0, 3.05, -0.78, -0.62, 0, 0));
-  p.add(new THREE.BoxGeometry(0.9, 1.5, 0.12), '#3a2618', mat(0.6, 1.05, 1.42));
-  // Troncos apilados a un lado.
+  const BARK = '#6a4426';
+  const WALL = ['#8a5a34', '#7a4f2e', '#966a3e'];
+  const RING = '#d9b27a';
+  // Cimientos de piedra y unas piedras en las esquinas.
+  box(p, 3.9, 0.22, 3.3, '#8f8a82', 0, 0.11, 0);
+  for (const [x, z] of [[1.85, 1.55], [-1.9, 1.5], [1.9, -1.55], [-1.85, -1.6]]) rock(p, 0.26, '#9a958c', x, 0.14, z, 0.7);
+  // Paredes: troncos horizontales; en cada hilada alternan los que sobresalen por las esquinas. En la fachada (z = 1,3) queda el hueco de la puerta y el de la ventana.
+  const door0 = [0.15, 1.05];
+  const win0 = [-1.25, -0.55];
+  const cut = (from, to, gaps) => {
+    let segs = [[from, to]];
+    for (const [g0, g1] of gaps) segs = segs.flatMap(([s0, s1]) => (g1 <= s0 || g0 >= s1 ? [[s0, s1]] : [[s0, Math.min(s1, g0)], [Math.max(s0, g1), s1]])).filter(([s0, s1]) => s1 - s0 > 0.06);
+    return segs;
+  };
+  for (let row = 0; row < 6; row++) {
+    const y = 0.37 + row * 0.3;
+    const col = WALL[row % 3];
+    const long = row % 2 === 0;
+    const fx = long ? 1.95 : 1.7; // los troncos de delante y detrás
+    const sz = long ? 1.45 : 1.7; // los de los lados
+    const gaps = [];
+    if (row <= 4) gaps.push(door0);
+    if (row === 2 || row === 3) gaps.push(win0);
+    for (const [x0, x1] of cut(-fx, fx, gaps)) stick(p, v(x0, y, 1.3), v(x1, y, 1.3), 0.16, col, 7);
+    stick(p, v(-fx, y, -1.3), v(fx, y, -1.3), 0.16, col, 7);
+    for (const x of [-1.6, 1.6]) stick(p, v(x, y, -sz), v(x, y, sz), 0.16, col, 7);
+  }
+  // Tejado a dos aguas de corteza (cumbrera a lo largo de z), con los hastiales de tablas verticales.
+  gable(p, 3.8, 3.1, 1.3, BARK, 2.03, '#7a4f2e');
+  for (let i = -5; i <= 5; i++) {
+    const h = 1.3 * (1 - Math.abs(i * 0.17) / 1.9) - 0.06; // la altura del hastial en ese punto
+    box(p, 0.05, h, 0.03, '#5a3a22', i * 0.17, 2.03 + h / 2, 1.57);
+  }
+  // Chimenea de piedra en el lado izquierdo, por encima de la cumbrera.
+  chimney(p, -1.2, 1.7, -0.5, 1.9, '#8a8478', 0.5);
+  // Puerta y ventana con sus contraventanas.
+  door(p, 0.6, 0.22, 1.3, 0.9, 1.5);
+  window_(p, -0.9, 1.12, 1.3, '#2e4658', 0.7, 0.58);
+  for (const s of [-1, 1]) box(p, 0.26, 0.6, 0.05, '#5a3a22', -0.9 + s * 0.52, 1.12, 1.4, s * 0.25);
+  // Un cartelito con un hacha sobre la puerta.
+  box(p, 0.8, 0.36, 0.05, '#d8c9a0', 0.6, 2.35, 1.6);
+  box(p, 0.05, 0.26, 0.03, '#6b4a2e', 0.6, 2.35, 1.64, 0, 0, 0.5);
+  box(p, 0.16, 0.12, 0.03, '#6d6d70', 0.67, 2.43, 1.64, 0, 0, 0.5);
+  // Cobertizo de leña a la derecha: pilas de troncos con los anillos a la vista, bajo un techo inclinado de corteza.
   for (let row = 0; row < 3; row++) {
-    for (let i = 0; i < 3 - row; i++) {
-      const y = 0.3 + row * 0.5;
-      const z = (i - (2 - row) / 2) * 0.55;
-      stick(p, v(2.3, y, z - 0.4), v(4.1, y, z - 0.4), 0.26, row % 2 ? '#7a5230' : '#6b4a2e', 6);
+    for (let i = 0; i < 4 - row; i++) {
+      const x = 2.25 + i * 0.36 + row * 0.18;
+      const y = 0.2 + row * 0.32;
+      const shade = (i + row) % 2 ? '#7a5230' : '#6b4a2e';
+      stick(p, v(x, y, -1.2), v(x, y, 0.5), 0.17, shade, 6);
+      cyl(p, 0.15, 0.15, 0.03, RING, x, y, 0.51, 7);
     }
   }
-  p.add(new THREE.CylinderGeometry(0.5, 0.58, 0.7, 7), '#6b4a2e', mat(-2.6, 0.35, 1.4));
-  stick(p, v(-2.6, 0.7, 1.4), v(-2.9, 1.5, 1.3), 0.045, '#9a7446', 4);
-  p.add(new THREE.BoxGeometry(0.4, 0.22, 0.05), '#6d6d70', mat(-2.55, 0.78, 1.42, 0, 0, -0.3));
+  for (const z of [-1.3, 0.7]) stick(p, v(3.45, 0, z), v(3.45, 1.45, z), 0.07, '#5a3a22', 5);
+  box(p, 1.8, 0.09, 2.3, BARK, 2.65, 1.55, -0.3, 0, 0, -0.33);
+  // Tocón con el hacha y astillas, delante a la izquierda.
+  cyl(p, 0.5, 0.58, 0.6, '#6b4a2e', -2.5, 0.3, 1.5, 8);
+  cyl(p, 0.46, 0.46, 0.03, RING, -2.5, 0.61, 1.5, 8);
+  stick(p, v(-2.5, 0.62, 1.5), v(-2.85, 1.45, 1.4), 0.045, '#9a7446', 4);
+  box(p, 0.4, 0.22, 0.05, '#6d6d70', -2.78, 1.4, 1.4, 0, 0, -0.35);
+  for (let k = 0; k < 6; k++) box(p, 0.2, 0.03, 0.07, '#c9a26a', -1.9 + (k % 3) * 0.28, 0.03, 1.9 + (k % 2) * 0.2, k * 0.9);
+  // Caballete con un tronco a medio serrar y la sierra, a la izquierda de la cabaña.
+  for (const z of [-0.5, 0.5]) {
+    stick(p, v(-2.9, 0, z), v(-2.3, 0.95, z), 0.06, '#6b4a2e', 4);
+    stick(p, v(-2.3, 0, z), v(-2.9, 0.95, z), 0.06, '#6b4a2e', 4);
+  }
+  stick(p, v(-2.6, 1.02, -1.0), v(-2.6, 1.02, 1.0), 0.17, '#7a5230', 6);
+  box(p, 0.03, 0.14, 0.9, '#aeb4ba', -2.43, 1.2, 0.0);
+  // Unos troncos apoyados en la pared de atrás.
+  for (let i = 0; i < 3; i++) stick(p, v(-0.9 + i * 0.4, 0, -1.75), v(-0.9 + i * 0.4, 1.5, -1.45), 0.13, i % 2 ? '#7a5230' : '#6b4a2e', 6);
 }
 
 function quarryModel2(p) {
