@@ -243,6 +243,8 @@ export function updateNeeds(c, env) {
   // frío. Junto a la fogata sube rápido.
   const CLOTHES = env.clothed ? (env.warmthBonus ?? 25) : 0;
   let target = CLOTHES + env.ambient * (100 - CLOTHES) + (gene(g, 'cold') - 0.5) * 30;
+  // Lloviendo y a la intemperie uno se empapa y se enfría: mucho más sin ropa, algo menos con ella (la fogata y el refugio lo evitan).
+  if (!env.sheltered && !env.nearFire) target -= (env.rain ?? 0) * (env.clothed ? 10 : 26);
   if (env.sheltered) target = Math.max(target, 80); // dentro de la tienda
   if (env.nearFire) target = 100;
   target = clamp(target);

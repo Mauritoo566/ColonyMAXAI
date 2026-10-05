@@ -92,6 +92,43 @@ const tick = (sim, seconds) => {
   assert.ok(warmth(10) > warmth(1) + 15, 'la ropa técnica abriga mucho más que las pieles');
 }
 
+// 3b) La lluvia empapa: a la intemperie y sin ropa se enfría bastante más que con tiempo seco (con ropa, algo menos; junto al fuego o a cubierto no).
+{
+  const warmth = (rain, clothedTier, extra = {}) => {
+    const sim = colony(1, 3);
+    const c = sim.colonists[0];
+    c.needs.warmth = 80;
+    for (let i = 0; i < 400; i++) updateNeeds(c, { dt: 5, ambient: 0.7, thirst: 1, nearFire: false, sheltered: false, rain, clothed: clothedTier > 0, warmthBonus: clothedTier ? warmthOf(clothedTier) : undefined, companion: null, urns: 0, stench: 0, time: 0, gameTime: i, absent: true, homeless: 0, ...extra });
+    return c.needs.warmth;
+  };
+  assert.ok(warmth(0.65, 0) < warmth(0, 0) - 10, 'sin ropa, lloviendo se enfría bastante más');
+  assert.ok(warmth(0.65, 3) < warmth(0, 3), 'con ropa también se nota, algo menos');
+  assert.ok(warmth(0, 3) - warmth(0.65, 3) < warmth(0, 0) - warmth(0.65, 0), 'la ropa protege de la lluvia');
+  assert.equal(warmth(0.65, 0, { sheltered: true }), warmth(0, 0, { sheltered: true }), 'a cubierto no se moja');
+}
+
+// 3c) La sastrería no depende de las pieles: con fibras hace ropa; con una piel por tanda sale el doble.
+{
+  const run = (hides) => {
+    const sim = colony(6, 2);
+    for (const c of sim.colonists) dress(sim, c, 2); // todos vestidos: nadie se lleva la ropa del almacén
+    const b = sim.createBuilding(BUILDINGS.tailor, 14, 12, 0, 1, 0, 1);
+    b.done = true;
+    b.progress = 1;
+    sim.setWorker(b, sim.colonists[0]);
+    sim.stock.fiber = 60;
+    sim.stock.hide = hides;
+    sim.stock.clothes = 0;
+    tick(sim, 140);
+    return { clothes: sim.stock.clothes, hide: sim.stock.hide };
+  };
+  const plain = run(0);
+  const leather = run(2);
+  assert.ok(plain.clothes >= 2, `sin pieles también hace ropa (${plain.clothes})`);
+  assert.equal(leather.hide, 0, 'gasta una piel por tanda');
+  assert.ok(leather.clothes >= plain.clothes + 2, `con pieles sale más ropa (${plain.clothes} -> ${leather.clothes})`);
+}
+
 // 4) Ánimo: la ropa de la edad anima, la raída o sin ropa desanima.
 {
   const sim = colony(1, 5);

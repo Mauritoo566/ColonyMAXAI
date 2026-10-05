@@ -565,8 +565,8 @@ workshop({
   icon: 'cloth',
   cost: { wood: 20, fiber: 12 },
   levels: [
-    L(2, 'Curtiduría y costura', 'Se curten las pieles que traen los cazadores y se cosen con fibras: ropa de cuero cosido.', 'gen:workshop:2', { recipe: { in: { hide: 1, fiber: 2 }, out: { clothes: 2 }, time: 40 } }),
-    L(4, 'Telar de lino y lana', 'Telares de mano: túnicas de lino y lana teñida.', 'gen:workshop:4', { recipe: { in: { fiber: 4 }, out: { clothes: 3 }, time: 36 }, upgradeCost: { wood: 20, stone: 10, fiber: 10 } }),
+    L(2, 'Curtiduría y costura', 'Se cosen prendas con fibras; con las pieles que traen los cazadores salen el doble (cuero cosido).', 'gen:workshop:2', { recipe: { in: { fiber: 4 }, out: { clothes: 2 }, bonus: { in: { hide: 1 }, out: { clothes: 2 } }, time: 40 } }),
+    L(4, 'Telar de lino y lana', 'Telares de mano: túnicas de lino y lana teñida.', 'gen:workshop:4', { recipe: { in: { fiber: 4 }, out: { clothes: 3 }, bonus: { in: { hide: 1 }, out: { clothes: 2 } }, time: 36 }, upgradeCost: { wood: 20, stone: 10, fiber: 10 } }),
     L(6, 'Sastrería', 'Con tela del taller textil se cortan y cosen jubones, capas y ropa de corte.', 'gen:workshop:6', { recipe: { in: { cloth: 1 }, out: { clothes: 3 }, time: 32 }, upgradeCost: { planks: 10, cut_stone: 8, fiber: 10 } }),
     L(8, 'Confección industrial', 'Máquinas de coser y patrones: ropa de serie.', 'gen:workshop:8', { recipe: { in: { cloth: 1 }, out: { clothes: 8 }, time: 26 }, upgradeCost: { steel: 5, machinery: 1, bricks: 10 }, energy: 2 }),
   ],

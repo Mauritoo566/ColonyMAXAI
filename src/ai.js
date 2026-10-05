@@ -211,11 +211,13 @@ export function chooseTask(colony, c, env) {
   // Sin ropa y con frío: ir a buscar ropa a la pila del campamento (abriga para siempre,
   // así que lo prefiere a la fogata). Si no tiene frío, no se molesta en ir.
   const garb = clothesWanted(colony, c);
-  if (!c.clothed && garb?.source === 'pile' && n.warmth < 70) {
+  // (sin ropa y lloviendo también va, aunque todavía no tenga mucho frío: se está empapando)
+  const soaked = (colony.weather?.rain ?? 0) > 0.15;
+  if (!c.clothed && garb?.source === 'pile' && (n.warmth < 70 || soaked)) {
     add(urgency(n.warmth) * 1.35 + 0.18, { type: 'dress', source: 'pile' });
   } else if (garb?.source === 'stock') {
     // Con ropa del almacén: sin ropa y con frío corre; con ropa vieja o rota la renueva sin prisa (de día y con lo básico cubierto).
-    if (!c.clothed && n.warmth < 70) add(urgency(n.warmth) * 1.35 + 0.2, { type: 'dress', source: 'stock' });
+    if (!c.clothed && (n.warmth < 70 || soaked)) add(Math.max(urgency(n.warmth) * 1.35 + 0.2, soaked ? 0.75 : 0), { type: 'dress', source: 'stock' });
     else if (!env.isNight && Math.min(n.food, n.water, n.rest, n.warmth) > 35) add(c.clothed ? 0.4 : 0.55, { type: 'dress', source: 'stock' });
   }
 

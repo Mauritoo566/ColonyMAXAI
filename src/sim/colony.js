@@ -341,6 +341,7 @@ export class ColonySim {
           nearFire: c.nearFire,
           sheltered: (c.sleeping && !c.outdoorSleep) || c.inside,
           clothed: c.clothed,
+          rain: this.weather?.rain ?? 0,
           warmthBonus: c.wear ? warmthOf(c.wear.tier) : undefined,
           clothesMood: clothesMood(this, c),
           companion: c.companion,

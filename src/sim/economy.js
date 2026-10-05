@@ -140,6 +140,12 @@ export function updateProduction(colony, b, dt) {
       return;
     }
     for (const [k, n] of Object.entries(recipe.in ?? {})) colony.takeStock(k, n);
+    // Entrada opcional (bonus): si hay en el almacén se gasta y la tanda sale mejor (p. ej. pieles para más ropa en la sastrería).
+    b.cycleBonus = false;
+    if (recipe.bonus && Object.entries(recipe.bonus.in).every(([k, n]) => (colony.stock[k] ?? 0) >= n)) {
+      for (const [k, n] of Object.entries(recipe.bonus.in)) colony.takeStock(k, n);
+      b.cycleBonus = true;
+    }
     b.cycleActive = true;
     b.cycle = 0;
   }
@@ -166,6 +172,8 @@ export function updateProduction(colony, b, dt) {
       if (first) b.produced += added;
       first = false;
     }
+    if (b.cycleBonus && recipe.bonus) for (const [k, n] of Object.entries(recipe.bonus.out)) colony.produce(k, n);
+    b.cycleBonus = false;
     if (!Object.keys(recipe.out ?? {}).length) b.produced += 1; // energía: cuenta los ciclos
     b.cycle = 0;
     b.cycleActive = false;

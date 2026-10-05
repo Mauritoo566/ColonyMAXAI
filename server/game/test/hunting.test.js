@@ -65,7 +65,8 @@ const post = (sim, b, n) => {
   assert.deepEqual(BUILDINGS.hunter_lodge.levels.map((l) => l.workers), [3, 5, 8], 'cupo de cazadores por nivel');
   assert.equal(BUILDINGS.hunter_lodge.levels[0].age, 2);
   assert.ok(BUILDINGS.spear_maker.levels[0].recipe.out.spear > 0, 'la casa de lanzas hace lanzas');
-  assert.ok(BUILDINGS.tailor.levels[0].recipe.in.hide >= 1, 'la sastrería usa las pieles');
+  assert.ok(BUILDINGS.tailor.levels[0].recipe.bonus.in.hide >= 1, 'la sastrería usa las pieles para hacer más ropa');
+  assert.ok(!('hide' in BUILDINGS.tailor.levels[0].recipe.in), 'pero no depende de ellas (sin cazadores también hay ropa de fibra)');
   for (const t of Object.keys(MOB_STATS)) assert.ok(MOB_STATS[t].hp > 0, `${t} tiene vida`);
   for (const t of ['ciervo', 'lobo', 'oso']) assert.ok(MOB_DROPS[t].hide >= 2, `${t} da pieles`);
 }
