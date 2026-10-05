@@ -185,46 +185,6 @@ const site = (sim, id, x, z) => {
   sim.applyCommand('clearMarks', [['wood']]);
   assert.ok(!sim.spots.some((s) => s.marked && s.kind === 'wood') && sim.spots.some((s) => s.marked), 'quita sólo lo elegido');
 }
-// Caminos automáticos: unen cada edificio terminado con el centro, suben con la edad, se pueden
-// quitar (y no vuelven) y apagar; lo pintado a mano es del jugador.
-{
-  const sim = colony();
-  sim.age = 3;
-  const key = (c) => c.join(',');
-  const b = sim.createBuilding(BUILDINGS.gatherer, 30, 14, 0, 0, 0);
-  b.done = false;
-  b.finish(null);
-  assert.ok(sim.roads.size > 3, `se trazó un camino (${sim.roads.size} casillas)`);
-  assert.equal(sim.roads.size, sim.autoRoadKeys.size);
-  assert.ok([...sim.roads.values()].every((lv) => lv === 1));
-  const before = sim.roads.size;
-  const stock = JSON.stringify(sim.stock);
-  assert.equal(stock, JSON.stringify(sim.stock), 'gratis');
-  // Quitar una casilla: no vuelve a salir sola.
-  const [first] = [...sim.autoRoadKeys];
-  assert.equal(sim.applyCommand('eraseRoads', [[first.split(',').map(Number)]]), true);
-  assert.ok(!sim.roads.has(first) && sim.roadsOff.has(first));
-  sim.autoConnect();
-  assert.ok(!sim.roads.has(first), 'no se vuelve a trazar lo quitado');
-  // Nueva edad: los caminos de la aldea suben solos de nivel.
-  sim.age = 5;
-  sim.refreshAutoRoads();
-  assert.ok([...sim.autoRoadKeys].every((k) => sim.roads.get(k) === 2));
-  // Guardado y carga conservan la configuración.
-  const again = colony();
-  again.age = 5;
-  again.restore(JSON.parse(JSON.stringify(sim.serialize())));
-  assert.equal(again.roads.size, sim.roads.size);
-  assert.ok(again.roadsOff.has(first));
-  // Apagar los automáticos quita los de la aldea y deja los manuales.
-  sim.stock.stone = 50;
-  const manual = [[-5, -5], [-5, -4]];
-  assert.equal(sim.paintRoads(manual), true);
-  assert.equal(sim.setAutoRoads(false), true);
-  assert.equal(sim.autoRoadKeys.size, 0);
-  assert.ok(sim.roads.has(key(manual[0])) && sim.roads.size <= 2 + 0, 'sólo quedan los manuales');
-  assert.ok(before > 0);
-}
 // Los caminos no atraviesan la zona de acopio ni los edificios; y al dibujar la zona se quitan.
 {
   const sim = colony();

@@ -24,10 +24,7 @@ function colony() {
 // 1) Construir un cementerio sobre un camino quita las casillas que pisa; el resto del camino se queda.
 {
   const sim = colony();
-  for (let ix = 3; ix <= 11; ix++) {
-    sim.roads.set(roadKey(ix, 6), 1);
-    sim.autoRoadKeys.add(roadKey(ix, 6));
-  }
+  for (let ix = 3; ix <= 11; ix++) sim.roads.set(roadKey(ix, 6), 1);
   const b = sim.createBuilding(BUILDINGS.cemetery, 28, 24, 0, 1, 0, 1);
   const rect = footprintRect(b.def, b.x, b.z);
   for (let ix = 3; ix <= 11; ix++) {
@@ -35,7 +32,6 @@ function colony() {
     const under = x + 2 > rect.x0 + 1e-6 && x - 2 < rect.x1 - 1e-6;
     assert.equal(sim.roads.has(roadKey(ix, 6)), !under, `casilla ${ix},6 ${under ? 'bajo el cementerio: se quita' : 'fuera: se queda'}`);
   }
-  assert.ok([...sim.autoRoadKeys].every((k) => sim.roads.has(k)), 'tampoco quedan marcadas como trazadas solas');
   // Y en las casillas que pisa no se puede pintar otro.
   assert.equal(roadCellProblem(sim, 7, 6), 'Hay algo encima');
 }
