@@ -384,16 +384,21 @@ export class PlanetControls {
     if (!this.pointers.size) this.orbit = null;
   }
 
-  // Doble clic: la cámara vuela hasta ese punto (o la estructura que haya ahí) y se queda
-  // orbitando alrededor, igual que al ir a una aldea desde la lista del mundo.
+  // Doble clic: la cámara va directo a ese punto (o la estructura que haya ahí), sin el
+  // vuelo en arco de flyTo (que sube de más cuando se viene de muy alto), y se queda
+  // orbitando alrededor, bien cerca.
   onDoubleClick(e) {
     const rect = this.element.getBoundingClientRect();
     this.dblNdc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     this.dblRaycaster.setFromCamera(this.dblNdc, this.camera);
     const hit = pickSurface(this.dblRaycaster.ray);
     if (!hit) return;
-    const current = Math.max(1, this.target.altitude - this.groundHeight);
-    this.flyTo(hit.dir.clone(), Math.min(current, 55), { orbit: true });
+    this.cancelFlight();
+    this.stopFollow();
+    this.orbit = null;
+    const clearance = 30;
+    this.target.altitude = hit.height + clearance;
+    this.autoOrbit = { pivot: hit.dir.clone(), clearance, time: 0 };
   }
 
   onWheel(e) {
